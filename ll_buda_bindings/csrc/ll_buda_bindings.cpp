@@ -1,5 +1,6 @@
 #include "ll_buda/op_library/eltwise_binary/eltwise_binary_op.hpp"
 #include "ll_buda/op_library/bmm/bmm_op.hpp"
+#include "ll_buda/op_library/pad_h_rm/pad_h_rm_op.hpp"
 #include "ll_buda/op_library/bcast/bcast_op.hpp"
 #include "ll_buda/op_library/reduce/reduce_op.hpp"
 #include "ll_buda/op_library/transpose/transpose_op.hpp"
@@ -55,6 +56,8 @@ void TensorModule(py::module &m_tensor) {
     m_tensor.def("add", &add);
     m_tensor.def("sub", &sub);
     m_tensor.def("mul", &mul);
+
+    m_tensor.def("pad_h_rm", &pad_h_rm);
 
     // matrix multiplication
     m_tensor.def("matmul", &matmul);
