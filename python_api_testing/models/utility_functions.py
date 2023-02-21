@@ -23,10 +23,12 @@ def pad_activation(x):
     elif len(x.shape) == 2: # (batch, num features)
         padded_tensor = torch.zeros(x.shape[0], 1, 32, nearest_32(x.shape[1]))
         padded_tensor[:, 0, 0, :x.shape[1]] = x
-    else:
+    elif len(x.shape) == 3: # (batch, num features y, num features x)
+        padded_tensor = torch.zeros(x.shape[0], 1, nearest_32(x.shape[-2]), nearest_32(x.shape[-1]))
+        padded_tensor[..., 0, :x.shape[-2], :x.shape[-1]] = x
+    else: # (batch, num channels, num features y, num features x)
         padded_tensor = torch.zeros(*x.shape[:-2], nearest_32(x.shape[-2]), nearest_32(x.shape[-1]))
         padded_tensor[..., :x.shape[-2], :x.shape[-1]] = x
-
     return padded_tensor
 
 def pad_weight(x):

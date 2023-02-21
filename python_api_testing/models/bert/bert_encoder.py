@@ -1,10 +1,3 @@
-import math
-from pathlib import Path
-import sys
-f = f"{Path(__file__).parent}"
-sys.path.append(f"{f}/..")
-sys.path.append(f"{f}/../..")
-
 import torch
 from transformers import BertForQuestionAnswering
 
@@ -59,7 +52,7 @@ class PytorchBertEncoder(torch.nn.Module):
     
 def run_bert_encoder_inference():
     hugging_face_reference_model = BertForQuestionAnswering.from_pretrained("prajjwal1/bert-tiny", torchscript=False)
-    tt_bert_model = TtBertEncoder(hugging_face_reference_model.state_dict(), device)
+    tt_bert_encoder_model = TtBertEncoder(hugging_face_reference_model.state_dict(), device)
     pytorch_bert_model = PytorchBertEncoder(hugging_face_reference_model)
 
     # Prepare input
@@ -71,7 +64,7 @@ def run_bert_encoder_inference():
     tt_bert_encoder_input = tilize_to_list(pad_activation(bert_encoder_input))
     tt_bert_encoder_input = _C.tensor.Tensor(tt_bert_encoder_input, bert_encoder_input.shape, _C.tensor.DataFormat.FLOAT32,  _C.tensor.Layout.TILE, device)
 
-    tt_out = tt_bert_model(tt_bert_encoder_input).to(host)
+    tt_out = tt_bert_encoder_model(tt_bert_encoder_input).to(host)
     tt_out = untilize(torch.Tensor(tt_out.data()).reshape(*pytorch_out.shape))
     assert np.allclose(pytorch_out.detach().numpy(), tt_out.numpy(), 1e-5, 0.17)
 
