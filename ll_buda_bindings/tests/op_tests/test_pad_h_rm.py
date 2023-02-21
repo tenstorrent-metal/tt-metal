@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     xt = _C.tensor.Tensor(x.reshape(-1).tolist(), [N, C, H, W], _C.tensor.DataFormat.FLOAT32, _C.tensor.Layout.ROW_MAJOR, device)
 
-    # test that reading back from row major is about the same
+    # test that reading back from row major is about the same (+/- BF16 conversion)
     xt_data = xt.to(host).data()
     tt_got_back_rm = torch.Tensor(xt_data).reshape((N,C,H,W))
 
