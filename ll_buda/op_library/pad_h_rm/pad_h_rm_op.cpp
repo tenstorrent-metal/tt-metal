@@ -21,6 +21,7 @@ Tensor pad_h_rm(const Tensor &a, int paddedH) {
 
     TT_ASSERT(a.shape()[2] <= paddedH);
     TT_ASSERT(a.shape()[3] <= 16*1024 && "pad_h_rm kernel doesn't support W>=16k elems yet.");
+    ll_buda::Device *device = a.device();
     ll_buda::Program *program = new ll_buda::Program();
     tt_xy_pair core = {0, 0};
 
@@ -28,9 +29,9 @@ Tensor pad_h_rm(const Tensor &a, int paddedH) {
     TT_ASSERT(not a.on_host(), "Operand to eltwise unary needs to be on device!");
     TT_ASSERT(a.buffer() != nullptr, "Operand to eltwise unary needs to be allocated in a buffer on device!");
 
+
     uint32_t single_tile_size = 2 * TILE_HW;
     ll_buda::DramBuffer *src0_dram_buffer = a.buffer();
-    ll_buda::Device *device = a.device();
     auto ashape = a.shape();
     int N = ashape[0], C = ashape[1], H = ashape[2], W = ashape[3];
 

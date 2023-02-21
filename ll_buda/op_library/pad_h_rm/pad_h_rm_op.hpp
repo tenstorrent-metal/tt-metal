@@ -6,7 +6,7 @@ namespace tt {
 
 namespace ll_buda {
 
-Tensor pad_h_rm (const Tensor &a);
+Tensor pad_h_rm (const Tensor &a, int paddedH);
 
 }  // namespace ll_buda
 

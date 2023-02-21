@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include "dataflow_api.h"
+#include "debug_print.h"
 
 int __multiply(int n, int m) { 
     int res = 0, count = 0;
@@ -59,7 +60,7 @@ void kernel_main() {
     uint64_t replicate_dest_addr;
     uint32_t start_dram_addr_offset_for_tensor_row = 0;
 
-    cb_reserve_back(cb_id_in0, 16);
+    cb_reserve_back(cb_id_in0, 16); // in this kernel we are not pushing anything into CBs, just using the space
     cb_reserve_back(cb_id_in1, 16);
     uint32_t l1_tmp_addr = get_write_ptr(cb_id_in0);
     uint32_t l1_zeros_addr = get_write_ptr(cb_id_in1);
@@ -71,23 +72,23 @@ void kernel_main() {
     uint32_t nch = 0;
     // input is NCH(Wt*32) unpadded RM
     for (uint32_t nc = 0; nc < NC; nc++) {
-        for (int h = 0; h < paddedH; h++) {
-            for (uint32_t wt = 0; wt < Wt; wt++) {
-                if (h < H) {
-                    uint64_t src_noc_addr = get_noc_addr_rm(nch, 0, src_addr, 8, W);
-                    noc_async_read(src_noc_addr, l1_tmp_addr, (W<<1)); // TODO(AP): segment this read
-                    noc_async_read_barrier();
-                }
-
-                uint64_t dst_noc_addr = get_noc_addr_rm(nch, 0, dst_addr, 8, W);
-                if (h < H) {
-                    noc_async_write(l1_tmp_addr, dst_noc_addr, (W<<1)); // TODO(AP): segment this write
-                } else {
-                    noc_async_write(l1_zeros_addr, dst_noc_addr, (W<<1)); // TODO(AP): segment this write
-                }
-                noc_async_write_barrier();
+        for (uint32_t h = 0; h < paddedH; h++) {
+            if (h < H) {
+                uint64_t src_noc_addr = get_noc_addr_rm(nch, 0, src_addr, 8, W);
+                DPRINT << "nc=" << nc << "h=" << h << ENDL();
+                DPRINT << "src_addr=" << uint32_t(src_noc_addr>>32) << "," << uint32_t(src_noc_addr&0xffffFFFF) << ENDL();
+                noc_async_read(src_noc_addr, l1_tmp_addr, (W<<1)); // TODO(AP): segment this read
+                noc_async_read_barrier();
             }
-            cb_push_back(cb_id_in0, 1);
+
+            uint64_t dst_noc_addr = get_noc_addr_rm(nch, 0, dst_addr, 8, W);
+                DPRINT << "  dst_addr=" << uint32_t(dst_noc_addr>>32) << "," << uint32_t(dst_noc_addr&0xffffFFFF) << ENDL();
+            if (h < H) {
+                noc_async_write(l1_tmp_addr, dst_noc_addr, (W<<1)); // TODO(AP): segment this write
+            } else {
+                noc_async_write(l1_zeros_addr, dst_noc_addr, (W<<1)); // TODO(AP): segment this write
+            }
+            noc_async_write_barrier();
         } // h<paddedH
         nch += H;
     } // nc

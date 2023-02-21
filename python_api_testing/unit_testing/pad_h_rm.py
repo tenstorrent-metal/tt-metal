@@ -13,6 +13,7 @@ from python_api_testing.models.utility_functions import pad_activation, pad_weig
 device = _C.device.CreateDevice(_C.device.Arch.GRAYSKULL, 0)
 _C.device.InitializeDevice(device)
 host = _C.device.GetHost()
+_C.device.StartDebugPrintServer(device)
 
 if __name__ == "__main__":
     N = 1
@@ -23,9 +24,17 @@ if __name__ == "__main__":
     x = torch.randn((N,C,H,W))
 
     xt = _C.tensor.Tensor(x.reshape(-1).tolist(), [N, C, H, W], _C.tensor.DataFormat.FLOAT32, _C.tensor.Layout.ROW_MAJOR, device)
-    xtp = _C.tensor.pad_h_rm(xt, HP)
-    assert(xtt.shape() == [N,HP,C,W])
 
+    # test that reading back from row major is about the same
+    xt_data = xt.to(host).data()
+    tt_got_back_rm = torch.Tensor(xt_data).reshape((N,C,H,W))
+
+    print("row_major read back max absdiff=")
+    print_diff_argmax(tt_got_back_rm, x)
+
+    # apply  h-padding
+    xtp = _C.tensor.pad_h_rm(xt, HP)
+    assert(xtp.shape() == [N,HP,C,W])
     xtp_data = xtp.to(host).data()
     tt_got_back = torch.Tensor(xtp_data).reshape((N,HP,C,W))
 

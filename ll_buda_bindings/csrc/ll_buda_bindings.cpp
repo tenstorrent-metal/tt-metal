@@ -139,6 +139,7 @@ void DeviceModule(py::module &m_device) {
     m_device.def("CreateDevice", &CreateDevice);
     m_device.def("InitializeDevice", &InitializeDevice);
     m_device.def("CloseDevice", &CloseDevice);
+    m_device.def("StartDebugPrintServer", &StartDebugPrintServer);
 
     m_device.def("GetHost", &GetHost);
     

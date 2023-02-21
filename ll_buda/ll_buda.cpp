@@ -31,6 +31,10 @@ bool InitializeDevice(Device *device) { return device->initialize(); }
 
 bool CloseDevice(Device *device) { return device->close(); }
 
+void StartDebugPrintServer(Device* device) {
+    tt_start_debug_print_server(device->cluster(), {0}, {{1, 1}}); // TODO(AP): temp, need to rethink
+}
+
 DataMovementKernelArgs *InitializeCompileTimeDataMovementKernelArgs(const tt_xy_pair &logical_core, const std::vector<uint32_t> &compile_time_args) {
     DataMovementKernelArgs *kernel_args = new DataMovementKernelArgs(logical_core, compile_time_args);
     return kernel_args;
