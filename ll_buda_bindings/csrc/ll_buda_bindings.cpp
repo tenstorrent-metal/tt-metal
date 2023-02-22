@@ -11,6 +11,8 @@
 
 #include "ll_buda_bindings.hpp"
 
+
+
 namespace py = pybind11;
 
 namespace tt {
@@ -86,6 +88,8 @@ void TensorModule(py::module &m_tensor) {
     m_tensor.def("tilize", &tilize);
     m_tensor.def("untilize", &untilize);
     m_tensor.def("transpose_hc", &transpose_hc);
+    m_tensor.def("tilize", &tilize);
+    m_tensor.def("untilize", &untilize);
 
     // bast enums
     py::enum_<BcastOpMath::Enum>(m_tensor, "BcastOpMath")
