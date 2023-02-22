@@ -16,11 +16,12 @@ host = _C.device.GetHost()
 _C.device.StartDebugPrintServer(device)
 
 if __name__ == "__main__":
+    torch.manual_seed(123)
     N = 1
-    C = 1
-    H = 2
-    HP = 32
-    W = 32*3
+    C = 2
+    H = 3
+    HP = 64
+    W = 32*5
     x = torch.randn((N,C,H,W))
 
     xt = _C.tensor.Tensor(x.reshape(-1).tolist(), [N, C, H, W], _C.tensor.DataFormat.FLOAT32, _C.tensor.Layout.ROW_MAJOR, device)
@@ -34,13 +35,14 @@ if __name__ == "__main__":
 
     # apply  h-padding
     xtp = _C.tensor.pad_h_rm(xt, HP)
-    assert(xtp.shape() == [N,HP,C,W])
+    assert(xtp.shape() == [N,C,HP,W])
     xtp_data = xtp.to(host).data()
-    tt_got_back = torch.Tensor(xtp_data).reshape((N,HP,C,W))
+    tt_got_back = torch.Tensor(xtp_data).reshape((N,C,HP,W))
 
-    print("reshape() max absdiff=")
-    transposed_ref = x.permute(0, 2, 1, 3)
-    print_diff_argmax(tt_got_back, transposed_ref)
+    print("pad_h_rm() max absdiff=")
+    padded_ref = torch.zeros(xtp.shape())
+    padded_ref[:,:,0:H,:] = x
+    print_diff_argmax(tt_got_back, padded_ref)
 
 _C.device.CloseDevice(device)
 

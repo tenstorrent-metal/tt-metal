@@ -1,6 +1,6 @@
 #include <cstdlib>
 #include "dataflow_api.h"
-#include "debug_print.h"
+//#include "debug_print.h"
 
 int __multiply(int n, int m) { 
     int res = 0, count = 0;
@@ -27,10 +27,10 @@ std::uint64_t get_noc_addr_rm(
     uint32_t bank_id = row & (num_used_banks - 1);
     uint32_t dram_x = dram_channel_to_noc_x[bank_id];
     uint32_t dram_y = dram_channel_to_noc_y[bank_id];
-    uint32_t dram_addr = row;
     // >>3 is because of 8 banks
     // TODO(AP): replace multiply with increments
-    std::uint64_t noc_addr = get_noc_addr(dram_x, dram_y, bank_base_address + (__multiply(row, (W<<1))>>3) + (col<<1));
+    uint32_t dram_addr = bank_base_address + (__multiply(row>>3, (W<<1))) + (col<<1);
+    std::uint64_t noc_addr = get_noc_addr(dram_x, dram_y, dram_addr);
     return noc_addr;
 }
 
@@ -69,28 +69,30 @@ void kernel_main() {
     for (uint32_t iz = 0; iz < num_elems0; iz++)
         zeros[iz] = 0;
 
-    uint32_t nch = 0;
+    uint32_t nch_src = 0;
+    uint32_t nch_dst = 0;
     // input is NCH(Wt*32) unpadded RM
     for (uint32_t nc = 0; nc < NC; nc++) {
         for (uint32_t h = 0; h < paddedH; h++) {
             if (h < H) {
-                uint64_t src_noc_addr = get_noc_addr_rm(nch, 0, src_addr, 8, W);
-                DPRINT << "nc=" << nc << "h=" << h << ENDL();
-                DPRINT << "src_addr=" << uint32_t(src_noc_addr>>32) << "," << uint32_t(src_noc_addr&0xffffFFFF) << ENDL();
+                uint64_t src_noc_addr = get_noc_addr_rm(nch_src, 0, src_addr, 8, W);
+                //DPRINT << "nc=" << nc << "h=" << h << ENDL();
+                //DPRINT << "src_addr=" << uint32_t(src_noc_addr>>32) << "," << uint32_t(src_noc_addr&0xffffFFFF) << ENDL();
                 noc_async_read(src_noc_addr, l1_tmp_addr, (W<<1)); // TODO(AP): segment this read
                 noc_async_read_barrier();
+                nch_src ++;
             }
 
-            uint64_t dst_noc_addr = get_noc_addr_rm(nch, 0, dst_addr, 8, W);
-                DPRINT << "  dst_addr=" << uint32_t(dst_noc_addr>>32) << "," << uint32_t(dst_noc_addr&0xffffFFFF) << ENDL();
+            uint64_t dst_noc_addr = get_noc_addr_rm(nch_dst, 0, dst_addr, 8, W);
+                //DPRINT << "  dst_addr=" << uint32_t(dst_noc_addr>>32) << "," << uint32_t(dst_noc_addr&0xffffFFFF) << ENDL();
             if (h < H) {
                 noc_async_write(l1_tmp_addr, dst_noc_addr, (W<<1)); // TODO(AP): segment this write
             } else {
                 noc_async_write(l1_zeros_addr, dst_noc_addr, (W<<1)); // TODO(AP): segment this write
             }
             noc_async_write_barrier();
+            nch_dst ++;
         } // h<paddedH
-        nch += H;
     } // nc
 }
 

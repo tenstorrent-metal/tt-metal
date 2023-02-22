@@ -36,7 +36,9 @@ Tensor pad_h_rm(const Tensor &a, int paddedH) {
     int N = ashape[0], C = ashape[1], H = ashape[2], W = ashape[3];
 
     auto bshape = ashape;
-    bshape[2] = round_up_to_mul32(a.shape()[2]); // pad H up to a multiple of 32
+    bshape[2] = paddedH; //round_up_to_mul32(a.shape()[2]);
+
+    TT_ASSERT(a.layout() == tt::ll_buda::Layout::ROW_MAJOR);
 
     ll_buda::Tensor output = ll_buda::Tensor(bshape, a.dtype(), tt::ll_buda::Layout::ROW_MAJOR, device);
     ll_buda::DramBuffer *dst_dram_buffer = output.buffer();
