@@ -17,6 +17,7 @@ LL_BUDA_SRCS = \
 	ll_buda/op_library/reduce/reduce_op.cpp \
 	ll_buda/op_library/bcast/bcast_op.cpp \
 	ll_buda/op_library/bmm/bmm_op.cpp \
+	ll_buda/op_library/tilize/tilize_op.cpp \
 	ll_buda/op_library/untilize/untilize_op.cpp \
 	ll_buda/tensor/tensor.cpp \
 	ll_buda/ll_buda.cpp \

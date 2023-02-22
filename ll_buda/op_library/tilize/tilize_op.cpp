@@ -5,7 +5,7 @@
 #include "ll_buda/host_api.hpp"
 #include "constants.hpp"
 
-namespace untilize {
+namespace tilize {
 // FIXME:copy pasted the args here from the kernel file,  we could refactor the HLK file
 struct hlk_args_t {
     int32_t per_core_block_cnt; // Number of blocks of size 1xN tiles (1 rows and N cols)
@@ -19,14 +19,14 @@ namespace tt {
 
 namespace ll_buda {
 
-Tensor untilize(const Tensor &a) {
+Tensor tilize(const Tensor &a) {
     ll_buda::Program *program = new ll_buda::Program();
 
     tt_xy_pair core = {0, 0};
 
     // TODO: Build some sort of dispatcher based on location of op operands
-    TT_ASSERT(not a.on_host(), "Operand to untilize needs to be on device!");
-    TT_ASSERT(a.buffer() != nullptr, "Operand to untilize needs to be allocated in a buffer on device!");
+    TT_ASSERT(not a.on_host(), "Operand to tilize needs to be on device!");
+    TT_ASSERT(a.buffer() != nullptr, "Operand to tilize needs to be allocated in a buffer on device!");
 
     uint32_t single_tile_size = 2 * TILE_HW;
     
@@ -38,13 +38,12 @@ Tensor untilize(const Tensor &a) {
     uint32_t num_sticks = a.shape()[1] * a.shape()[2];
     uint32_t stick_size = a.shape()[3] * 2; // Assuming bfloat16 dataformat
 
-
     std::cout << "NUM STICKS: " << num_sticks << ", STICK SIZE: " << stick_size << std::endl;
     auto dram_src0_noc_xy = src0_dram_buffer->noc_coordinates(a.device());
 
     // This should allocate a DRAM buffer on the device
     ll_buda::Device *device = a.device();
-    ll_buda::Tensor output = ll_buda::Tensor(a.shape(), a.dtype(), tt::ll_buda::Layout::ROW_MAJOR, device);
+    ll_buda::Tensor output = ll_buda::Tensor(a.shape(), a.dtype(), tt::ll_buda::Layout::TILE, device);
 
     ll_buda::DramBuffer *dst_dram_buffer = output.buffer();
     TT_ASSERT(dst_dram_buffer != nullptr, "Output buffer should be allocated on device!");
@@ -76,18 +75,18 @@ Tensor untilize(const Tensor &a) {
         DataFormat::Float16_b
     );
 
-    // Untilized reader
+    // Tilized reader
     ll_buda::DataMovementKernel *unary_reader_kernel = ll_buda::CreateDataMovementKernel(
         program,
-        "kernels/dataflow/reader_unary_8bank.cpp",
+        "kernels/dataflow/reader_unary_stick_layout_8bank.cpp",
         core,
         ll_buda::DataMovementProcessor::RISCV_1,
         ll_buda::NOC::RISCV_1_default);
     
-    // Untilized writer
+    // Tilized writer
     ll_buda::DataMovementKernel *unary_writer_kernel = ll_buda::CreateDataMovementKernel(
         program,
-        "kernels/dataflow/writer_unary_stick_layout_8bank.cpp",
+        "kernels/dataflow/writer_unary_8bank.cpp",
         core,
         ll_buda::DataMovementProcessor::RISCV_0,
         ll_buda::NOC::RISCV_0_default);
@@ -99,17 +98,17 @@ Tensor untilize(const Tensor &a) {
     //     ll_buda::DataMovementProcessor::RISCV_0,
     //     ll_buda::NOC::RISCV_0_default);
 
-    void *hlk_args = new untilize::hlk_args_t{
+    void *hlk_args = new tilize::hlk_args_t{
         .per_core_block_cnt = int32_t(num_sticks / 32),
         .per_core_block_tile_cnt = int32_t(a.shape()[3] / 32)
     };
-    ll_buda::ComputeKernelArgs *eltwise_unary_args = ll_buda::InitializeCompileTimeComputeKernelArgs(core, hlk_args, sizeof(untilize::hlk_args_t));
+    ll_buda::ComputeKernelArgs *eltwise_unary_args = ll_buda::InitializeCompileTimeComputeKernelArgs(core, hlk_args, sizeof(tilize::hlk_args_t));
 
     bool fp32_dest_acc_en = false;
     bool math_approx_mode = false;
-    auto untilize_kernel = ll_buda::CreateComputeKernel(
+    auto tilize_kernel = ll_buda::CreateComputeKernel(
         program,
-        "kernels/compute/untilize.cpp",
+        "kernels/compute/tilize.cpp",
         core,
         eltwise_unary_args,
         MathFidelity::HiFi4,
@@ -133,9 +132,9 @@ Tensor untilize(const Tensor &a) {
         unary_reader_kernel,
         core,
         {src0_dram_buffer->address(),
-        uint32_t(dram_src0_noc_xy.x),
-        uint32_t(dram_src0_noc_xy.y),
-        uint32_t(num_tiles) }
+        uint32_t(num_sticks),
+        uint32_t(stick_size),
+        uint32_t(log2(stick_size)) }
     );
 
     ll_buda::WriteRuntimeArgsToDevice(
@@ -143,9 +142,9 @@ Tensor untilize(const Tensor &a) {
         unary_writer_kernel,
         core,
         {dst_dram_buffer->address(),
-        uint32_t(num_sticks),
-        uint32_t(stick_size),
-        uint32_t(log2(stick_size))}
+        (uint32_t) dram_dst_noc_xy.x,
+        (uint32_t) dram_dst_noc_xy.y,
+        (uint32_t) (a.shape()[0] * a.shape()[1] * a.shape()[2] * a.shape()[3] / TILE_HW)}
     );
 
     // ll_buda::WriteRuntimeArgsToDevice(
