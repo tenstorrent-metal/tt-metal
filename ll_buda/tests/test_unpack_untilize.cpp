@@ -17,7 +17,6 @@ namespace unary_datacopy {
 //#include "hlks/eltwise_copy.cpp"
 // FIXME:copy pasted the args here from the kernel file,  we could refactor the HLK file
 struct hlk_args_t {
-    int32_t per_core_tile_cnt; // Total number of tiles produced at the output per core
     int32_t per_core_block_cnt; // Number of blocks of size 1xN tiles (1 rows and N cols)
     int32_t per_core_block_tile_cnt; // Block tile count = (1xN)
 };
@@ -156,7 +155,6 @@ int main(int argc, char **argv) {
             ll_buda::NOC::RISCV_0_default);
 
         void *hlk_args = new unary_datacopy::hlk_args_t{
-            .per_core_tile_cnt = (int) num_tiles,
             .per_core_block_cnt = 1,
             .per_core_block_tile_cnt = (int) num_tiles_c
         };
