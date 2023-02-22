@@ -17,11 +17,9 @@ namespace tt {
 
 namespace ll_buda {
 
-Tensor pad_h_rm(const Tensor &a, int paddedH) {
+Tensor transpose_hc_rm(const Tensor &a) {
 
-    TT_ASSERT(a.shape()[2] <= paddedH);
-    TT_ASSERT(a.shape()[3] % 32 == 0 && "tensor shape.W must be a multiple of 32 in pad_h_rm");
-    TT_ASSERT(a.shape()[3] <= 16*1024 && "pad_h_rm kernel doesn't support W>=16k elems yet.");
+    TT_ASSERT(a.shape()[3] <= 16*1024 && "transpose_hc_rm kernel doesn't support W>=16k elems yet.");
     ll_buda::Device *device = a.device();
     ll_buda::Program *program = new ll_buda::Program();
     tt_xy_pair core = {0, 0};
@@ -30,14 +28,14 @@ Tensor pad_h_rm(const Tensor &a, int paddedH) {
     TT_ASSERT(not a.on_host(), "Operand to eltwise unary needs to be on device!");
     TT_ASSERT(a.buffer() != nullptr, "Operand to eltwise unary needs to be allocated in a buffer on device!");
 
-
     uint32_t single_tile_size = 2 * TILE_HW;
     ll_buda::DramBuffer *src0_dram_buffer = a.buffer();
     auto ashape = a.shape();
     int N = ashape[0], C = ashape[1], H = ashape[2], W = ashape[3];
 
     auto bshape = ashape;
-    bshape[2] = paddedH; //round_up_to_mul32(a.shape()[2]);
+    bshape[1] = ashape[2];
+    bshape[2] = ashape[1];
 
     TT_ASSERT(a.layout() == tt::ll_buda::Layout::ROW_MAJOR);
 
@@ -62,7 +60,7 @@ Tensor pad_h_rm(const Tensor &a, int paddedH) {
         DataFormat::Float16_b);
 
     ll_buda::DataMovementKernel *binary_reader_kernel = ll_buda::CreateDataMovementKernel(
-        program, "kernels/dataflow/pad_h_rm_8bank.cpp",
+        program, "kernels/dataflow/transpose_hc_rm_8bank.cpp",
         core, ll_buda::DataMovementProcessor::RISCV_1, ll_buda::NOC::RISCV_1_default);
     
     ll_buda::DataMovementKernel *unary_writer_kernel = ll_buda::CreateDataMovementKernel(
@@ -88,10 +86,12 @@ Tensor pad_h_rm(const Tensor &a, int paddedH) {
         core,
         {src0_dram_buffer->address(),
         dst_dram_buffer->address(),
-        uint32_t(N*C),
+        uint32_t(N),
+        uint32_t(C),
         uint32_t(H),
-        uint32_t(paddedH),
-        uint32_t(W)}
+        uint32_t(W),
+        uint32_t(C*H)
+        }
     );
     
     //ll_buda::WriteRuntimeArgsToDevice(device, unary_writer_kernel, core, {});

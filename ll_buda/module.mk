@@ -13,6 +13,7 @@ LL_BUDA_SRCS = \
 	ll_buda/op_library/eltwise_unary/eltwise_unary_op.cpp \
 	ll_buda/op_library/pad_h_rm/pad_h_rm_op.cpp \
 	ll_buda/op_library/transpose/transpose_op.cpp \
+	ll_buda/op_library/transpose_rm/transpose_rm_op.cpp \
 	ll_buda/op_library/reduce/reduce_op.cpp \
 	ll_buda/op_library/bcast/bcast_op.cpp \
 	ll_buda/op_library/bmm/bmm_op.cpp \
