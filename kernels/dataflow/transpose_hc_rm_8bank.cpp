@@ -1,6 +1,6 @@
 #include <cstdlib>
 #include "dataflow_api.h"
-#include "debug_print.h"
+//#include "debug_print.h"
 
 int __multiply(int n, int m) { 
     int res = 0, count = 0;
@@ -64,7 +64,7 @@ void kernel_main() {
     cb_reserve_back(cb_id_in0, 16); // in this kernel we are not pushing anything into CBs, just using the space
     uint32_t l1_tmp_addr = get_write_ptr(cb_id_in0);
 
-    DPRINT << "----- N=" << N << " C=" << C << " H=" << H << " W=" << W << ENDL();
+    //DPRINT << "----- N=" << N << " C=" << C << " H=" << H << " W=" << W << ENDL();
 
     uint32_t nch_src = 0;
     uint32_t nch_dst = 0;
@@ -73,15 +73,15 @@ void kernel_main() {
         for (uint32_t h = 0; h < H; h++) {
             for (uint32_t c = 0; c < C; c++) {
                 uint64_t src_noc_addr = get_noc_addr_rm(nch_src, 0, src_addr, 8, W);
-                DPRINT << "nch_dst=" << nch_dst << ENDL();
-                DPRINT << "nch_src=" << nch_src << ENDL();
-                DPRINT << "src_addr=" << uint32_t(src_noc_addr>>32) << "," << uint32_t(src_noc_addr&0xffffFFFF) << ENDL();
+                //DPRINT << "nch_dst=" << nch_dst << ENDL();
+                //DPRINT << "nch_src=" << nch_src << ENDL();
+                //DPRINT << "src_addr=" << uint32_t(src_noc_addr>>32) << "," << uint32_t(src_noc_addr&0xffffFFFF) << ENDL();
                 noc_async_read(src_noc_addr, l1_tmp_addr, (W<<1)); // TODO(AP): segment this read
                 noc_async_read_barrier();
 
                 uint64_t dst_noc_addr = get_noc_addr_rm(nch_dst, 0, dst_addr, 8, W);
 
-                DPRINT << "  dst_addr=" << uint32_t(dst_noc_addr>>32) << "," << uint32_t(dst_noc_addr&0xffffFFFF) << ENDL();
+                //DPRINT << "  dst_addr=" << uint32_t(dst_noc_addr>>32) << "," << uint32_t(dst_noc_addr&0xffffFFFF) << ENDL();
                 noc_async_write(l1_tmp_addr, dst_noc_addr, (W<<1)); // TODO(AP): segment this write
                 noc_async_write_barrier();
                 nch_dst ++;
