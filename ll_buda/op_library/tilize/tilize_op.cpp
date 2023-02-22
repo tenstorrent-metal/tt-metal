@@ -20,6 +20,12 @@ namespace tt {
 namespace ll_buda {
 
 Tensor tilize(const Tensor &a) {
+    if (a.layout() == Layout::TILE) {
+        std::cout << "WHAT IS GOING ON?" << std::endl;
+        return a;
+    } else {
+        TT_ASSERT(a.layout() == Layout::ROW_MAJOR, "Can only tilize row major data");
+    }
     ll_buda::Program *program = new ll_buda::Program();
 
     tt_xy_pair core = {0, 0};
@@ -29,7 +35,7 @@ Tensor tilize(const Tensor &a) {
     TT_ASSERT(a.buffer() != nullptr, "Operand to tilize needs to be allocated in a buffer on device!");
 
     uint32_t single_tile_size = 2 * TILE_HW;
-    
+
     ll_buda::DramBuffer *src0_dram_buffer = a.buffer();
 
     TT_ASSERT(a.volume() % TILE_HW == 0);
@@ -51,7 +57,8 @@ Tensor tilize(const Tensor &a) {
 
     uint32_t src0_cb_index = 0;
     uint32_t src0_cb_addr = 200 * 1024;
-    uint32_t num_input_tiles = 2;
+    uint32_t num_input_tiles = a.shape()[3] / 32;
+
     auto cb_src0 = ll_buda::CreateCircularBuffer(
         program,
         src0_cb_index,
@@ -65,6 +72,7 @@ Tensor tilize(const Tensor &a) {
     uint32_t ouput_cb_index = 16; // output operands start at index 16
     uint32_t output_cb_addr = 400 * 1024;
     uint32_t num_output_tiles = a.shape()[3] / 32;
+
     auto cb_output = ll_buda::CreateCircularBuffer(
         program,
         ouput_cb_index,
@@ -82,7 +90,7 @@ Tensor tilize(const Tensor &a) {
         core,
         ll_buda::DataMovementProcessor::RISCV_1,
         ll_buda::NOC::RISCV_1_default);
-    
+
     // Tilized writer
     ll_buda::DataMovementKernel *unary_writer_kernel = ll_buda::CreateDataMovementKernel(
         program,
@@ -126,7 +134,7 @@ Tensor tilize(const Tensor &a) {
     //                      Execute Application
     ////////////////////////////////////////////////////////////////////////////
     ll_buda::ConfigureDeviceWithProgram(device, program);
-    
+
     ll_buda::WriteRuntimeArgsToDevice(
         device,
         unary_reader_kernel,
@@ -156,7 +164,7 @@ Tensor tilize(const Tensor &a) {
     //     uint32_t(dram_dst_noc_xy.y),
     //     uint32_t(num_tiles)}
     // );
-    
+
     // assert(false);
     ll_buda::LaunchKernels(device, program);
 

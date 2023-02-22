@@ -1,10 +1,12 @@
-import numpy as np 
+import numpy as np
 
 import ll_buda_bindings.ll_buda_bindings._C as _C
 
 def run_untilize_test():
-    nt = 2
-    shape = [32, 32 * nt]
+    rt = 4
+    ct = 4
+    nt = rt * ct
+    shape = [32 * rt, 32 * ct]
     a = _C.tensor.Tensor(
         [float(i) for i in range(1024 * nt)],
         [1, 1] + shape,

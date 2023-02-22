@@ -29,7 +29,7 @@ void TensorModule(py::module &m_tensor) {
         .def(
             py::init<>(
                 [](std::vector<float> &data, const std::array<uint32_t, 4> &shape, DataFormat data_type, Layout layout) {
-                    return Tensor(data, shape, data_type, layout); 
+                    return Tensor(data, shape, data_type, layout);
                 }
             )
         )
@@ -50,8 +50,11 @@ void TensorModule(py::module &m_tensor) {
         }, "Returns the shape of the tensor")
         .def("data", [](const Tensor &self) {
             return self.data();
-        }, "Returns the data in the output tensor as a 1D vector");
-    
+        }, "Returns the data in the output tensor as a 1D vector")
+        .def("layout", [](const Tensor &self) {
+            return self.layout();
+        }, "Returns the layout of the tensor");
+
     // Tensor functions
     // eltwise binary
     m_tensor.def("reshape", &reshape);
@@ -101,7 +104,7 @@ void TensorModule(py::module &m_tensor) {
         .value("H", BcastOpDim::Enum::H)
         .value("W", BcastOpDim::Enum::W)
         .value("HW", BcastOpDim::Enum::HW);
-    
+
     // reduce enums
     py::enum_<ReduceOpMath::Enum>(m_tensor, "ReduceOpMath")
         .value("SUM", ReduceOpMath::Enum::SUM)
@@ -117,14 +120,14 @@ void TensorModule(py::module &m_tensor) {
         .value("ROW_MAJOR", Layout::ROW_MAJOR)
         .value("TILE", Layout::TILE)
         .value("CHANNELS_LAST", Layout::CHANNELS_LAST);
-    
+
     // TODO(agrebenisan): This should probably be in its own module, but here for now.
     py::enum_<Initialize>(m_tensor, "Initialize")
         .value("ZEROS", Initialize::ZEROS)
         .value("ONES",Initialize::ONES)
         .value("INCREMENT", Initialize::INCREMENT)
         .value("RANDOM", Initialize::RANDOM);
-    
+
     py::enum_<DataFormat>(m_tensor, "DataFormat")
         .value("FLOAT32", DataFormat::Float32)
         .value("BFLOAT16", DataFormat::Float16_b);
@@ -153,7 +156,7 @@ void DeviceModule(py::module &m_device) {
     m_device.def("StartDebugPrintServer", &StartDebugPrintServer);
 
     m_device.def("GetHost", &GetHost);
-    
+
     py::enum_<tt::ARCH>(m_device, "Arch")
         .value("GRAYSKULL", tt::ARCH::GRAYSKULL);
 
