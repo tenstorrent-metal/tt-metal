@@ -111,14 +111,14 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
     return mha_
 
 class TtMultiHeadAttentionModel(torch.nn.Module):
-    def __init__(self, state_dict, device):
+    def __init__(self, num_heads, encoder_idx, state_dict, device):
         super().__init__()
-        qw = pad_weight(state_dict["bert.encoder.layer.0.attention.self.query.weight"])
-        qb = pad_weight(state_dict["bert.encoder.layer.0.attention.self.query.bias"])
-        kw = pad_weight(state_dict["bert.encoder.layer.0.attention.self.key.weight"])
-        kb = pad_weight(state_dict["bert.encoder.layer.0.attention.self.key.bias"])
-        vw = pad_weight(state_dict["bert.encoder.layer.0.attention.self.value.weight"])
-        vb = pad_weight(state_dict["bert.encoder.layer.0.attention.self.value.bias"])
+        qw = pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.attention.self.query.weight"])
+        qb = pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.attention.self.query.bias"])
+        kw = pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.attention.self.key.weight"])
+        kb = pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.attention.self.key.bias"])
+        vw = pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.attention.self.value.weight"])
+        vb = pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.attention.self.value.bias"])
 
         # Hidden dim
         hidden_dim = qw.shape[-1]
@@ -133,7 +133,7 @@ class TtMultiHeadAttentionModel(torch.nn.Module):
             tilize_to_list(vb)
         ]
 
-        self.mha = mha(*parameters, hidden_dim, 2, device)
+        self.mha = mha(*parameters, hidden_dim, num_heads, device)
 
     def forward(self, activation):
         result = self.mha(activation)
@@ -154,7 +154,7 @@ class PytorchMultiHeadAttentionModel(torch.nn.Module):
 
 def run_mha_inference():
     hugging_face_reference_model = BertForQuestionAnswering.from_pretrained("prajjwal1/bert-tiny", torchscript=False)
-    tt_mha_model = TtMultiHeadAttentionModel(hugging_face_reference_model.state_dict(), device)
+    tt_mha_model = TtMultiHeadAttentionModel(2, 0, hugging_face_reference_model.state_dict(), device)
     pytorch_mha_model = PytorchMultiHeadAttentionModel(hugging_face_reference_model)
 
     # Prepare input
