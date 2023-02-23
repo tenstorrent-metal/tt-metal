@@ -8,6 +8,7 @@
 #include "ll_buda/op_library/eltwise_unary/eltwise_unary_op.hpp"
 #include "ll_buda/op_library/tilize/tilize_op.hpp"
 #include "ll_buda/op_library/untilize/untilize_op.hpp"
+#include "ll_buda/op_library/reshape/reshape_op.hpp"
 
 #include "ll_buda_bindings.hpp"
 
@@ -21,10 +22,6 @@ namespace ll_buda {
 
 extern void SetForceRecompiles(int newval);
 extern int  GetForceRecompiles();
-
-void reshape(Tensor& a, int N, int C, int H, int W) {
-    a.reshape(N, C, H, W);
-}
 
 void TensorModule(py::module &m_tensor) {
 
@@ -60,10 +57,6 @@ void TensorModule(py::module &m_tensor) {
 
     // Tensor functions
     // eltwise binary
-    m_tensor.def("reshape", &reshape);
-        //.def("reshape", [](Tensor &self, int N, int C, int H, int W) {
-        //    reshape(self, N, C, H, W);
-        //}, "Sets the shape of the tensor")
     m_tensor.def("add", &add);
     m_tensor.def("sub", &sub);
     m_tensor.def("mul", &mul);
@@ -88,7 +81,7 @@ void TensorModule(py::module &m_tensor) {
     m_tensor.def("sqrt", &sqrt);
 
     // TMs
-    // transpose
+    m_tensor.def("reshape", &reshape);
     m_tensor.def("transpose", &transpose);
     m_tensor.def("transpose_hc", &transpose_hc);
     m_tensor.def("tilize", &tilize);

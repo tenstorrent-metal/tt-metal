@@ -37,7 +37,7 @@ Tensor transpose_hc_rm(const Tensor &a) {
     bshape[1] = ashape[2];
     bshape[2] = ashape[1];
 
-    TT_ASSERT(a.layout() == tt::ll_buda::Layout::ROW_MAJOR);
+    TT_ASSERT(a.layout() == tt::ll_buda::Layout::ROW_MAJOR, "This transpose assumes that the data layout is row major!");
 
     ll_buda::Tensor output = ll_buda::Tensor(bshape, a.dtype(), tt::ll_buda::Layout::ROW_MAJOR, device);
     ll_buda::DramBuffer *dst_dram_buffer = output.buffer();
@@ -62,7 +62,7 @@ Tensor transpose_hc_rm(const Tensor &a) {
     ll_buda::DataMovementKernel *binary_reader_kernel = ll_buda::CreateDataMovementKernel(
         program, "kernels/dataflow/transpose_hc_rm_8bank.cpp",
         core, ll_buda::DataMovementProcessor::RISCV_1, ll_buda::NOC::RISCV_1_default);
-    
+
     ll_buda::DataMovementKernel *unary_writer_kernel = ll_buda::CreateDataMovementKernel(
         program, "kernels/dataflow/blank.cpp",
         core, ll_buda::DataMovementProcessor::RISCV_0, ll_buda::NOC::RISCV_0_default);
@@ -93,9 +93,9 @@ Tensor transpose_hc_rm(const Tensor &a) {
         uint32_t(C*H)
         }
     );
-    
+
     //ll_buda::WriteRuntimeArgsToDevice(device, unary_writer_kernel, core, {});
-    
+
     ll_buda::LaunchKernels(device, program);
 
     delete program;

@@ -15,8 +15,6 @@ from utility_functions import pad_activation, pad_weight, tilize_to_list, untili
 from fused_ops.linear import Linear as TtLinear
 from fused_ops.softmax import softmax
 
-from transformers.models.bert.modeling_bert import debug_state as DS
-
 def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
     assert isinstance(num_heads, int) and num_heads > 0
 
@@ -48,45 +46,15 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
             #        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
             #        x = x.view(new_x_shape)
             #        return x.permute(0, 2, 1, 3)
+
             untilized_x = _C.tensor.untilize(x)
-            if 1:
-                unt_torch = tt2torch_rm(untilized_x)
-                new_shape = (x.shape()[0], x.shape()[2], num_heads, x.shape()[3]//num_heads)
-                unt_torch = unt_torch.reshape(new_shape)
-                reshaped_unt = _C.tensor.Tensor(
-                    unt_torch.reshape(-1).tolist(),
-                    unt_torch.shape,
-                    _C.tensor.DataFormat.FLOAT32,
-                    _C.tensor.Layout.ROW_MAJOR,
-                    device
-                )
-            else:
-                #TODO(AP): this reshape doesn't work, need a re-banking reshape here
-                #_C.tensor.reshape(untilized_x, x.shape()[0], x.shape()[2], num_heads, x.shape()[3] // num_heads)
-                reshaped_unt = untilized_x
+            reshaped_unt = _C.tensor.reshape(untilized_x, x.shape()[0], x.shape()[2], num_heads, x.shape()[3] // num_heads)
 
             # N, 128, 2, 64
             transposed = _C.tensor.transpose_hc_rm(reshaped_unt)
             # N, 2, 128, 64
             retilized = _C.tensor.tilize(transposed)
             return retilized
-            """
-            host_tensor = torch.tensor(
-                reshaped_untilized_x.to(host).data(),
-            ).reshape(reshaped_untilized_x.shape())
-
-            # Doing permute on host until Andrei adds his RM transpose CH
-            permuted_tensor = host_tensor.permute(0, 2, 1, 3)
-            return _C.tensor.tilize(
-                _C.tensor.Tensor(
-                    permuted_tensor.reshape(-1).tolist(),
-                    permuted_tensor.shape,
-                    _C.tensor.DataFormat.FLOAT32,
-                    _C.tensor.Layout.ROW_MAJOR,
-                    device
-                )
-            )
-            """
 
     def unmake_attention_heads(x):
         if num_heads == 1:
@@ -103,45 +71,23 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
             untilized_x = _C.tensor.untilize(x)
             ctx = _C.tensor.transpose_hc_rm(untilized_x)
             ushape = ctx.shape()
-            new_shape = (1, ushape[0], ushape[1], ushape[2]*ushape[3])
-            host_reshaped = torch.tensor( tt2torch_rm(ctx) ).reshape( new_shape )
-            from_dev = _C.tensor.Tensor(
-                host_reshaped.reshape(-1).tolist(),
-                host_reshaped.shape,
-                _C.tensor.DataFormat.FLOAT32,
-                _C.tensor.Layout.ROW_MAJOR,
-                device
-            )
+            reshaped = _C.tensor.reshape(ctx, 1, ushape[0], ushape[1], ushape[2]*ushape[3])
             #set_FR(1)
-            retval = _C.tensor.tilize(from_dev)
+            retval = _C.tensor.tilize(reshaped)
             return retval
 
     def multiply_by_sqrt_hidden_dim(x):
-        if num_heads == 1:
-            return _C.tensor.bcast(
-                x,
-                reciprocal_of_sqrt_hidden_dim_tensor,
-                _C.tensor.BcastOpMath.MUL,
-                _C.tensor.BcastOpDim.HW
-            )
-        else:
-            # Until CHW bcast supported
-            hidden_dim = x.shape()[3] # TODO(AP): is this right?
-            host_data = x.to(host).data()
-            vals_list = [el * 1 / math.sqrt(hidden_dim/num_heads) for el in host_data]
-            return _C.tensor.Tensor(
-                vals_list,
-                x.shape(),
-                _C.tensor.DataFormat.FLOAT32,
-                _C.tensor.Layout.TILE,
-                device
-            )
+        return _C.tensor.bcast(
+            x,
+            reciprocal_of_sqrt_hidden_dim_tensor,
+            _C.tensor.BcastOpMath.MUL,
+            _C.tensor.BcastOpDim.HW
+        )
 
     def mha_(activation):
         Q = QProjection(activation)
         K = KProjection(activation)
         V = VProjection(activation)
-        #K_T = _C.tensor.transpose(K)
 
         Q_heads = make_attention_heads(Q)
         K_heads = make_attention_heads(K)
@@ -149,18 +95,18 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
         K_T_heads = _C.tensor.transpose(K_heads)
 
         qkt = _C.tensor.matmul(Q_heads, K_T_heads)
-        # Attention scores computation
-        attention_score_input = multiply_by_sqrt_hidden_dim(qkt)
 
-        N, C, H, W = attention_score_input.shape()
+        # Attention scores computation
+        N, C, H, W = qkt.shape() # Need to reshape right now since multi-C not supported for broadcast yet
         new_shape = [N, 1, C*H, W]
-        _C.tensor.reshape(attention_score_input, *new_shape)
+        _C.tensor.reshape(qkt, *new_shape)
+        attention_score_input = multiply_by_sqrt_hidden_dim(qkt)
         attention_scores = softmax(attention_score_input)
-        _C.tensor.reshape(attention_scores, N, C, H, W)
+        _C.tensor.reshape(attention_scores, N, C, H, W) # Reshape back to original shape
 
         # Apply attention to value matrix
         weighted_activation = _C.tensor.matmul(attention_scores, V_heads)
-        return unmake_attention_heads(weighted_activation)
+        return unmake_attention_heads(weighted_activation) # [N, num heads, seq len, hid size / num heads] -> [N, seq len, hid size]
 
     return mha_
 
@@ -224,8 +170,7 @@ def run_mha_inference():
     tt_out1 = untilize(torch.Tensor(tt_out.data()).reshape(*pytorch_out.shape))
 
     print_diff_argmax(pytorch_out, tt_out1)
-
-    # assert np.allclose(pytorch_out.detach().numpy(), tt_out.numpy(), 1e-5, 0.17)
+    assert np.allclose(pytorch_out.detach().numpy(), tt_out1, 1e-5, 0.17)
 
 if __name__ == "__main__":
     # Initialize the device

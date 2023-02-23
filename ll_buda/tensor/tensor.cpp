@@ -329,38 +329,37 @@ const std::array<uint32_t, 4>& Tensor::reshape(int N, int C, int H, int W) {
     int neg_idx = -1;
     for (int i = 0; i < ns.size(); i++) {
         if (ns[i] == -1) {
-            TT_ASSERT(neg_idx == -1 && "Only one -1 is allowed in Tensor::reshape");
+            TT_ASSERT(neg_idx == -1, "Only one -1 is allowed in Tensor::reshape");
             neg_idx = i;
-            continue;
+        } else {
+            TT_ASSERT(ns[i] > 0, "New shape entries can only have -1 or positive values");
         }
     }
 
     uint32_t old_volume = this->volume();
-    if (neg_idx == -1) {
-        TT_ASSERT(N*C*H*W == old_volume);
-    }
 
     switch (neg_idx) {
         case 0:
             TT_ASSERT(old_volume % C*H*W == 0);
             N = old_volume/(C*H*W);
-        break;
+            break;
         case 1:
             TT_ASSERT(old_volume % N*H*W == 0);
             C = old_volume/(N*H*W);
-        break;
+            break;
         case 2:
             TT_ASSERT(old_volume % N*C*W == 0);
             H = old_volume/(N*C*W);
             TT_ASSERT(H%32 == 0);
-        break;
+            break;
         case 3:
             TT_ASSERT(old_volume % N*C*H == 0);
             W = old_volume/(N*C*H);
             TT_ASSERT(W%32 == 0);
-        break;
-        case -1:
-        break;
+            break;
+        case -1: // In case where there is no negative value in ns
+            TT_ASSERT(N*C*H*W == old_volume);
+            break;
         default:
             TT_ASSERT(false && "Unexpected neg_idx in Tensor::reshape!");
     }
