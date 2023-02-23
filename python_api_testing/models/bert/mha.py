@@ -92,26 +92,29 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
         if num_heads == 1:
             return x
         else:
-            untilized_x = _C.tensor.untilize(x)
-            host_tensor = torch.tensor(
-                untilized_x.to(host).data(),
-            ).reshape(untilized_x.shape())
+            """
+            context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+            new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+            context_layer = context_layer.view(new_context_layer_shape)
+            debug_state["context_reshaped"] = context_layer.clone()
 
-            # Doing permute on host until Andrei adds his RM transpose CH
-            permuted_tensor = host_tensor.permute(0, 2, 1, 3)
-            permuted_tensor_on_device = _C.tensor.Tensor(
-                permuted_tensor.reshape(-1).tolist(),
-                permuted_tensor.shape,
+            outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
+            """
+            untilized_x = _C.tensor.untilize(x)
+            ctx = _C.tensor.transpose_hc_rm(untilized_x)
+            ushape = ctx.shape()
+            new_shape = (1, ushape[0], ushape[1], ushape[2]*ushape[3])
+            host_reshaped = torch.tensor( tt2torch_rm(ctx) ).reshape( new_shape )
+            from_dev = _C.tensor.Tensor(
+                host_reshaped.reshape(-1).tolist(),
+                host_reshaped.shape,
                 _C.tensor.DataFormat.FLOAT32,
                 _C.tensor.Layout.ROW_MAJOR,
                 device
             )
-            _C.tensor.reshape(
-                permuted_tensor_on_device,
-                permuted_tensor.shape[0], 1, permuted_tensor.shape[1], permuted_tensor.shape[2] * permuted_tensor.shape[3]
-            )
-            reshaped_permuted_tensor_on_device = permuted_tensor_on_device
-            return _C.tensor.tilize(reshaped_permuted_tensor_on_device)
+            #set_FR(1)
+            retval = _C.tensor.tilize(from_dev)
+            return retval
 
     def multiply_by_sqrt_hidden_dim(x):
         if num_heads == 1:
@@ -229,5 +232,6 @@ if __name__ == "__main__":
     device = _C.device.CreateDevice(_C.device.Arch.GRAYSKULL, 0)
     _C.device.InitializeDevice(device)
     host = _C.device.GetHost()
+    #set_FR(0)
     run_mha_inference()
     _C.device.CloseDevice(device)
