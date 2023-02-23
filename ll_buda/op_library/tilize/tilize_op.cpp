@@ -21,7 +21,7 @@ namespace ll_buda {
 
 Tensor tilize(const Tensor &a) {
     if (a.layout() == Layout::TILE) {
-        std::cout << "WHAT IS GOING ON?" << std::endl;
+        std::cout << "Perf warning: tilize called on already tilized tensor." << std::endl;
         return a;
     } else {
         TT_ASSERT(a.layout() == Layout::ROW_MAJOR, "Can only tilize row major data");
@@ -33,6 +33,7 @@ Tensor tilize(const Tensor &a) {
     // TODO: Build some sort of dispatcher based on location of op operands
     TT_ASSERT(not a.on_host(), "Operand to tilize needs to be on device!");
     TT_ASSERT(a.buffer() != nullptr, "Operand to tilize needs to be allocated in a buffer on device!");
+    TT_ASSERT(a.shape()[0] == 1 && "Only N=1 is supported in tilize!");
 
     uint32_t single_tile_size = 2 * TILE_HW;
 

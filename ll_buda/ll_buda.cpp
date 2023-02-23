@@ -18,13 +18,18 @@ void dumpProfilerResults(std::string name_append)
     ll_buda_profiler.dumpResults(name_append);
 }
 
-Host *GetHost() { 
-    return new Host(); 
+bool enable_force_recompiles = false;
+int force_recompiles = 0;
+void SetForceRecompiles(int newval) { enable_force_recompiles = true; force_recompiles = newval; }
+int  GetForceRecompiles() { return force_recompiles; }
+
+Host *GetHost() {
+    return new Host();
 }
 
-Device *CreateDevice(tt::ARCH arch, int pcie_slot) { 
+Device *CreateDevice(tt::ARCH arch, int pcie_slot) {
     TT_ASSERT(arch == tt::ARCH::GRAYSKULL, "Only Grayskull is supported!");
-    return new Device(arch, pcie_slot); 
+    return new Device(arch, pcie_slot);
 }
 
 bool InitializeDevice(Device *device) { return device->initialize(); }
@@ -43,7 +48,7 @@ DataMovementKernelArgs *InitializeCompileTimeDataMovementKernelArgs(const tt_xy_
 DataMovementKernelArgs *InitializeCompileTimeDataMovementKernelArgs(const CoreRange &core_range, const std::vector<uint32_t> &compile_time_args) {
     CoreBlocks core_blocks = {core_range};
     DataMovementKernelArgs *kernel_args = new DataMovementKernelArgs(core_blocks, {compile_time_args});
-    return kernel_args; 
+    return kernel_args;
 }
 
 DataMovementKernelArgs *InitializeCompileTimeDataMovementKernelArgs(const CoreBlocks &core_blocks, const std::vector<std::vector<uint32_t>> &compile_time_args_spec) {
@@ -80,7 +85,7 @@ DataMovementKernel *CreateDataMovementKernel(
 }
 
 DataMovementKernel *CreateDataMovementKernel(
-    Program *program, 
+    Program *program,
     const std::string &file_name,
     const tt_xy_pair &core,
     DataMovementProcessor processor_type,
@@ -330,7 +335,7 @@ void PopulateKernelGroupWithDataMovementKernels(Program *program, KernelGroup &k
         }
         return default_noc;
     };
-    
+
     DataMovementKernelArgs *empty_kernel_args = new DataMovementKernelArgs();
     if (kernel_group.riscv_0 == nullptr) {
         NOC riscv_0_noc = get_noc_id(kernel_group.riscv_1, NOC::RISCV_0_default);
@@ -399,7 +404,7 @@ bool CompileProgram(Device *device, Program *program, bool skip_hlkc, bool profi
     auto op_idx = 0;
     for (auto &[logical_core, kernel_group] : program->core_to_kernel_group()) {
         ValidateL1Buffers(device, program, logical_core);
-        
+
         ValidateKernelGroup(kernel_group, logical_core);
 
         // Modifies kernel_group to have blank data movement kernels if they are not present
@@ -419,9 +424,21 @@ bool CompileProgram(Device *device, Program *program, bool skip_hlkc, bool profi
 
         if (compiled_hashes.find(kernel_group_hash) != compiled_hashes.end()) {
             continue;
-        } 
-        
-        GenerateBinaries(device, &dummy_op, op_path, skip_hlkc, profile_kernel, kernel_group, logical_core);
+        }
+
+        // TODO(AP): this is a hack to speed up the debugging process
+        bool path_exists = false;
+        if (enable_force_recompiles)
+            path_exists = std::filesystem::exists(op_path);
+        if (!path_exists || force_recompiles > 0) {
+            if (enable_force_recompiles)
+                cout << "======= Compiling" << std::endl;
+            GenerateBinaries(device, &dummy_op, op_path, skip_hlkc, profile_kernel, kernel_group, logical_core);
+            force_recompiles = std::max(0, force_recompiles-1);
+        } else {
+            if (enable_force_recompiles)
+                cout << "======= Skipping compiling..." << std::endl;
+        }
         compiled_hashes.insert(kernel_group_hash);
     }
 
@@ -430,7 +447,7 @@ bool CompileProgram(Device *device, Program *program, bool skip_hlkc, bool profi
 }
 
 void ConfigureKernelGroup(const KernelGroup &kernel_group, Device *device, const tt_xy_pair &logical_core) {
-    // No need to check if kernel_group.riscv_0 and kernel_group.riscv_1 are null because compilation 
+    // No need to check if kernel_group.riscv_0 and kernel_group.riscv_1 are null because compilation
     // creates blank data movement kernels for riscs0/1 if there is no kernel on them
     if (kernel_group.compute != nullptr) {
         kernel_group.compute->configure(device, logical_core);
@@ -657,12 +674,12 @@ bool ReadFromDeviceDRAMChannel(
 }
 
 bool ReadFromDeviceDRAMChannelsInterleaved(
-    Device *device, std::vector<uint32_t> &host_buffer, uint32_t start_dram_buffer_address, 
+    Device *device, std::vector<uint32_t> &host_buffer, uint32_t start_dram_buffer_address,
     int num_bank_units, int num_entries_per_bank_unit, int num_bytes_per_entry) {
 
     /*
         Reads interleaved bank units into a host buffer vector. A bank unit is just the unit of data
-        that we store in banks round-robbin. 
+        that we store in banks round-robbin.
     */
     int dram_channel = 0;
     int dram_addr = start_dram_buffer_address;
@@ -670,7 +687,7 @@ bool ReadFromDeviceDRAMChannelsInterleaved(
     int bank_unit_size = num_entries_per_bank_unit * num_bytes_per_entry;
 
     bool pass = true;
-    for (int s = 0; s < num_bank_units; s++) {       
+    for (int s = 0; s < num_bank_units; s++) {
         std::vector<uint32_t> bank_unit;
         pass &= ll_buda::ReadFromDeviceDRAMChannel(device, dram_channel, dram_addr, bank_unit, bank_unit_size);
 
@@ -682,7 +699,7 @@ bool ReadFromDeviceDRAMChannelsInterleaved(
         dram_channel++;
         if (dram_channel == device->num_dram_banks()) {
             dram_channel = 0;
-            dram_addr += bank_unit_size; 
+            dram_addr += bank_unit_size;
         }
 
         tensor_index += num_entries_per_bank_unit;
@@ -692,9 +709,9 @@ bool ReadFromDeviceDRAMChannelsInterleaved(
 }
 
 bool WriteToDeviceDRAMChannelsInterleaved(
-    Device *device, std::vector<uint32_t> &host_buffer, uint32_t start_dram_buffer_address, 
+    Device *device, std::vector<uint32_t> &host_buffer, uint32_t start_dram_buffer_address,
     int num_bank_units, int num_entries_per_bank_unit, int num_bytes_per_entry) {
-    
+
     /*
         Writes a vector into device DRAM interleaved, where the vector is broken up into
         bank units and written to DRAM round-robbin.
@@ -704,7 +721,7 @@ bool WriteToDeviceDRAMChannelsInterleaved(
     int tensor_index = 0;
 
     bool pass = true;
-    for (int s = 0; s < num_bank_units; s++) {       
+    for (int s = 0; s < num_bank_units; s++) {
         std::vector<uint32_t> bank_unit;
         bank_unit.insert(bank_unit.end(), host_buffer.begin() + tensor_index, host_buffer.begin() + tensor_index + num_entries_per_bank_unit);
 
@@ -713,7 +730,7 @@ bool WriteToDeviceDRAMChannelsInterleaved(
         dram_channel++;
         if (dram_channel == device->num_dram_banks()) {
             dram_channel = 0;
-            dram_addr += num_entries_per_bank_unit * num_bytes_per_entry; 
+            dram_addr += num_entries_per_bank_unit * num_bytes_per_entry;
         }
 
         tensor_index += num_entries_per_bank_unit;
@@ -780,7 +797,7 @@ bool WriteToDeviceDRAMChannelsInterleavedTiles(
 }
 
 bool WriteToDeviceL1(
-    Device *device,            
+    Device *device,
     const tt_xy_pair &core,
     std::vector<uint32_t> &host_buffer,
     uint32_t buffer_address) {
@@ -792,7 +809,7 @@ bool WriteToDeviceL1(
 }
 
 bool WriteToDeviceL1(
-    Device *device,            
+    Device *device,
     const tt_xy_pair &core,
     llrt::op_info_t op_info,
     int op_idx) {

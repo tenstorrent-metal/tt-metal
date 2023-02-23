@@ -11,9 +11,11 @@ from transformers import BertTokenizer, BertForQuestionAnswering
 import numpy as np
 
 import ll_buda_bindings.ll_buda_bindings._C as _C
-from utility_functions import pad_activation, pad_weight, tilize_to_list, untilize, nearest_32
+from utility_functions import pad_activation, pad_weight, tilize_to_list, untilize, nearest_32, print_diff_argmax, tt2torch, get_FR, set_FR, tt2torch_rm
 from fused_ops.linear import Linear as TtLinear
 from fused_ops.softmax import softmax
+
+from transformers.models.bert.modeling_bert import debug_state as DS
 
 def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
     assert isinstance(num_heads, int) and num_heads > 0
@@ -41,9 +43,34 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
         if num_heads == 1:
             return x
         else:
+            # ref code from modeling_bert.py:
+            #    def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
+            #        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+            #        x = x.view(new_x_shape)
+            #        return x.permute(0, 2, 1, 3)
             untilized_x = _C.tensor.untilize(x)
-            _C.tensor.reshape(untilized_x, x.shape()[0], x.shape()[2], num_heads, x.shape()[3] // num_heads)
-            reshaped_untilized_x = untilized_x
+            if 1:
+                unt_torch = tt2torch_rm(untilized_x)
+                new_shape = (x.shape()[0], x.shape()[2], num_heads, x.shape()[3]//num_heads)
+                unt_torch = unt_torch.reshape(new_shape)
+                reshaped_unt = _C.tensor.Tensor(
+                    unt_torch.reshape(-1).tolist(),
+                    unt_torch.shape,
+                    _C.tensor.DataFormat.FLOAT32,
+                    _C.tensor.Layout.ROW_MAJOR,
+                    device
+                )
+            else:
+                #TODO(AP): this reshape doesn't work, need a re-banking reshape here
+                #_C.tensor.reshape(untilized_x, x.shape()[0], x.shape()[2], num_heads, x.shape()[3] // num_heads)
+                reshaped_unt = untilized_x
+
+            # N, 128, 2, 64
+            transposed = _C.tensor.transpose_hc_rm(reshaped_unt)
+            # N, 2, 128, 64
+            retilized = _C.tensor.tilize(transposed)
+            return retilized
+            """
             host_tensor = torch.tensor(
                 reshaped_untilized_x.to(host).data(),
             ).reshape(reshaped_untilized_x.shape())
@@ -59,6 +86,7 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
                     device
                 )
             )
+            """
 
     def unmake_attention_heads(x):
         if num_heads == 1:
@@ -88,15 +116,18 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
     def multiply_by_sqrt_hidden_dim(x):
         if num_heads == 1:
             return _C.tensor.bcast(
-                _C.tensor.matmul(Q_heads, K_T_heads),
+                x,
                 reciprocal_of_sqrt_hidden_dim_tensor,
                 _C.tensor.BcastOpMath.MUL,
                 _C.tensor.BcastOpDim.HW
             )
         else:
             # Until CHW bcast supported
+            hidden_dim = x.shape()[3] # TODO(AP): is this right?
+            host_data = x.to(host).data()
+            vals_list = [el * 1 / math.sqrt(hidden_dim/num_heads) for el in host_data]
             return _C.tensor.Tensor(
-                [el * 1 / math.sqrt(hidden_dim) for el in x.to(host).data()],
+                vals_list,
                 x.shape(),
                 _C.tensor.DataFormat.FLOAT32,
                 _C.tensor.Layout.TILE,
@@ -107,17 +138,16 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
         Q = QProjection(activation)
         K = KProjection(activation)
         V = VProjection(activation)
-        K_T = _C.tensor.transpose(K)
+        #K_T = _C.tensor.transpose(K)
 
         Q_heads = make_attention_heads(Q)
         K_heads = make_attention_heads(K)
         V_heads = make_attention_heads(V)
         K_T_heads = _C.tensor.transpose(K_heads)
 
+        qkt = _C.tensor.matmul(Q_heads, K_T_heads)
         # Attention scores computation
-        attention_score_input = multiply_by_sqrt_hidden_dim(
-            _C.tensor.matmul(Q_heads, K_T_heads),
-        )
+        attention_score_input = multiply_by_sqrt_hidden_dim(qkt)
 
         N, C, H, W = attention_score_input.shape()
         new_shape = [N, 1, C*H, W]
@@ -157,7 +187,8 @@ class TtMultiHeadAttentionModel(torch.nn.Module):
         self.mha = mha(*parameters, hidden_dim, 2, device)
 
     def forward(self, activation):
-        return self.mha(activation)
+        result = self.mha(activation)
+        return result
 
 class PytorchMultiHeadAttentionModel(torch.nn.Module):
     def __init__(self, hugging_face_reference_model):
@@ -168,7 +199,8 @@ class PytorchMultiHeadAttentionModel(torch.nn.Module):
         self.mha.eval()
 
     def forward(self, x):
-        return self.mha(x)[0]
+        result = self.mha(x)[0]
+        return result
 
 
 def run_mha_inference():
@@ -186,7 +218,9 @@ def run_mha_inference():
     tt_mha_input = _C.tensor.Tensor(tt_mha_input, mha_input.shape, _C.tensor.DataFormat.FLOAT32, _C.tensor.Layout.TILE, device)
 
     tt_out = tt_mha_model(tt_mha_input).to(host)
-    tt_out = untilize(torch.Tensor(tt_out.data()).reshape(*pytorch_out.shape))
+    tt_out1 = untilize(torch.Tensor(tt_out.data()).reshape(*pytorch_out.shape))
+
+    print_diff_argmax(pytorch_out, tt_out1)
 
     # assert np.allclose(pytorch_out.detach().numpy(), tt_out.numpy(), 1e-5, 0.17)
 

@@ -17,10 +17,10 @@ _C.device.StartDebugPrintServer(device)
 
 if __name__ == "__main__":
     torch.manual_seed(123)
-    N = 5
-    C = 2
-    H = 3
-    W = 32*5
+    N = 1
+    C = 128 # 2
+    H = 2 # 128
+    W = 64
     x = torch.randn((N,C,H,W))
 
     xt = _C.tensor.Tensor(x.reshape(-1).tolist(), [N, C, H, W], _C.tensor.DataFormat.FLOAT32, _C.tensor.Layout.ROW_MAJOR, device)
@@ -43,5 +43,3 @@ if __name__ == "__main__":
     print_diff_argmax(tt_got_back, hc_ref)
 
 _C.device.CloseDevice(device)
-
-

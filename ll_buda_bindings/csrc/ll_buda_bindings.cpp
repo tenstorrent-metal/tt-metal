@@ -19,6 +19,9 @@ namespace tt {
 
 namespace ll_buda {
 
+extern void SetForceRecompiles(int newval);
+extern int  GetForceRecompiles();
+
 void reshape(Tensor& a, int N, int C, int H, int W) {
     a.reshape(N, C, H, W);
 }
@@ -154,6 +157,9 @@ void DeviceModule(py::module &m_device) {
     m_device.def("InitializeDevice", &InitializeDevice);
     m_device.def("CloseDevice", &CloseDevice);
     m_device.def("StartDebugPrintServer", &StartDebugPrintServer);
+
+    m_device.def("SetForceRecompiles", &SetForceRecompiles);
+    m_device.def("GetForceRecompiles", &GetForceRecompiles);
 
     m_device.def("GetHost", &GetHost);
 
