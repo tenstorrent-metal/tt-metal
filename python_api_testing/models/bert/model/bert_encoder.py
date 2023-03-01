@@ -2,8 +2,8 @@ import torch
 from transformers import BertForQuestionAnswering
 
 from gpai import gpai
-from python_api_testing.models.bert.mha import TtMultiHeadAttentionModel
-from python_api_testing.models.bert.ffn import TtFeedForwardModel
+from python_api_testing.models.bert.model.mha import TtMultiHeadAttentionModel
+from python_api_testing.models.bert.model.ffn import TtFeedForwardModel
 from python_api_testing.fused_ops.layernorm import Layernorm
 from python_api_testing.fused_ops.add_and_norm import AddAndNorm
 from python_api_testing.fused_ops.linear import Linear
@@ -24,7 +24,7 @@ class TtBertEncoder(torch.nn.Module):
         # MHA layernorm part
         mha_gamma = tilize_to_list(pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.attention.output.LayerNorm.weight"]))
         mha_beta = tilize_to_list(pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.attention.output.LayerNorm.bias"]))
-        self.mha_add_and_norm = AddAndNorm(mha_gamma, mha_beta, 1e-12, 128, 128, device)
+        self.mha_add_and_norm = AddAndNorm(mha_gamma, mha_beta, 1e-12, hidden_dim, hidden_dim, device)
 
         # FFN part
         self.ffn = TtFeedForwardModel(encoder_idx, state_dict, device)
@@ -32,10 +32,16 @@ class TtBertEncoder(torch.nn.Module):
         # FFN layernorm part
         ffn_gamma = tilize_to_list(pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.output.LayerNorm.weight"]))
         ffn_beta = tilize_to_list(pad_weight(state_dict[f"bert.encoder.layer.{encoder_idx}.output.LayerNorm.bias"]))
-        self.ffn_add_and_norm = AddAndNorm(ffn_gamma, ffn_beta, 1e-12, 128, 128, device)
+        self.ffn_add_and_norm = AddAndNorm(ffn_gamma, ffn_beta, 1e-12, hidden_dim, hidden_dim, device)
 
-    def forward(self, activation):
-        mha_out = self.attention_output(self.mha(activation))
+    def forward(self, x):
+        if isinstance(x, tuple):
+            activation, attention_mask = x
+        else:
+            activation = x
+            attention_mask = None
+
+        mha_out = self.attention_output(self.mha(activation, attention_mask))
         mha_out_add_and_norm = self.mha_add_and_norm(activation, mha_out)
         ffn_out = self.ffn(mha_out_add_and_norm)
         ffn_out_add_and_norm = self.ffn_add_and_norm(mha_out_add_and_norm, ffn_out)

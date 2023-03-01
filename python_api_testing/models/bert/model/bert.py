@@ -3,10 +3,10 @@ import torch
 from transformers import BertForQuestionAnswering
 
 from gpai import gpai
-from python_api_testing.models.bert.embeddings import PytorchEmbeddings
-from python_api_testing.models.bert.mha import TtMultiHeadAttentionModel
-from python_api_testing.models.bert.ffn import TtFeedForwardModel
-from python_api_testing.models.bert.bert_encoder import TtBertEncoder
+from python_api_testing.models.bert.model.embeddings import PytorchEmbeddings
+from python_api_testing.models.bert.model.mha import TtMultiHeadAttentionModel
+from python_api_testing.models.bert.model.ffn import TtFeedForwardModel
+from python_api_testing.models.bert.model.bert_encoder import TtBertEncoder
 from python_api_testing.fused_ops.layernorm import Layernorm
 from python_api_testing.fused_ops.add_and_norm import AddAndNorm
 from python_api_testing.fused_ops.linear import Linear
@@ -28,13 +28,13 @@ class TtBertShared(torch.nn.Module):
         self.device = device
 
     @abstractmethod
-    def forward(self, x):
-        embeddings = self.embeddings(x)
+    def forward(self, input_ids, segment_ids, attention_mask=None):
+        embeddings = self.embeddings(input_ids, segment_ids)
         # Convert to ll buda tensor
         tt_embeddings = tilize_to_list(pad_activation(embeddings))
         tt_embeddings = gpai.tensor.Tensor(tt_embeddings, (embeddings.shape[0], 1, embeddings.shape[-2], embeddings.shape[-1]), gpai.tensor.DataFormat.FLOAT32,  gpai.tensor.Layout.TILE, self.device)
 
-        encoder_output = self.encoders(tt_embeddings)
+        encoder_output = self.encoders((tt_embeddings, attention_mask))
         return encoder_output
 
 class TtBertForQuestionAnswering(TtBertShared):
@@ -53,8 +53,8 @@ class TtBertForQuestionAnswering(TtBertShared):
         # QA linear
         self.qa_linear = Linear(32, hidden_size, weight, bias, device)
 
-    def forward(self, x):
-        encoder_output = super().forward(x)
+    def forward(self, input_ids, segment_ids):
+        encoder_output = super().forward(input_ids, segment_ids)
         return self.qa_linear(encoder_output)
 
 def run_bert_question_and_answering_inference():
@@ -64,14 +64,15 @@ def run_bert_question_and_answering_inference():
 
     batch = 5
     seq_len = 128
-    bert_input = torch.arange(seq_len*batch).reshape(batch, seq_len)
+    input_ids = torch.arange(seq_len*batch).reshape(batch, seq_len)
+    segment_ids = torch.arange(seq_len*batch).reshape(batch, seq_len)
 
     # tt_bert_input = tilize_to_list(pad_activation(bert_input))
 
-    pytorch_out = hugging_face_reference_model(bert_input)
+    pytorch_out = hugging_face_reference_model(input_ids, segment_ids)
     # NOTE: Passing in pytorch tensor here instead of ll buda tensor
     # since we don't yet have embedding support on device
-    tt_out = tt_bert_model(bert_input).to(host)
+    tt_out = tt_bert_model(input_ids, segment_ids).to(host)
     tt_untilized_output = untilize(torch.Tensor(tt_out.data()).reshape(batch, 1, seq_len, -1))
 
     tt_start_logits = tt_untilized_output[..., :, 0].squeeze(1)

@@ -84,7 +84,9 @@ def mha(qw, qb, kw, kb, vw, vb, hidden_dim, num_heads, device):
             gpai.tensor.BcastOpDim.HW
         )
 
-    def mha_(activation):
+    def mha_(activation, attention_mask):
+
+        assert attention_mask is None, "'attention_mask' not yet supported"
         Q = QProjection(activation)
         K = KProjection(activation)
         V = VProjection(activation)
@@ -135,8 +137,8 @@ class TtMultiHeadAttentionModel(torch.nn.Module):
 
         self.mha = mha(*parameters, hidden_dim, num_heads, device)
 
-    def forward(self, activation):
-        result = self.mha(activation)
+    def forward(self, activation, attention_mask=None):
+        result = self.mha(activation, attention_mask)
         return result
 
 class PytorchMultiHeadAttentionModel(torch.nn.Module):

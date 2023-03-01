@@ -15,8 +15,8 @@ class PytorchEmbeddings(torch.nn.Module):
         # Disable dropout
         self.eval()
 
-    def forward(self, x):
-        return self.embeddings(x)
+    def forward(self, input_ids, segment_ids):
+        return self.embeddings(input_ids, segment_ids)
 
 def run_embeddings_inference():
     return
