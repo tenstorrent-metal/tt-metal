@@ -59,13 +59,15 @@ inline void send_kernels_to_core(uint32_t kernel_src_addr, uint32_t core_x, uint
     schedule work on the chip
 */
 void kernel_main() {
-    uint32_t kernel_src_addr = get_arg_val<uint32_t>(0);
-    uint32_t kernel_dst_addr = get_arg_val<uint32_t>(1);
-    uint32_t kernel_args_src_addr = get_arg_val<uint32_t>(2);
-    uint32_t kernel_args_dst_addr = get_arg_val<uint32_t>(3);
-    uint32_t src_noc_x = get_arg_val<uint32_t>(4);
-    uint32_t src_noc_y = get_arg_val<uint32_t>(5);
-    uint32_t column = get_arg_val<uint32_t>(6);
+    uint32_t arg_idx = 0;
+    uint32_t kernel_src_addr      = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t kernel_dst_addr      = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t kernel_args_src_addr = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t kernel_args_dst_addr = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t src_noc_x            = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t src_noc_y            = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t column               = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t dispatch_addr        = get_arg_val<uint32_t>(arg_idx++);
 
     bool cached = false; // for now, but this should just be read from L1
 
@@ -89,8 +91,7 @@ void kernel_main() {
     // This specifies how many args we're going to be sending in total
     uint32_t total_num_args_to_send = 0;
     for (uint32_t i = 0; i < num_compute_cores_in_col; i++) {
-        // Starting from 7 since already went through args 0-6
-        total_num_args_to_send += get_arg_val<uint32_t>(7 + i);
+        total_num_args_to_send += get_arg_val<uint32_t>(arg_idx + i);
     }
 
     // Read kernel args from DRAM into L1. These kernel args are only used by
@@ -115,6 +116,7 @@ void kernel_main() {
     }
     noc_async_write_barrier();
 
-    // Wait for compute to fully finish... we poll a flag
-
+    // Wait for compute to fully finish... we poll a flag afterwards to make sure all the receivers
+    noc_semaphore_wait(reinterpret_cast<volatile uint32_t*>(dispatch_addr, num_compute_cores_in_col));
+    noc_semaphore_set(reinterpret_cast<volatile uint32_t*>(dispatch_addr));
 }
