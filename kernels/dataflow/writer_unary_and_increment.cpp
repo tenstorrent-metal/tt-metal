@@ -9,7 +9,7 @@ void kernel_main() {
     uint32_t dispatch_addr = get_arg_val<uint32_t>(5);
 
     // For now
-    constexpr uint32_t dispatch_row = 11;
+    constexpr uint32_t dispatch_row = get_compile_time_arg_val(0);
 
     constexpr uint32_t cb_id_out0 = 16;
 
