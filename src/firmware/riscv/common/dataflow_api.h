@@ -564,7 +564,7 @@ void noc_async_write(std::uint32_t src_local_l1_addr, std::uint64_t dst_noc_addr
  *
  * Note: there is no restriction on the number of destinations, i.e. the
  * multicast destinations can span the full chip. However, as mentioned
- * previosuly, the multicast source cannot be part of the destinations. So, the
+ * previously, the multicast source cannot be part of the destinations. So, the
  * maximum number of destinations is 119.
  *
  * Return value: None
