@@ -17,7 +17,7 @@ inline void send_kernel_args_to_core(uint32_t local_kernel_args_addr, uint32_t c
 inline void send_kernels_to_core(uint32_t kernel_src_addr, uint32_t core_x, uint32_t core_y) {
     // Send NCRISC kernel
     noc_async_write(
-        kernel_src_start,
+        kernel_src_addr,
         get_noc_addr(core_x, core_y, l1_mem::address_map::NCRISC_L1_CODE_BASE),
         l1_mem::address_map::NCRISC_L1_CODE_SIZE);
     kernel_src_addr += l1_mem::address_map::NCRISC_L1_CODE_SIZE;
@@ -25,31 +25,31 @@ inline void send_kernels_to_core(uint32_t kernel_src_addr, uint32_t core_x, uint
 
     // Send TRISC0 kernel
     noc_async_write(
-        kernel_src_start,
+        kernel_src_addr,
         get_noc_addr(core_x, core_y, l1_mem::address_map::TRISC0_BASE),
-        l1_mem::address_map::TRISC0_CODE_SIZE);
-    kernel_src_addr += l1_mem::address_map::TRISC0_CODE_SIZE;
+        l1_mem::address_map::TRISC0_SIZE);
+    kernel_src_addr += l1_mem::address_map::TRISC0_SIZE;
 
 
     // Send TRISC1 kernel
     noc_async_write(
-        kernel_src_start,
+        kernel_src_addr,
         get_noc_addr(core_x, core_y, l1_mem::address_map::TRISC1_BASE),
-        l1_mem::address_map::TRISC1_CODE_SIZE);
-    kernel_src_addr += l1_mem::address_map::TRISC1_CODE_SIZE;
+        l1_mem::address_map::TRISC1_SIZE);
+    kernel_src_addr += l1_mem::address_map::TRISC1_SIZE;
 
 
     // Send TRISC2 kernel
     noc_async_write(
-        kernel_src_start,
+        kernel_src_addr,
         get_noc_addr(core_x, core_y, l1_mem::address_map::TRISC2_BASE),
-        l1_mem::address_map::TRISC2_CODE_SIZE);
-    kernel_src_addr += l1_mem::address_map::TRISC2_CODE_SIZE;
+        l1_mem::address_map::TRISC2_SIZE);
+    kernel_src_addr += l1_mem::address_map::TRISC2_SIZE;
 
 
     // Send BRISC kernel
     noc_async_write(
-        kernel_src_start,
+        kernel_src_addr,
         get_noc_addr(core_x, core_y, l1_mem::address_map::FIRMWARE_BASE),
         l1_mem::address_map::BRISC_FIRMWARE_SIZE);
 }
@@ -71,19 +71,20 @@ void kernel_main() {
 
     bool cached = false; // for now, but this should just be read from L1
 
-    uint32_t dispatch_idx;
-    constexpr uint32_t num_compute_cores_in_col;
+    constexpr uint32_t num_compute_cores_in_col = 11;
     constexpr uint32_t hexes_size =
         l1_mem::address_map::NCRISC_L1_CODE_SIZE +
-        l1_mem::address_map::TRISC0_CODE_SIZE +
-        l1_mem::address_map::TRISC1_CODE_SIZE +
-        l1_mem::address_map::TRISC2_CODE_SIZE +
+        l1_mem::address_map::TRISC0_SIZE +
+        l1_mem::address_map::TRISC1_SIZE +
+        l1_mem::address_map::TRISC2_SIZE +
         l1_mem::address_map::BRISC_FIRMWARE_SIZE;
 
     // In one shot, read all of the kernels for the column
     if (not cached) {
-        constexpr total_hexes_size = hexes_size * num_compute_cores_in_col;
+        constexpr uint32_t total_hexes_size = hexes_size * num_compute_cores_in_col;
         uint64_t src_noc_addr = get_noc_addr(src_noc_x, src_noc_y, kernel_src_addr);
+
+        uint32_t dst_addr = 0;
         noc_async_read(src_noc_addr, dst_addr, total_hexes_size);
         noc_async_read_barrier();
     }
@@ -108,7 +109,7 @@ void kernel_main() {
     noc_async_write_barrier();
 
     // Send kernels to cores
-    uint32_t kernel_src_addr = dst_addr;
+    kernel_src_addr = kernel_dst_addr;
     #pragma unroll(num_compute_cores_in_col)
     for (uint32_t i = 0; i < num_compute_cores_in_col; i++) {
         send_kernels_to_core(kernel_src_addr, column, i);
@@ -117,6 +118,6 @@ void kernel_main() {
     noc_async_write_barrier();
 
     // Wait for compute to fully finish... we poll a flag afterwards to make sure all the receivers
-    noc_semaphore_wait(reinterpret_cast<volatile uint32_t*>(dispatch_addr, num_compute_cores_in_col));
-    noc_semaphore_set(reinterpret_cast<volatile uint32_t*>(dispatch_addr));
+    noc_semaphore_wait(reinterpret_cast<volatile uint32_t*>(dispatch_addr), num_compute_cores_in_col);
+    noc_semaphore_set(reinterpret_cast<volatile uint32_t*>(dispatch_addr), 0);
 }
