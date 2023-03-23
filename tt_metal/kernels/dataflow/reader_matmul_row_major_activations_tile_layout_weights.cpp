@@ -66,7 +66,7 @@ void kernel_main() {
     };
 
     volatile uint32_t* mbox = reinterpret_cast<volatile uint32_t*>(l1_mem::address_map::TRISC0_DEBUG_BUFFER_BASE);
-    mbox[0] = num_blocks;
+    mbox[0] = in0_partial_row_size;
 
     uint32_t row_offset = 0;
     for(uint32_t b = 0; b < num_blocks; b++) {

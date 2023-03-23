@@ -471,13 +471,15 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
 
         // in0 block info
         uint32_t in0_block_w = Wat; // TODO(agrebenisan): Make multi-block, aka this won't be true
-        uint32_t in0_partial_row_size = in0_block_w * 2;
+        uint32_t in0_partial_row_size = (in0_block_w * 32) * 2;
         uint32_t in0_num_blocks_w = Wat / in0_block_w;
         uint32_t in0_block_h_rows = Ha;
         uint32_t in0_num_subblocks = (Hat / out_subblock_h);
         uint32_t in0_block_num_tiles = out_subblock_h * in0_block_w * in0_num_subblocks;
         uint32_t in0_subblock_h = (in0_block_num_tiles / in0_num_subblocks) / in0_block_w;
         uint32_t in0_subblock_num_tiles = out_subblock_h * in0_block_w;
+
+        // TT_ASSERT(in0_block_num_tiles == (in0_block_h_rows * in0_row_size) / 2048);
 
         // num blocks
         uint32_t num_blocks = (Wat / in0_block_w);
