@@ -2,7 +2,7 @@
 
 #include "tt_metal/host_api.hpp"
 #include "common/constants.hpp"
-// #include "test/tt_metal/llrt/test_libs/debug_mailbox.hpp"
+#include "tests/tt_metal/llrt/test_libs/debug_mailbox.hpp"
 
 using namespace tt::constants;
 
@@ -426,7 +426,6 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
     tt_metal::Device *device = a.device();
     std::array<uint32_t, 4> cshape{Ba, Ca, Ha, Wb};
 
-
     tt::tt_metal::Layout out_layout;
     if (untilize_out) {
         out_layout = tt::tt_metal::Layout::ROW_MAJOR;
@@ -443,6 +442,13 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
     tt_metal::Buffer *dst_dram_buffer = output.buffer();
     TT_ASSERT(dst_dram_buffer != nullptr, "Output buffer should be allocated on device!");
 
+    // Keep for now, but need to fix when you get to multibank
+    uint32_t out_dram_addr = dst_dram_buffer->address();
+    auto out_dram_noc_xy = dst_dram_buffer->noc_coordinates();
+
+    uint32_t out_dram_noc_x = out_dram_noc_xy.x;
+    uint32_t out_dram_noc_y = out_dram_noc_xy.y;
+
     bool pass = true;
     {
         // Convert tensor dims to tile dims
@@ -451,25 +457,39 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
         uint32_t Wat = Wa / TILE_WIDTH;
         uint32_t Wbt = Wb / TILE_WIDTH;
 
-        uint32_t out_subblock_h = 4;
-        uint32_t out_subblock_w = 2;
-        uint32_t in0_block_w = Wat;
-
-        uint32_t in0_dram_addr = src0_dram_buffer->address();
-        uint32_t in1_dram_addr = src1_dram_buffer->address();
+        // out
         uint32_t out_dram_addr = dst_dram_buffer->address();
 
-        auto in0_dram_noc_xy = src0_dram_buffer->noc_coordinates();
-        auto in1_dram_noc_xy = src1_dram_buffer->noc_coordinates();
-        auto out_dram_noc_xy = dst_dram_buffer->noc_coordinates();
+        // out block info
+        uint32_t out_subblock_h = 4;
+        uint32_t out_subblock_w = 2;
+        uint32_t out_subblock_num_tiles = out_subblock_h * out_subblock_w;
 
-        // NOC coordinates
-        uint32_t in0_dram_noc_x = uint32_t(in0_dram_noc_xy.x);
-        uint32_t in0_dram_noc_y = uint32_t(in0_dram_noc_xy.y);
-        uint32_t in1_dram_noc_x = uint32_t(in1_dram_noc_xy.x);
-        uint32_t in1_dram_noc_y = uint32_t(in1_dram_noc_xy.y);
-        uint32_t out_dram_noc_x = uint32_t(out_dram_noc_xy.x);
-        uint32_t out_dram_noc_y = uint32_t(out_dram_noc_xy.y);
+        // in0
+        uint32_t in0_dram_addr = src0_dram_buffer->address();
+        uint32_t in0_row_size = Wa * 2; // some row major data needed in case we want to tilize A
+
+        // in0 block info
+        uint32_t in0_block_w = Wat; // TODO(agrebenisan): Make multi-block, aka this won't be true
+        uint32_t in0_partial_row_size = in0_block_w * 2;
+        uint32_t in0_num_blocks_w = Wat / in0_block_w;
+        uint32_t in0_block_h_rows = Ha;
+        uint32_t in0_num_subblocks = (Hat / out_subblock_h);
+        uint32_t in0_block_num_tiles = out_subblock_h * in0_block_w * in0_num_subblocks;
+        uint32_t in0_subblock_h = (in0_block_num_tiles / in0_num_subblocks) / in0_block_w;
+        uint32_t in0_subblock_num_tiles = out_subblock_h * in0_block_w;
+
+        // num blocks
+        uint32_t num_blocks = (Wat / in0_block_w);
+
+        // in1
+        uint32_t in1_dram_addr = src1_dram_buffer->address();
+
+        // in1 block info
+        uint32_t in1_num_subblocks = (Wbt / out_subblock_w);
+        uint32_t in1_block_num_tiles = out_subblock_w * in0_block_w*in1_num_subblocks;
+        uint32_t in1_block_w = out_subblock_w * in1_num_subblocks;
+        uint32_t in1_block_h = in0_block_h_rows / 32;
 
         {
             create_CBs_for_fused_matmul(
@@ -483,20 +503,6 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
                 in0_block_w,
                 out_subblock_h,
                 2); // TODO(agrebenisan): fix df num bytes
-
-            uint32_t num_blocks = (Wat / in0_block_w);
-            uint32_t in0_num_subblocks = (Hat / out_subblock_h);
-            uint32_t in0_block_num_tiles = out_subblock_h * in0_block_w * in0_num_subblocks;
-            uint32_t in0_subblock_num_tiles = out_subblock_h * in0_block_w;
-
-            uint32_t in1_num_subblocks = (Wbt / out_subblock_w);
-            uint32_t in1_block_num_tiles = out_subblock_w * in0_block_w*in1_num_subblocks;
-            uint32_t in1_per_core_w = out_subblock_w * in1_num_subblocks;
-
-            uint32_t out_subblock_num_tiles = out_subblock_h * out_subblock_w;
-            uint32_t in0_subblock_h = (in0_block_num_tiles / in0_num_subblocks) / in0_block_w;
-
-
 
             string writer_kernel;
             vector<uint32_t> writer_rt_args;
@@ -531,23 +537,23 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
                 reader_rt_args = {
                     in0_dram_addr,
                     0,
-                    in0_num_blocks_w,
 
                     in0_block_h_rows,
                     in0_block_num_tiles,
-                    in0_bank_unit_size,
 
                     in0_row_size,
                     in0_partial_row_size,
 
                     in1_dram_addr,
                     0,
-                    in1_tensor_stride_w,
-                    in1_tensor_stride_h,
+                    1,
+                    Wat,
+                    in0_block_w * Wbt,
 
                     in1_block_w,
                     in1_block_h,
                     in1_block_num_tiles,
+
                     num_blocks
                 };
             } else {
@@ -556,6 +562,7 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
 
                 };
             }
+
             auto reader = tt_metal::CreateDataMovementKernel(
                 program,
                 reader_kernel,
@@ -566,7 +573,6 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
                 writer_kernel,
                 core, DataMovementProcessor::RISCV_0, NOC::RISCV_0_default);
 
-
             vector<uint32_t> compute_kernel_args = {
                 in0_block_w,
                 in0_num_subblocks,
@@ -576,7 +582,7 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
 
                 in1_num_subblocks,
                 in1_block_num_tiles,
-                in1_per_core_w,
+                in1_block_w,
 
                 num_blocks,
 
@@ -616,7 +622,7 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
         }
 
 
-        // read_trisc_debug_mailbox(device->cluster(), 0, {1, 1}, 0);
+        read_trisc_debug_mailbox(device->cluster(), 0, {1, 1}, 0);
 
         pass &= tt_metal::LaunchKernels(device, program);
     }

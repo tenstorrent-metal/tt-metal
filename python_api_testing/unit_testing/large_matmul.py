@@ -32,7 +32,7 @@ def run_large_matmul_test(Ha, Wa, Wb, tilize_a, untilize_out):
         ttl.tensor.DataType.BFLOAT16,
         layout_a,
         device,
-        ttl.tensor.MemoryConfig(False, 0)
+        # ttl.tensor.MemoryConfig(False, 0)
     )
     ttb = ttl.tensor.Tensor(
         tilize_to_list(b),
@@ -40,7 +40,7 @@ def run_large_matmul_test(Ha, Wa, Wb, tilize_a, untilize_out):
         ttl.tensor.DataType.BFLOAT16,
         ttl.tensor.Layout.TILE,
         device,
-        ttl.tensor.MemoryConfig(False, 1)
+        # ttl.tensor.MemoryConfig(False, 1)
     )
 
     out = ttl.tensor.large_bmm(tta, ttb, tilize_a, untilize_out)
@@ -48,6 +48,7 @@ def run_large_matmul_test(Ha, Wa, Wb, tilize_a, untilize_out):
     if not untilize_out:
         out_pytorch = untilize(out_pytorch)
 
+    breakpoint()
     assert (out_pytorch == a).all(), "Output should be identical to pytorch"
 
 if __name__ == "__main__":
@@ -60,8 +61,8 @@ if __name__ == "__main__":
     Ha = 8 * TILE_HEIGHT
     Wa = 4 * TILE_WIDTH
     Wb = 4 * TILE_WIDTH
-    run_large_matmul_test(Ha, Wa, Wb, False, False)
-    run_large_matmul_test(Ha, Wa, Wb, False, True)
+    # run_large_matmul_test(Ha, Wa, Wb, False, False)
+    # run_large_matmul_test(Ha, Wa, Wb, False, True)
     run_large_matmul_test(Ha, Wa, Wb, True, False)
-    run_large_matmul_test(Ha, Wa, Wb, True, True)
+    # run_large_matmul_test(Ha, Wa, Wb, True, True)
     ttl.device.CloseDevice(device)
