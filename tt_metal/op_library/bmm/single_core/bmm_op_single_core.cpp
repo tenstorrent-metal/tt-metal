@@ -484,20 +484,19 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
                 out_subblock_h,
                 2); // TODO(agrebenisan): fix df num bytes
 
+            uint32_t num_blocks = (Wat / in0_block_w);
+            uint32_t in0_num_subblocks = (Hat / out_subblock_h);
+            uint32_t in0_block_num_tiles = out_subblock_h * in0_block_w * in0_num_subblocks;
+            uint32_t in0_subblock_num_tiles = out_subblock_h * in0_block_w;
 
-            vector<uint32_t> reader_rt_args = {
-                in0_dram_addr,
-                in0_dram_noc_x,
-                in0_dram_noc_y,
-                in1_dram_addr,
-                in1_dram_noc_x,
-                in1_dram_noc_y,
-                (Wat / in0_block_w), // num_blocks
-                Hat * in0_block_w, // input 0 block num tiles
-                Wbt * in0_block_w, // input 1 block num tiles
-                Hat * in0_block_w * single_tile_size, // input 0 block bytes
-                Wbt * in0_block_w * single_tile_size // input 1 block bytes
-            };
+            uint32_t in1_num_subblocks = (Wbt / out_subblock_w);
+            uint32_t in1_block_num_tiles = out_subblock_w * in0_block_w*in1_num_subblocks;
+            uint32_t in1_per_core_w = out_subblock_w * in1_num_subblocks;
+
+            uint32_t out_subblock_num_tiles = out_subblock_h * out_subblock_w;
+            uint32_t in0_subblock_h = (in0_block_num_tiles / in0_num_subblocks) / in0_block_w;
+
+
 
             string writer_kernel;
             vector<uint32_t> writer_rt_args;
@@ -525,9 +524,41 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
                     };
             }
 
+            string reader_kernel;
+            vector<uint32_t> reader_rt_args;
+            if (tilize_a) {
+                reader_kernel = "tt_metal/kernels/dataflow/reader_matmul_row_major_activations_tile_layout_weights.cpp";
+                reader_rt_args = {
+                    in0_dram_addr,
+                    0,
+                    in0_num_blocks_w,
+
+                    in0_block_h_rows,
+                    in0_block_num_tiles,
+                    in0_bank_unit_size,
+
+                    in0_row_size,
+                    in0_partial_row_size,
+
+                    in1_dram_addr,
+                    0,
+                    in1_tensor_stride_w,
+                    in1_tensor_stride_h,
+
+                    in1_block_w,
+                    in1_block_h,
+                    in1_block_num_tiles,
+                    num_blocks
+                };
+            } else {
+                reader_kernel = "tt_metal/kernels/dataflow/reader_matmul_tile_layout.cpp";
+                reader_rt_args = {
+
+                };
+            }
             auto reader = tt_metal::CreateDataMovementKernel(
                 program,
-                "tt_metal/kernels/dataflow/reader_matmul_blocked.cpp",
+                reader_kernel,
                 core, DataMovementProcessor::RISCV_1, NOC::RISCV_1_default);
 
             auto writer = tt_metal::CreateDataMovementKernel(
@@ -535,17 +566,6 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
                 writer_kernel,
                 core, DataMovementProcessor::RISCV_0, NOC::RISCV_0_default);
 
-            uint32_t num_blocks = (Wat / in0_block_w);
-            uint32_t in0_num_subblocks = (Hat / out_subblock_h);
-            uint32_t in0_block_num_tiles = out_subblock_h * in0_block_w * in0_num_subblocks;
-            uint32_t in0_subblock_num_tiles = out_subblock_h * in0_block_w;
-
-            uint32_t in1_num_subblocks = (Wbt / out_subblock_w);
-            uint32_t in1_block_num_tiles = out_subblock_w * in0_block_w*in1_num_subblocks;
-            uint32_t in1_per_core_w = out_subblock_w * in1_num_subblocks;
-
-            uint32_t out_subblock_num_tiles = out_subblock_h * out_subblock_w;
-            uint32_t in0_subblock_h = (in0_block_num_tiles / in0_num_subblocks) / in0_block_w;
 
             vector<uint32_t> compute_kernel_args = {
                 in0_block_w,
