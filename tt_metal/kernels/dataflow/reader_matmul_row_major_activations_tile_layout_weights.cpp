@@ -11,7 +11,7 @@ void kernel_main() {
     uint32_t in0_tensor_start_row_id            = get_arg_val<uint32_t>(1);
 
     // in0 block args
-    uint32_t in0_block_h_rows                   = get_arg_val<uint32_t>(2);
+    uint32_t in0_block_h                        = get_arg_val<uint32_t>(2);
     uint32_t in0_block_num_tiles                = get_arg_val<uint32_t>(3);
 
     // in0 row size info
@@ -66,7 +66,6 @@ void kernel_main() {
     };
 
     volatile uint32_t* mbox = reinterpret_cast<volatile uint32_t*>(l1_mem::address_map::TRISC0_DEBUG_BUFFER_BASE);
-    mbox[0] = in0_partial_row_size;
 
     uint32_t row_offset = 0;
     for(uint32_t b = 0; b < num_blocks; b++) {
@@ -80,10 +79,12 @@ void kernel_main() {
         // Read in0 row major... will have to read partial rows
         // because the input is row major, but the "block" doesn't
         // cover the full row
-        for (uint32_t h = 0; h < in0_block_h_rows / 32; h++) {
+        // int some_var = 0;
+        for (uint32_t h = 0; h < in0_block_h; h++) {
             for (uint32_t i = 0; i < 32; i++) {
                 uint64_t in0_row_noc_addr = get_noc_addr(row_bank_id, s0, row_offset);
                 noc_async_read(in0_row_noc_addr, l1_write_addr_in0, in0_partial_row_size);
+                l1_write_addr_in0 += in0_partial_row_size;
                 row_bank_id++;
             }
             noc_async_read_barrier();

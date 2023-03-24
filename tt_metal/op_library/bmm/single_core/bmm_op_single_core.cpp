@@ -474,6 +474,7 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
         uint32_t in0_partial_row_size = (in0_block_w * 32) * 2;
         uint32_t in0_num_blocks_w = Wat / in0_block_w;
         uint32_t in0_block_h_rows = Ha;
+        uint32_t in0_block_h = Hat;
         uint32_t in0_num_subblocks = (Hat / out_subblock_h);
         uint32_t in0_block_num_tiles = out_subblock_h * in0_block_w * in0_num_subblocks;
         uint32_t in0_subblock_h = (in0_block_num_tiles / in0_num_subblocks) / in0_block_w;
@@ -540,7 +541,7 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
                     in0_dram_addr,
                     0,
 
-                    in0_block_h_rows,
+                    in0_block_h,
                     in0_block_num_tiles,
 
                     in0_row_size,
@@ -549,7 +550,7 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
                     in1_dram_addr,
                     0,
                     1,
-                    Wat,
+                    Wbt,
                     in0_block_w * Wbt,
 
                     in1_block_w,
@@ -561,7 +562,27 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
             } else {
                 reader_kernel = "tt_metal/kernels/dataflow/reader_matmul_tile_layout.cpp";
                 reader_rt_args = {
+                    in0_dram_addr,
+                    0,
+                    1,
+                    Wat,
+                    in0_block_w,
 
+                    in0_block_w,
+                    in0_block_h,
+                    in0_block_num_tiles,
+
+                    in1_dram_addr,
+                    0,
+                    1,
+                    Wbt,
+                    in0_block_w * Wbt,
+
+                    in1_block_w,
+                    in1_block_h,
+                    in1_block_num_tiles,
+
+                    num_blocks
                 };
             }
 
@@ -624,9 +645,10 @@ Tensor large_bmm_single_core_(const Tensor& a, const Tensor &b, bool tilize_a, b
         }
 
 
-        read_trisc_debug_mailbox(device->cluster(), 0, {1, 1}, 0);
-
         pass &= tt_metal::LaunchKernels(device, program);
+        // for (uint32_t i = 0; i < in0_block_h_rows; i++) {
+        //     read_trisc_debug_mailbox(device->cluster(), 0, {1, 1}, 0, i);
+        // }
     }
 
     TT_ASSERT(pass);
