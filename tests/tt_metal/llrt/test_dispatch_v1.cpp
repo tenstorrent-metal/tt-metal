@@ -265,11 +265,13 @@ CopyDescriptor construct_copy_descriptor_from_dram_config(
     vector<uint64_t> notifies = {NOC_XY_ADDR(NOC_X(1), NOC_Y(1), DISPATCH_MESSAGE_ADDR)};
     vector<uint64_t> resets = {NOC_XY_ADDR(NOC_X(1), NOC_Y(1), DEVICE_DATA.TENSIX_SOFT_RESET_ADDR)};
 
-    return CopyDescriptor{copy_desc_l1_start, num_reads, reads, num_writes, writes, num_resets, num_workers, notifies, resets};
+    return CopyDescriptor{copy_desc_l1_start, num_workers, num_reads, reads, num_writes, writes, num_resets, notifies, resets};
 }
 
 vector<uint32_t> convert_copy_desc_to_flat_vec(const CopyDescriptor &copy_desc) {
     vector<uint32_t> flat_desc;
+    flat_desc.push_back(copy_desc.num_workers);
+
     flat_desc.push_back(copy_desc.num_reads);
     for (const tuple<uint64_t, uint32_t, uint32_t> read : copy_desc.reads) {
         uint64_t src_noc_addr = std::get<0>(read);
@@ -301,7 +303,6 @@ vector<uint32_t> convert_copy_desc_to_flat_vec(const CopyDescriptor &copy_desc) 
     }
 
     flat_desc.push_back(copy_desc.num_resets);
-    flat_desc.push_back(copy_desc.num_workers);
     for (uint64_t notify_noc_addr : copy_desc.notifies) {
         uint32_t notify_noc_info_part = notify_noc_addr >> 32;
         uint32_t notify_addr_part = notify_noc_addr & 0xffffffff;
@@ -348,7 +349,7 @@ void host_dispatch(tt_cluster *cluster, int chip_id, string op, tt_xy_pair dispa
     write_copy_desc_to_l1(cluster, chip_id, dispatch_core, copy_desc);
 
     // Deassert dispatch core
-    // tt_start_debug_print_server(cluster, {chip_id}, {dispatch_core});
+    tt_start_debug_print_server(cluster, {chip_id}, {dispatch_core});
 
     tt::llrt::internal_::setup_riscs_on_specified_cores(
         cluster, chip_id, tt::llrt::TensixRiscsOptions::BRISC_ONLY, {dispatch_core});

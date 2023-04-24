@@ -497,6 +497,8 @@ void cleanup_risc_on_specified_core(
 void run_riscs_on_specified_cores(
     tt_cluster *cluster, int chip_id, const TensixRiscsOptions riscs_option, const std::vector<tt_xy_pair> &cores, const std::vector<uint32_t> &hugepage_done_addrs) {
 
+    assert_reset_for_all_chips(cluster);
+
     bool write_to_huge_page = hugepage_done_addrs.size() > 0;
     if (write_to_huge_page) {
         uint32_t dispatch_done_addr = 0;

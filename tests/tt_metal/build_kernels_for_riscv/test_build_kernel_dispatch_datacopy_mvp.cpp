@@ -55,7 +55,9 @@ void compile_dispatch_kernel(std::string root_dir) {
     build_kernel_for_riscv_options.brisc_defines = brisc_defines;
 
     // generate binaries
-    generate_binary_for_risc(RISCID::BR, &build_kernel_for_riscv_options, out_dir_path, "grayskull");
+    // generate_binary_for_risc(RISCID::BR, &build_kernel_for_riscv_options, out_dir_path, "grayskull");
+    generate_binary_for_risc(RISCID::BR, &build_kernel_for_riscv_options, out_dir_path, "grayskull", 0, {}, true);
+
 }
 
 int main(int argc, char* argv[]) {

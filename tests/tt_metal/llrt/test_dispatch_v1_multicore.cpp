@@ -1,11 +1,96 @@
 #include "dispatch/dispatch_helper_functions.hpp"
 #include "llrt/tt_debug_print_server.hpp"
+#include "tt_metal/hostdevcommon/profiler_common.h"
 
-#define WORKER_MULTICAST(x) NOC_MULTICAST_ADDR(NOC_X(1), NOC_Y(1), NOC_X(1), NOC_Y(10), x)
+
+uint32_t X_START;
+uint32_t Y_START;
+uint32_t X_END;
+uint32_t Y_END;
+uint32_t NUM_CORES;
+
+uint64_t WORKER_MULTICAST(uint32_t x) {
+    return NOC_MULTICAST_ADDR(NOC_X(X_START), NOC_Y(Y_START), NOC_X(X_END), NOC_Y(Y_END), x);
+}
 
 uint32_t nearest_multiple_of_32(uint32_t addr) { return ceil(float(addr) / 32) * 32; }
 
 void assert_32B_alignment(uint32_t addr) { TT_ASSERT((addr % 32) == 0, "Address must be 32B-aligned"); }
+
+void dumpDeviceResultToFile(
+        int chip_id,
+        int core_x,
+        int core_y,
+        std::string hart_name,
+        uint64_t timestamp,
+        uint32_t timer_id,
+        bool device_new_log,
+        string fname){
+
+    std::filesystem::path output_dir = std::filesystem::path("tt_metal/tools/profiler/logs");
+    std::filesystem::path log_path = output_dir / fname;
+    std::ofstream log_file;
+    if (device_new_log)
+    {
+        log_file.open(log_path);
+        log_file << "Chip clock is at 1.2 GHz" << std::endl;
+        log_file << "PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset]" << std::endl;
+        device_new_log = false;
+    }
+    else
+    {
+        log_file.open(log_path, std::ios_base::app);
+    }
+    constexpr int DRAM_ROW = 6;
+    if (core_y > DRAM_ROW){
+       core_y = core_y - 2;
+    }
+    else{
+       core_y--;
+    }
+    core_x--;
+    log_file << chip_id << ", " << core_x << ", " << core_y << ", " << hart_name << ", ";
+    log_file << timer_id << ", ";
+    log_file << timestamp;
+    log_file << std::endl;
+    log_file.close();
+}
+void readRiscProfilerResults(
+        tt_cluster* cluster,
+        int pcie_slot,
+        const tt_xy_pair &worker_core,
+        std::string risc_name,
+        int risc_print_buffer_addr,
+        string fname){
+    vector<std::uint32_t> profile_buffer;
+    uint32_t end_index;
+    uint32_t dropped_marker_counter;
+    std::cout << "READ" << std::endl;
+    profile_buffer = tt::llrt::read_hex_vec_from_core(
+            cluster,
+            pcie_slot,
+            worker_core,
+            risc_print_buffer_addr,
+            PRINT_BUFFER_SIZE*sizeof(std::uint32_t));
+    std::cout << "DONE READ" << std::endl;
+    end_index = profile_buffer[kernel_profiler::BUFFER_END_INDEX];
+    dropped_marker_counter = profile_buffer[kernel_profiler::DROPPED_MARKER_COUNTER];
+
+    std::cout << "END INDEX: " << end_index << std::endl;
+    bool device_new_log = true;
+    for (int i = kernel_profiler::MARKER_DATA_START; i < end_index; i+=kernel_profiler::TIMER_DATA_UINT32_SIZE) {
+        dumpDeviceResultToFile(
+                pcie_slot,
+                worker_core.x,
+                worker_core.y,
+                risc_name,
+                (uint64_t(profile_buffer[i+kernel_profiler::TIMER_VAL_H]) << 32) | profile_buffer[i+kernel_profiler::TIMER_VAL_L],
+                profile_buffer[i+kernel_profiler::TIMER_ID], device_new_log, fname);
+        device_new_log = false;
+    }
+}
+
+
 
 // ________ __________    _____      _____
 // \______ \\______   \  /  _  \    /     \
@@ -254,16 +339,18 @@ CopyDescriptor construct_copy_descriptor_from_dram_config(
 
     // For this test, we are only running single-core datacopy
     uint32_t num_resets = 1;
-    uint32_t num_workers = 9;
+    uint32_t num_workers = NUM_CORES;
 
     vector<uint64_t> notifies = {WORKER_MULTICAST(DISPATCH_MESSAGE_ADDR)};
     vector<uint64_t> resets = {WORKER_MULTICAST(DEVICE_DATA.TENSIX_SOFT_RESET_ADDR)};
 
-    return CopyDescriptor{copy_desc_l1_start, num_reads, reads, num_writes, writes, num_resets, num_workers, notifies, resets};
+    return CopyDescriptor{copy_desc_l1_start, num_workers, num_reads, reads, num_writes, writes, num_resets, notifies, resets};
 }
 
 vector<uint32_t> convert_copy_desc_to_flat_vec(const CopyDescriptor &copy_desc) {
     vector<uint32_t> flat_desc;
+    flat_desc.push_back(copy_desc.num_workers);
+
     flat_desc.push_back(copy_desc.num_reads);
     for (const tuple<uint64_t, uint32_t, uint32_t> read : copy_desc.reads) {
         uint64_t src_noc_addr = std::get<0>(read);
@@ -339,7 +426,7 @@ void host_dispatch_multicore(tt_cluster *cluster, int chip_id, string op, tt_xy_
     write_copy_desc_to_l1(cluster, chip_id, dispatch_core, copy_desc);
 
     // Deassert dispatch core
-    tt_start_debug_print_server(cluster, {chip_id}, {dispatch_core});
+    // tt_start_debug_print_server(cluster, {chip_id}, {dispatch_core});
 
     std::cout << "READY TO RUN" << std::endl;
 
@@ -352,6 +439,11 @@ void host_dispatch_multicore(tt_cluster *cluster, int chip_id, string op, tt_xy_
     vector<uint32_t> hugepage_done_addrs = {dispatch_done_addr};
     tt::llrt::internal_::run_riscs_on_specified_cores(
         cluster, chip_id, tt::llrt::TensixRiscsOptions::BRISC_ONLY, {dispatch_core}, hugepage_done_addrs);
+
+    string fname = "profile_log_device_" + to_string(Y_END) + "-" + to_string(X_END) + ".csv";
+    std::cout << "WRITING TO FILE: " << fname << std::endl;
+
+    readRiscProfilerResults(cluster, 0, {1, 11}, "BRISC", PRINT_BUFFER_BR, fname);
 }
 
 bool test_dispatch_v1(tt_cluster *cluster, int chip_id, string op) {
@@ -360,7 +452,7 @@ bool test_dispatch_v1(tt_cluster *cluster, int chip_id, string op) {
         dram_buffer_size, 100, std::chrono::system_clock::now().time_since_epoch().count());
 
     cluster->write_dram_vec(src_vec, tt_target_dram{chip_id, 0, 0}, ACTIVATIONS_DRAM_SRC);
-    tt_xy_pair dispatch_core = {11, 1};
+    tt_xy_pair dispatch_core = {1, 11};
     vector<tt_xy_pair> worker_cores = {{1, 1}, {2, 1}};
     host_dispatch_multicore(cluster, chip_id, op, dispatch_core, worker_cores);
 
@@ -394,7 +486,27 @@ int main(int argc, char **argv) {
         cluster->open_device(arch, target_type, {0}, sdesc_file);
         cluster->start_device(default_params);  // use default params
         tt::llrt::utils::log_current_ai_clk(cluster);
-        test_dispatch_v1(cluster, 0, "datacopy_op_dispatch");
+
+        X_START = 1;
+        Y_START = 1; // For some reason, cannot write to core {1, 11}, so starting from y = 2 to avoid that case
+
+        uint32_t core_end_y = 11;
+        uint32_t core_end_x = 13;
+
+        for (int y = Y_START; y < core_end_y; y++) {
+            if (y == 6) continue;
+            for (int x = X_START; x < core_end_x; x++) {
+                X_END = x;
+                Y_END = y;
+                NUM_CORES = (X_END - X_START + 1) * (Y_END - Y_START + 1 - (Y_END >= 6));
+                std::cout << "NUM CORES: " << NUM_CORES << std::endl;
+                std::cout << "Y_END: " << Y_END << ", X_END: " << X_END << std::endl;
+
+                TT_ASSERT(NUM_CORES > 0);
+                test_dispatch_v1(cluster, 0, "datacopy_op_dispatch");
+            }
+        }
+
 
     } catch (const std::exception &e) {
         pass = false;
