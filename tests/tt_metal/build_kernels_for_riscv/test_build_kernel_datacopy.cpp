@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
 
     // generate binaries
     generate_binaries_params_t params = {.compute_kernel_compile_time_args = compute_kernel_args};
-    generate_binaries_all_riscs(&build_kernel_for_riscv_options, out_dir_path, "grayskull", params);
+    generate_binaries_all_riscs(&build_kernel_for_riscv_options, out_dir_path, "grayskull", params, true);
 
     return 0;
 }

@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "dataflow_api.h"
+#include "tools/profiler/kernel_profiler.hpp"
 
 void kernel_main() {
     uint32_t src_addr  = get_arg_val<uint32_t>(0);
@@ -14,6 +15,7 @@ void kernel_main() {
     uint32_t ublock_size_bytes = get_tile_size(cb_id_in0) * ublock_size_tiles;
 
     // read a ublock of tiles from src to CB, and then push the ublock to unpacker
+    kernel_profiler::mark_time(6);
     for (uint32_t i = 0; i<num_tiles; i += ublock_size_tiles) {
         uint64_t src_noc_addr = get_noc_addr(src_noc_x, src_noc_y, src_addr);
 
@@ -27,4 +29,5 @@ void kernel_main() {
         cb_push_back(cb_id_in0, ublock_size_tiles);
         src_addr += ublock_size_bytes;
     }
+    kernel_profiler::mark_time(7);
 }
