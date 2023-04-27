@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
     log_info(tt::LogBuildKernels, "Compiling OP: {} to {}", build_kernel_for_riscv_options.name, out_dir_path);
 
     std::vector<uint32_t> compute_kernel_args = {
-        2048
+        384
     };
 
     // HLK config

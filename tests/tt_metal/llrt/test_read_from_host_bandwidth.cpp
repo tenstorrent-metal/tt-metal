@@ -115,9 +115,9 @@ bool run_data_copy_multi_tile(tt_cluster* cluster, int chip_id, const tt_xy_pair
     CircularBufferConfigVec circular_buffer_config_vec = tt::llrt::create_circular_buffer_config_vector();
 
     // input CB is larger than the output CB, to test the backpressure from the output CB all the way into the input CB
-    tt::llrt::set_config_for_circular_buffer(circular_buffer_config_vec, 0, 500*1024, 8*single_tile_size, 8);
+    tt::llrt::set_config_for_circular_buffer(circular_buffer_config_vec, 0, 200*1024, 384*single_tile_size, 384);
     // CB_out size = 1 forces the serialization of packer and writer kernel, generating backpressure to math kernel, input CB and reader
-    tt::llrt::set_config_for_circular_buffer(circular_buffer_config_vec, 16, 750*1024, 1*single_tile_size, 1);
+    tt::llrt::set_config_for_circular_buffer(circular_buffer_config_vec, 16, 990*1024, 1*single_tile_size, 1);
 
     // buffer_config_vec written in one-shot
     tt::llrt::write_circular_buffer_config_vector_to_core(cluster, chip_id, core, circular_buffer_config_vec);
@@ -174,8 +174,6 @@ int main(int argc, char** argv)
         cluster->start_device(default_params); // use default params
         tt::llrt::utils::log_current_ai_clk(cluster);
 
-        // tt::llrt::print_worker_cores(cluster);
-
         string op = "datacopy_op";
         string op_path = "built_kernels/" + op;
 
@@ -194,7 +192,7 @@ int main(int argc, char** argv)
             const vector<string> ops = {op};
 
             // tt_gdb::tt_gdb(cluster, chip_id, cores, ops);
-            pass &= run_data_copy_multi_tile(cluster, chip_id, core, 2048); // must match the value in test_compile_datacopy!
+            pass &= run_data_copy_multi_tile(cluster, chip_id, core, 384); // must match the value in test_compile_datacopy!
         }
 
         cluster->close_device();
