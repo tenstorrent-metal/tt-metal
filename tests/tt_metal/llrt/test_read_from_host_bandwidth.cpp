@@ -14,87 +14,10 @@
 #include "common/bfloat16.hpp"
 #include "test_libs/tiles.hpp"
 
-#include "tt_metal/hostdevcommon/profiler_common.h"
+#include "tt_metal/tools/profiler/profiler.hpp"
 
 
 using tt::llrt::CircularBufferConfigVec;
-
-void dumpDeviceResultToFile(
-        int chip_id,
-        int core_x,
-        int core_y,
-        std::string hart_name,
-        uint64_t timestamp,
-        uint32_t timer_id,
-        bool device_new_log){
-
-    #define DEVICE_SIDE_LOG "profile_log_device.csv"
-
-    std::filesystem::path output_dir = std::filesystem::path("tt_metal/tools/profiler/logs");
-    std::filesystem::path log_path = output_dir / DEVICE_SIDE_LOG;
-    std::ofstream log_file;
-    if (device_new_log)
-    {
-        log_file.open(log_path);
-        log_file << "Chip clock is at 1.2 GHz" << std::endl;
-        log_file << "PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset]" << std::endl;
-        device_new_log = false;
-    }
-    else
-    {
-        log_file.open(log_path, std::ios_base::app);
-    }
-
-    constexpr int DRAM_ROW = 6;
-    if (core_y > DRAM_ROW){
-       core_y = core_y - 2;
-    }
-    else{
-       core_y--;
-    }
-    core_x--;
-
-    log_file << chip_id << ", " << core_x << ", " << core_y << ", " << hart_name << ", ";
-    log_file << timer_id << ", ";
-    log_file << timestamp;
-    log_file << std::endl;
-    log_file.close();
-}
-
-void readRiscProfilerResults(
-        tt_cluster* cluster,
-        int pcie_slot,
-        const tt_xy_pair &worker_core,
-        std::string risc_name,
-        int risc_print_buffer_addr){
-
-    vector<std::uint32_t> profile_buffer;
-    uint32_t end_index;
-    uint32_t dropped_marker_counter;
-
-    profile_buffer = tt::llrt::read_hex_vec_from_core(
-            cluster,
-            pcie_slot,
-            worker_core,
-            risc_print_buffer_addr,
-            PRINT_BUFFER_SIZE);
-
-    end_index = profile_buffer[kernel_profiler::BUFFER_END_INDEX];
-    TT_ASSERT (end_index < (PRINT_BUFFER_SIZE/sizeof(uint32_t)));
-
-    bool new_log = true;
-    for (int i = kernel_profiler::MARKER_DATA_START; i < end_index; i+=kernel_profiler::TIMER_DATA_UINT32_SIZE) {
-        dumpDeviceResultToFile(
-                pcie_slot,
-                worker_core.x,
-                worker_core.y,
-                risc_name,
-                (uint64_t(profile_buffer[i+kernel_profiler::TIMER_VAL_H]) << 32) | profile_buffer[i+kernel_profiler::TIMER_VAL_L],
-                profile_buffer[i+kernel_profiler::TIMER_ID],
-                new_log);
-        new_log = false;
-    }
-}
 
 bool run_data_copy_multi_tile(tt_cluster* cluster, int chip_id, const tt_xy_pair& core, int num_tiles) {
 
@@ -149,7 +72,8 @@ bool run_data_copy_multi_tile(tt_cluster* cluster, int chip_id, const tt_xy_pair
     tt::llrt::internal_::setup_riscs_on_specified_cores(cluster, chip_id, tt::llrt::TensixRiscsOptions::ALL_RISCS, {core});
     tt::llrt::internal_::run_riscs_on_specified_cores(cluster, chip_id, tt::llrt::TensixRiscsOptions::ALL_RISCS, {core});
 
-    readRiscProfilerResults(cluster, 0, core, "NCRISC", PRINT_BUFFER_NC);
+    static Profiler p = Profiler();
+    p.dumpDeviceResults(cluster, 0, {core});
 
     std::vector<std::uint32_t> dst_vec;
     cluster->read_dram_vec(dst_vec, tt_target_dram{chip_id, dram_dst_channel_id, 0}, dram_buffer_dst_addr, dram_buffer_size);
