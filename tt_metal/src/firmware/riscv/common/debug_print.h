@@ -41,6 +41,7 @@ struct ENDL { char tmp; } ATTR_PACK; // Analog of cout << std::endl - not making
 struct SETP { char p; SETP(char pa) : p(pa) {} } ATTR_PACK; // Analog of cout << std::setprecision()
 struct FIXP { char tmp; } ATTR_PACK; // Analog of cout << std::fixed
 struct HEX  { char tmp; } ATTR_PACK; // Analog of cout << std::hex
+struct EXIT { char tmp; } ATTR_PACK; // Exits with status
 struct SETW {
     char w;
     SETW(char wa, bool sticky = true) { w = wa; if (sticky) w |= 0b10000000; }
@@ -87,9 +88,11 @@ template<> uint8_t DebugPrintTypeToId<SETP>()          { return DEBUG_PRINT_TYPE
 template<> uint8_t DebugPrintTypeToId<FIXP>()          { return DEBUG_PRINT_TYPEID_FIXP; }
 template<> uint8_t DebugPrintTypeToId<HEX>()           { return DEBUG_PRINT_TYPEID_HEX; }
 template<> uint8_t DebugPrintTypeToId<F32>()           { return DEBUG_PRINT_TYPEID_FLOAT32; }
+template<> uint8_t DebugPrintTypeToId<double>()        { return DEBUG_PRINT_TYPEID_FLOAT64; }
 template<> uint8_t DebugPrintTypeToId<U32>()           { return DEBUG_PRINT_TYPEID_UINT32; }
 template<> uint8_t DebugPrintTypeToId<int>()           { return DEBUG_PRINT_TYPEID_INT32; }
 template<> uint8_t DebugPrintTypeToId<uint64_t>()      { return DEBUG_PRINT_TYPEID_UINT64; }
+template<> uint8_t DebugPrintTypeToId<EXIT>()          { return DEBUG_PRINT_TYPEID_EXIT; }
 static_assert(sizeof(int) == 4);
 
 // Specializations for const char* (string literals), typically you will not need these for other types
@@ -192,7 +195,9 @@ template DebugPrinter operator<< <const char*>(DebugPrinter dp, const char* val)
 template DebugPrinter operator<< <ENDL>(DebugPrinter, ENDL val);
 template DebugPrinter operator<< <SETW>(DebugPrinter, SETW val);
 template DebugPrinter operator<< <uint32_t>(DebugPrinter, uint32_t val);
+template DebugPrinter operator<< <uint64_t>(DebugPrinter, uint64_t val);
 template DebugPrinter operator<< <float>(DebugPrinter, float val);
+template DebugPrinter operator<< <double>(DebugPrinter, double val);
 template DebugPrinter operator<< <char>(DebugPrinter, char val);
 template DebugPrinter operator<< <RAISE>(DebugPrinter, RAISE val);
 template DebugPrinter operator<< <WAIT>(DebugPrinter, WAIT val);
@@ -204,3 +209,12 @@ template DebugPrinter operator<< <F32>(DebugPrinter, F32 val);
 template DebugPrinter operator<< <U32>(DebugPrinter, U32 val);
 
 #include "debug_print_tile.h"
+
+#define DASSERT(condition, message) \
+ if (not (condition)) { \
+    DPRINT << message << ENDL(); \
+    DPRINT << "Assertion error: (" << #condition << ") == false:  " << __FILE__ << ':' << __FUNCTION__ << ':' << __LINE__ << EXIT(); \
+    while(true); \
+ }
+
+#define DTHROW(message) DASSERT(false, message)

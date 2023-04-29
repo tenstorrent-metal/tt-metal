@@ -393,6 +393,68 @@ void cb_wait_front(std::int32_t operand, std::int32_t num_tiles) {
 }
 
 // NOC transfers
+#ifndef DPRINT_SERVER_INCLUDE
+#define DPRINT_SERVER_INCLUDE
+#include "debug_print.h"
+#endif
+
+
+void monitor_valid_address(uint64_t addr, uint32_t line, const char* func_name, bool noc_coord) {
+    /*
+        This function is used when the dataflow kernel from host has been provided
+        with a CHECK_VALID_ADDR api. It is placed in all dataflow APIs that use or
+        produce an address, and ensures that the address is valid. There are two modes
+        to this API; when noc_coord=true and when noc_coord=false. If true, this function
+        automatically pulls out the noc coordinates from the address, else it assumes
+        this is a local address where only the bottom 32 bits of addr are non-zero
+    */
+    #ifdef CHECK_VALID_ADDR
+
+    if (noc_coord) {
+
+        constexpr uint32_t noc_x_mask = []() constexpr {
+            uint32_t mask = 0;
+            for (uint32_t i = 0; i < NOC_ADDR_NODE_ID_BITS; i++) {
+                mask += 1 << i;
+            }
+            return mask;
+        }();
+
+        uint32_t noc_coord_info = addr >> 32;
+        addr &= 0xffffffff; // Gets the bottom 32 bits of addr
+
+        /*
+            See NOC_XY_ADDR in noc_parameters.h for more explanation on how noc
+            coordinates are embedded in the upper 32 bits of addr
+        */
+        uint32_t noc_x = noc_coord_info & noc_x_mask;
+        uint32_t noc_y = noc_coord_info >> NOC_ADDR_NODE_ID_BITS;
+
+        // Check that NOC coords are valid
+        if (IS_PCIE_CORE(noc_x, noc_y)) {
+            return; // No checks currently on host system memory
+        }
+
+        DASSERT(IS_TENSIX_CORE(noc_x, noc_y) or IS_DRAM_CORE(noc_x, noc_y),
+        "Invalid noc coordinates: (" << noc_x << ", " << noc_y << "): " << __FILE__ << ':' << func_name << ':' << line);
+
+        if (IS_DRAM_CORE(noc_x, noc_y)) {
+            DASSERT(addr < DRAM_SIZE,
+            "Invalid address error: " << addr << " out of bounds for DRAM size of " << DRAM_SIZE / (1024 * 1024 * 1024) << "GB: " << __FILE__ << ':' << func_name << ':' << line);
+            return;
+        }
+    }
+
+    DASSERT(addr >= UNRESERVED_BASE,
+    "Invalid address error: " << addr << " less than " << (UNRESERVED_BASE / 1024) << "KB (reserved base): " << __FILE__ << ':' << func_name << ':' << line);
+
+    DASSERT(addr < l1_mem::address_map::MAX_SIZE,
+    "Invalid address error: " << addr << " out of L1 mem bounds of " << uint32_t(l1_mem::address_map::MAX_SIZE / (1024 * 1024)) << "MB: " << __FILE__ << ':' << func_name << ':' << line);
+
+    #endif
+}
+
+#define MONITOR_VALID_ADDRESS(addr, noc_coord) monitor_valid_address(addr, __LINE__, __FUNCTION__, noc_coord)
 
 // simple APIs
 
@@ -402,6 +464,7 @@ std::uint64_t get_noc_multicast_addr(std::uint32_t noc_x_start, std::uint32_t no
         Get an encoding which contains tensix core and address you want to
         read from/write to via the noc
     */
+    MONITOR_VALID_ADDRESS(addr, false); // Don't need to get multicast address since I know multicast only applies to tensix cores
     return NOC_MULTICAST_ADDR(NOC_X(noc_x_start), NOC_Y(noc_y_start), NOC_X(noc_x_end), NOC_Y(noc_y_end), addr);
 }
 
@@ -411,7 +474,9 @@ std::uint64_t get_noc_addr(std::uint32_t noc_x, std::uint32_t noc_y, std::uint32
         Get an encoding which contains tensix core and address you want to
         write to via the noc multicast
     */
-    return NOC_XY_ADDR(NOC_X(noc_x), NOC_Y(noc_y), addr);
+    uint64_t noc_addr = NOC_XY_ADDR(NOC_X(noc_x), NOC_Y(noc_y), addr);
+    MONITOR_VALID_ADDRESS(noc_addr, true);
+    return noc_addr;
 }
 
 /*
@@ -424,7 +489,9 @@ std::uint64_t get_noc_addr_helper(std::uint32_t noc_x, std::uint32_t noc_y, std:
         Get an encoding which contains tensix core and address you want to
         write to via the noc multicast
     */
-    return NOC_XY_ADDR(NOC_X(noc_x), NOC_Y(noc_y), addr);
+    uint64_t noc_addr = NOC_XY_ADDR(NOC_X(noc_x), NOC_Y(noc_y), addr);
+    MONITOR_VALID_ADDRESS(noc_addr, true);
+    return noc_addr;
 }
 
 typedef struct {
@@ -510,7 +577,9 @@ std::uint64_t get_noc_addr(std::uint32_t addr) {
         Get an encoding which contains the address in L1 on the current core that you want to
         read from/write to via the noc
     */
-    return NOC_XY_ADDR(my_x[loading_noc], my_y[loading_noc], addr);
+    uint64_t noc_addr = NOC_XY_ADDR(my_x[loading_noc], my_y[loading_noc], addr);
+    MONITOR_VALID_ADDRESS(noc_addr, true);
+    return noc_addr;
 }
 
 /**
@@ -535,6 +604,8 @@ void noc_async_read(std::uint64_t src_noc_addr, std::uint32_t dst_local_l1_addr,
         Read requests - use static VC
         Read responses - assigned VCs dynamically
     */
+    MONITOR_VALID_ADDRESS(src_noc_addr, true);
+    MONITOR_VALID_ADDRESS(dst_local_l1_addr, false);
     ncrisc_noc_fast_read_any_len(loading_noc, NCRISC_RD_CMD_BUF,
                                         src_noc_addr,
                                         dst_local_l1_addr,
@@ -561,12 +632,16 @@ void noc_async_read(std::uint64_t src_noc_addr, std::uint32_t dst_local_l1_addr,
  */
 FORCE_INLINE
 void noc_async_write(std::uint32_t src_local_l1_addr, std::uint64_t dst_noc_addr,  std::uint32_t size) {
+        MONITOR_VALID_ADDRESS(src_local_l1_addr, false);
+        MONITOR_VALID_ADDRESS(dst_noc_addr, true);
         ncrisc_noc_fast_write_any_len(loading_noc, NCRISC_WR_REG_CMD_BUF, src_local_l1_addr, dst_noc_addr, size,
                             NOC_UNICAST_WRITE_VC, false, false, 1);
 }
 
 FORCE_INLINE
 void noc_semaphore_set_remote(std::uint32_t src_local_l1_addr, std::uint64_t dst_noc_addr) {
+        MONITOR_VALID_ADDRESS(src_local_l1_addr, false);
+        MONITOR_VALID_ADDRESS(dst_noc_addr, true);
         ncrisc_noc_fast_write_any_len(loading_noc, NCRISC_WR_REG_CMD_BUF, src_local_l1_addr, dst_noc_addr, 4 /* size in bytes */,
                             NOC_UNICAST_WRITE_VC, false, false, 1);
 }
@@ -604,6 +679,10 @@ void noc_semaphore_set_remote(std::uint32_t src_local_l1_addr, std::uint64_t dst
  */
 FORCE_INLINE
 void noc_async_write_multicast(std::uint32_t src_local_l1_addr, std::uint64_t dst_noc_addr_multicast, std::uint32_t size, std::uint32_t num_dests) {
+        MONITOR_VALID_ADDRESS(src_local_l1_addr, false);
+
+        // Can only multicast to tensix cores, only need to inspect the bottom 32 bits
+        MONITOR_VALID_ADDRESS(uint32_t(dst_noc_addr_multicast), false);
         ncrisc_noc_fast_write_any_len(loading_noc, NCRISC_WR_REG_CMD_BUF, src_local_l1_addr, dst_noc_addr_multicast, size,
                             NOC_MULTICAST_WRITE_VC, true, false, num_dests);
 }
@@ -629,6 +708,11 @@ void noc_async_write_multicast(std::uint32_t src_local_l1_addr, std::uint64_t ds
  */
 FORCE_INLINE
 void noc_semaphore_set_multicast(std::uint32_t src_local_l1_addr, std::uint64_t dst_noc_addr_multicast, std::uint32_t num_dests) {
+        MONITOR_VALID_ADDRESS(src_local_l1_addr, false);
+
+        // Can only multicast to tensix cores, only need to inspect the bottom 32 bits
+        MONITOR_VALID_ADDRESS(uint32_t(dst_noc_addr_multicast), false);
+
         ncrisc_noc_fast_write_any_len(loading_noc, NCRISC_WR_REG_CMD_BUF, src_local_l1_addr, dst_noc_addr_multicast, 4 /*size in bytes*/,
                             NOC_MULTICAST_WRITE_VC, true, false, num_dests);
 }

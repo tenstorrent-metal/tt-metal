@@ -29,8 +29,6 @@ constexpr static std::uint32_t PRINT_BUFFER_T2 = PRINT_BUFFER_T1 + PRINT_BUFFER_
 constexpr static std::uint32_t PRINT_BUFFER_BR = PRINT_BUFFER_T2 + PRINT_BUFFER_SIZE; // BRISC
 constexpr static std::uint32_t CONSTANT_REGISTER_VALUE = PRINT_BUFFER_BR + PRINT_BUFFER_SIZE + 4; // Producer/consumer sync scratch address
 
-constexpr static std::uint32_t UNRESERVED_BASE = 120 * 1024; // Start of unreserved space
-
 // Breakpoint regions
 constexpr static std::uint32_t NCRISC_BREAKPOINT = 109568;
 constexpr static std::uint32_t TRISC0_BREAKPOINT = 109572;
@@ -131,3 +129,8 @@ static constexpr TensixSoftResetOptions ALL_TENSIX_SOFT_RESET = TensixSoftResetO
 
 static constexpr TensixSoftResetOptions TENSIX_DEASSERT_SOFT_RESET_NO_STAGGER = TensixSoftResetOptions::NCRISC |
                                                                                 ALL_TRISC_SOFT_RESET;
+
+
+constexpr static std::uint32_t UNRESERVED_BASE = 120 * 1024; // Start of unreserved space
+
+constexpr static std::uint32_t DRAM_SIZE = 1024 * 1024 * 1024;

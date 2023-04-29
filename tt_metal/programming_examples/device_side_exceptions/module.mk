@@ -1,0 +1,15 @@
+DEVICE_SIDE_EXCEPTIONS_EXAMPLE_SRC = $(TT_METAL_HOME)/tt_metal/programming_examples/device_side_exceptions/device_side_exceptions.cpp
+
+DEVICE_SIDE_EXCEPTIONS_EXAMPLES_DEPS = $(PROGRAMMING_EXAMPLES_OBJDIR)/device_side_exceptions.d
+
+-include $(DEVICE_SIDE_EXCEPTIONS_EXAMPLES_DEPS)
+
+.PRECIOUS: $(PROGRAMMING_EXAMPLES_TESTDIR)/device_side_exceptions
+$(PROGRAMMING_EXAMPLES_TESTDIR)/device_side_exceptions: $(PROGRAMMING_EXAMPLES_OBJDIR)/device_side_exceptions.o $(BACKEND_LIB) $(TT_METAL_LIB) $(VERIF_LIB)
+	@mkdir -p $(@D)
+	$(CXX) $(CFLAGS) $(CXXFLAGS) $(PROGRAMMING_EXAMPLES_INCLUDES) -o $@ $^ $(LDFLAGS) $(PROGRAMMING_EXAMPLES_LDFLAGS)
+
+.PRECIOUS: $(PROGRAMMING_EXAMPLES_OBJDIR)/device_side_exceptions.o
+$(PROGRAMMING_EXAMPLES_OBJDIR)/device_side_exceptions.o: $(DEVICE_SIDE_EXCEPTIONS_EXAMPLE_SRC)
+	@mkdir -p $(@D)
+	$(CXX) $(CFLAGS) $(CXXFLAGS) $(PROGRAMMING_EXAMPLES_INCLUDES) -c -o $@ $<

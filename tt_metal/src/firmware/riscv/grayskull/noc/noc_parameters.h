@@ -242,5 +242,16 @@
    (((uint64_t)(y_end))   << (NOC_ADDR_LOCAL_BITS+NOC_ADDR_NODE_ID_BITS)) |     \
    ((uint64_t)(addr)))
 
+#define IS_DRAM_CORE(noc_x, noc_y) \
+  ((noc_y == 0 or noc_y == 6) and (noc_x == 1 or noc_x == 4 or noc_x == 7 or noc_x == 10))
+
+#define IS_PCIE_CORE(noc_x, noc_y) \
+  ((noc_x == 0 and noc_y == 4))
+
+#define IS_ARC_CPU(noc_x, noc_y) \
+  ((noc_x == 0 and noc_y == 2))
+
+#define IS_TENSIX_CORE(noc_x, noc_y) \
+  ((noc_y != 0 and noc_y != 6 and noc_x != 0))
 
 #endif

@@ -23,6 +23,8 @@ constexpr int DEBUG_PRINT_TYPEID_HEX            = 11; // std::hex
 constexpr int DEBUG_PRINT_TYPEID_INT32          = 12;
 constexpr int DEBUG_PRINT_TYPEID_TILESLICE      = 13;
 constexpr int DEBUG_PRINT_TYPEID_UINT64         = 14;
+constexpr int DEBUG_PRINT_TYPEID_EXIT           = 15;
+constexpr int DEBUG_PRINT_TYPEID_FLOAT64        = 16;
 
 // We need to set thw wpos, rpos pointers to 0 in the beginning of the kernel startup
 // Because there's no mechanism (known to me) to initialize values at fixed mem locations in kernel code,

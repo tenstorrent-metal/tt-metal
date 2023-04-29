@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <chrono>
 #include <set>
+#include <stdexcept>
 #include "llrt.hpp"
 #include "common/logger.hpp"
 
@@ -332,6 +333,12 @@ void DebugPrintServerContext::peek_flush_one_hart_nonblocking(int chip_id, const
                     stream << *reinterpret_cast<float*>(ptr);
                     unlock_stream();
                     TT_ASSERT(sz == 4);
+                case DEBUG_PRINT_TYPEID_FLOAT64:
+                    lock_stream();
+                    if (sticky_setw) stream << setw(sticky_setw);
+                    stream << *reinterpret_cast<double*>(ptr);
+                    unlock_stream();
+                    TT_ASSERT(sz == 8);
                 break;
                 case DEBUG_PRINT_TYPEID_BFLOAT16:
                     lock_stream();
@@ -383,8 +390,14 @@ void DebugPrintServerContext::peek_flush_one_hart_nonblocking(int chip_id, const
                     unlock_stream();
                     TT_ASSERT(sz == 8);
                 break;
+                case DEBUG_PRINT_TYPEID_EXIT:
+                    lock_stream();
+                    stream << endl;
+                    unlock_stream();
+                    throw std::runtime_error("Exception thrown on device.");
+                break;
                 default:
-                    TT_ASSERT("Unexpected debug print type code" && false);
+                    TT_ASSERT("Unexpected debug print type code." && false);
             }
 
             // TODO(AP): this is slow but leaving here for now for debugging the debug prints themselves
