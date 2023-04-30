@@ -190,3 +190,45 @@ For instance, the signal id could be computed as ``core_idx*5+thread_id`` to cre
 Not all types are by default supported by ``DPRINT << variable;`` syntax. However the code framework was designed with ease of extensibility in mind.
 To add a new type, on the device you'll need to add a new ID to debug_print_common.h, then add a template instantiation DebugPrintTypeToId in debug_print.h.
 On the host you'll need to modify tt_debug_print_server.cpp, look for the switch statement that parses, for instance, DEBUG_PRINT_TYPEID_FLOAT32, and add a new switch branch.
+
+*Device-side exceptions:*
+-------------------------
+Using the same kernel printf() infrastructure, we have kernel-variants of assertions and throwing exceptions. As long as you enable the debug print server and
+include debug_print.h in your kernels, as documented above, if you hit an assertion or throw an exception, the debug print server will gracefully terminate,
+along with your program. Examples of use-cases are documented in `tt_metal/programming_examples/device_side_exceptions/kernels_with_exceptions`,
+but the basic APIs are used like so:
+
+- ``DASSERT(condition, "Some exception on line " << __LINE__);``
+- ``DTHROW("Throwing exception on line " << __LINE__);``
+
+As you can see, you can use the same 'cout-style' prints as the message argument of these macros.
+
+To run some of the programming examples, run the following:
+
+.. code-block:: bash
+
+    make build programming_examples/device_side_exceptions
+    build/programming_examples/device_side_exceptions dassert_example
+    build/programming_examples/device_side_exceptions dthrow_example
+
+For running all tests, just supply the name of the file in `tt_metal/programming_examples/device_side_exceptions/kernels_with_exceptions` without the `.cpp` suffix
+as an argument to the device_side_exception executable.
+
+*Device address monitor:*
+-------------------------
+Using incorrect src and destination addresses is a problem that occurs very frequently during runtime. Be it out of bounds exceptions or corrupting reserved
+memory, initiating NOC transfers with these bad addresses can cause undefined behaviour, lead to hangs, etc. For this reason, we supplied a `define` that
+you can use to enable runtime address checking. This check is very costly, as it ensures that every address in every NOC api is valid during runtime, however
+it can be very useful for debug in which you believe you have memory corruption.
+
+For each dataflow kernel that you'd like to enable this feature, you must add the following:
+
+``kernel->add_define("CHECK_VALID_ADDR", "1");``
+
+An example of an assertion you may see from, say, trying to read out of DRAM memory bounds, is the following:
+
+
+Invalid address error: 1073741824 out of bounds for DRAM size of 1GB: /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:get_noc_addr:478
+Assertion error: (addr < DRAM_SIZE) == false:  /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:monitor_valid_address:442
+terminate called after throwing an instance of 'std::runtime_error'
+what():  Exception thrown on device.
