@@ -1,0 +1,2 @@
+Invalid address error: 1048576 out of L1 mem bounds of 1MB: /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:get_noc_addr:478
+Assertion error: (addr < l1_mem::address_map::MAX_SIZE) == false:  /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:monitor_valid_address:451

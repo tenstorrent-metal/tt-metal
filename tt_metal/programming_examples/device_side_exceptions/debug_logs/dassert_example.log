@@ -1,0 +1,2 @@
+Error message from DASSERT
+Assertion error: (false) == false:  /home/agrebenisan/tt-metal/built_kernels/dassert_example_blank/8918679418461412839/brisc/kernel.cpp:kernel_main:6

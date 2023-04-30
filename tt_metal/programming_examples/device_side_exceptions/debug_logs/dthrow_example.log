@@ -1,0 +1,2 @@
+Error message from DTHROW
+Assertion error: (false) == false:  /home/agrebenisan/tt-metal/built_kernels/dthrow_example_blank/9759731040970931406/brisc/kernel.cpp:kernel_main:6

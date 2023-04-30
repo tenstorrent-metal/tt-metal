@@ -12,6 +12,9 @@ int main(int argc, char **argv) {
     std::cout << "Running " << argv[1] << std::endl;
 
     string kernel_name = argv[1];
+
+    const char* debug_file_name = (argc > 2) ? argv[2]: nullptr;
+
     try {
         constexpr int pci_express_slot = 0;
         Device *device =
@@ -40,7 +43,8 @@ int main(int argc, char **argv) {
 
         // Need to start the server in order for us to monitor for a bad address
         tt_xy_pair debug_core = {1, 1};
-        tt_start_debug_print_server(device->cluster(), {chip_id}, {debug_core});
+        uint hart_mask = DPRINT_HART_NC | DPRINT_HART_TR0 | DPRINT_HART_TR1 | DPRINT_HART_TR2 | DPRINT_HART_BR;
+        tt_start_debug_print_server(device->cluster(), {chip_id}, {debug_core}, hart_mask, debug_file_name);
 
         pass &= LaunchKernels(device, program);
         pass &= CloseDevice(device);

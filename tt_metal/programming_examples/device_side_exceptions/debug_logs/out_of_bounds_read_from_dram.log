@@ -1,0 +1,2 @@
+Invalid address error: 1073741824 out of bounds for DRAM size of 1GB: /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:get_noc_addr:478
+Assertion error: (addr < DRAM_SIZE) == false:  /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:monitor_valid_address:442

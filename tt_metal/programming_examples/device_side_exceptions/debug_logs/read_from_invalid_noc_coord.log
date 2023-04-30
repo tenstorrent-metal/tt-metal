@@ -1,0 +1,2 @@
+Invalid noc coordinates: (0, 0): /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:get_noc_addr:478
+Assertion error: (IS_TENSIX_CORE(noc_x, noc_y) or IS_DRAM_CORE(noc_x, noc_y)) == false:  /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:monitor_valid_address:438

@@ -1,0 +1,2 @@
+Invalid address error: 0 less than 120KB (reserved base): /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:get_noc_addr:478
+Assertion error: (addr >= UNRESERVED_BASE) == false:  /home/agrebenisan/tt-metal//tt_metal/src/firmware/riscv/common/dataflow_api.h:monitor_valid_address:448
