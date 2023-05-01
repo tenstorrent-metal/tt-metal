@@ -18,9 +18,9 @@ void kernel_main() {
     kernel_profiler::mark_time(6);
     uint64_t src_noc_addr = get_noc_addr(src_noc_x, src_noc_y, src_addr);
     uint32_t l1_write_addr = get_write_ptr(cb_id_in0);
-    noc_async_read(src_noc_addr, l1_write_addr, 384 * 2048);
+    noc_async_read(src_noc_addr, l1_write_addr, 400 * 2048);
     noc_async_read_barrier();
-    cb_push_back(cb_id_in0, 384);
+    cb_push_back(cb_id_in0, 400);
 
     // for (uint32_t i = 0; i<num_tiles; i += ublock_size_tiles) {
 
