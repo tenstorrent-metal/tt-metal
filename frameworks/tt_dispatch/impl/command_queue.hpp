@@ -1,16 +1,21 @@
 #include <memory>
 #include <thread>
 
-#include "frameworks/tt_dispatch/impl/thread_safe_queue.hpp"
 #include "frameworks/tt_dispatch/impl/sysmem_cb.hpp"
+#include "frameworks/tt_dispatch/impl/thread_safe_queue.hpp"
 #include "tt_metal/common/base.hpp"
 #include "tt_metal/host_api.hpp"
 
 using namespace tt::tt_metal;
-using std::thread;
 using std::shared_ptr;
+using std::thread;
 
-enum class CommandType { ENQUEUE_READ_BUFFER, ENQUEUE_WRITE_BUFFER, ENQUEUE_LAUNCH, FLUSH, FINISH };
+// Only contains the types of commands which are enqueued onto the device
+enum class EnqueueCommandType {
+    ENQUEUE_READ_BUFFER,
+    ENQUEUE_WRITE_BUFFER,
+    ENQUEUE_LAUNCH,
+};
 
 void write_to_system_memory(shared_ptr<SystemMemoryWriter> writer, DeviceCommand& command) {
     writer->cb_reserve_back();
@@ -19,7 +24,7 @@ void write_to_system_memory(shared_ptr<SystemMemoryWriter> writer, DeviceCommand
 }
 
 class Command {
-    CommandType type;
+    EnqueueCommandType type;
 
    public:
     Command();
@@ -33,9 +38,10 @@ class EnqueueReadBufferCommand : public Command {
     shared_ptr<SystemMemoryWriter> writer;
 
    public:
-    static constexpr CommandType type = CommandType::ENQUEUE_READ_BUFFER;
+    static constexpr EnqueueCommandType type = EnqueueCommandType::ENQUEUE_READ_BUFFER;
 
-    EnqueueReadBufferCommand(Device* device, DramBuffer* buffer, shared_ptr<SystemMemoryWriter> writer): writer(writer) {
+    EnqueueReadBufferCommand(Device* device, DramBuffer* buffer, shared_ptr<SystemMemoryWriter> writer) :
+        writer(writer) {
         this->device = device;
         this->buffer = buffer;
     }
@@ -53,9 +59,10 @@ class EnqueueWriteBufferCommand : public Command {
     shared_ptr<SystemMemoryWriter> writer;
 
    public:
-    static constexpr CommandType type = CommandType::ENQUEUE_WRITE_BUFFER;
+    static constexpr EnqueueCommandType type = EnqueueCommandType::ENQUEUE_WRITE_BUFFER;
 
-    EnqueueWriteBufferCommand(Device* device, DramBuffer* buffer, shared_ptr<SystemMemoryWriter> writer): writer(writer) {
+    EnqueueWriteBufferCommand(Device* device, DramBuffer* buffer, shared_ptr<SystemMemoryWriter> writer) :
+        writer(writer) {
         this->device = device;
         this->buffer = buffer;
     }
@@ -73,9 +80,9 @@ class EnqueueLaunchCommand : public Command {
     shared_ptr<SystemMemoryWriter> writer;
 
    public:
-    static constexpr CommandType type = CommandType::ENQUEUE_LAUNCH;
+    static constexpr EnqueueCommandType type = EnqueueCommandType::ENQUEUE_LAUNCH;
 
-    EnqueueLaunchCommand(Device* device, Program* program, shared_ptr<SystemMemoryWriter> writer): writer(writer) {
+    EnqueueLaunchCommand(Device* device, Program* program, shared_ptr<SystemMemoryWriter> writer) : writer(writer) {
         this->device = device;
         this->program = program;
     }
@@ -98,7 +105,8 @@ class CommandQueue {
             }
         };
 
-        thread(worker_logic).detach();  // Detaching as we don't need to keep track of explicitly with a class attribute
+        thread(worker_logic).detach();  // Detaching as we don't need to keep track of this explicitly with a class
+                                        // attribute, and we don't want the thread to be destroyed at end of scope
 
         SystemMemoryWriter writer = SystemMemoryWriter(device);
         shared_ptr<SystemMemoryWriter> p = std::make_unique<SystemMemoryWriter>(&writer);
