@@ -1,8 +1,8 @@
-#include <future>
 #include <memory>
 #include <thread>
 
 #include "frameworks/tt_dispatch/impl/thread_safe_queue.hpp"
+#include "frameworks/tt_dispatch/impl/sysmem_cb.hpp"
 #include "tt_metal/common/base.hpp"
 #include "tt_metal/host_api.hpp"
 
@@ -33,7 +33,9 @@ class EnqueueReadBufferCommand : public Command {
         this->buffer = buffer;
     }
 
-    void handle() {}
+    void handle() {
+        DeviceCommand command;
+    }
 };
 
 class EnqueueWriteBufferCommand : public Command {
@@ -70,7 +72,7 @@ class EnqueueLaunchCommand : public Command {
 
 class CommandQueue {
    public:
-    CommandQueue() {
+    CommandQueue(Device* device) {
         auto worker_logic = [this]() {
             while (true) {       // Worker thread keeps on flushing
                 this->internal_queue.peek()
@@ -80,12 +82,18 @@ class CommandQueue {
             }
         };
 
-        thread(worker_logic).detach();
+        thread(worker_logic).detach();  // Detaching as we don't need to keep track of explicitly with a class attribute
+
+        SystemMemoryWriter writer = SystemMemoryWriter(device);
+        unique_ptr<SystemMemoryWriter> p = std::make_unique<SystemMemoryWriter>(&writer);
+        this->sysmem_writer = std::move(p);
     }
 
     ~CommandQueue() { this->finish(); }
 
    private:
+    unique_ptr<SystemMemoryWriter> sysmem_writer;
+    TSQueue<unique_ptr<Command>> internal_queue;
     void enqueue_command(Command& command, bool blocking) {
         unique_ptr<Command> p = std::make_unique<Command>(&command);
 
@@ -96,7 +104,6 @@ class CommandQueue {
         }
     }
 
-    TSQueue<unique_ptr<Command>> internal_queue;
     void enqueue_read_buffer(Device* device, DramBuffer* buffer, void* dst, bool blocking) {
         EnqueueReadBufferCommand command(device, buffer);
         this->enqueue_command(command, blocking);

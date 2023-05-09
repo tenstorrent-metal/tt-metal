@@ -7,7 +7,15 @@ using std::vector;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-template <size_t NR, size_t NW, size_t NIDR, size_t NILR, size_t NIDW, size_t NILW, bool launch>
+constexpr u32 NR = 100;
+constexpr u32 NW = 100;
+constexpr u32 NIDR = 100;
+constexpr u32 NILR = 100;
+constexpr u32 NIDW = 100;
+constexpr u32 NILW = 100;
+
+constexpr u32 SIZE = 1000;
+
 struct DeviceCommand {
    private:
     u32 read_ptr;
@@ -17,9 +25,10 @@ struct DeviceCommand {
     u32 interleaved_dram_write_ptr;
     u32 interleaved_l1_write_ptr;
     u32 launch_ptr;
-    array<u32, this->size()> desc;
 
-    constexpr u32 size() { return (NR + 1) + (NW + 1) + (NIR + 1) + (NIW + 1) + 1; }
+    constexpr u32 size() { return (NR + 1) + (NW + 1) + (NIDR + 1) + (NILR + 1) + (NIDW + 1) + (NILW + 1) + 1; }
+
+    array<u32, SIZE> desc;
 
    public:
     DeviceCommand() {
@@ -102,4 +111,6 @@ struct DeviceCommand {
     }
 
     void launch_kernels() { this->desc[this->launch_ptr] = 1; }
+
+    const array<u32, SIZE>& get_desc() const { return this->desc; }
 };
