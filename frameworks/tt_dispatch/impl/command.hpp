@@ -26,11 +26,11 @@ struct DeviceCommand {
     u32 interleaved_l1_write_ptr;
     u32 launch_ptr;
 
-    constexpr u32 size() { return (NR + 1) + (NW + 1) + (NIDR + 1) + (NILR + 1) + (NIDW + 1) + (NILW + 1) + 1; }
 
     array<u32, SIZE> desc;
 
    public:
+    static constexpr u32 size() { return (NR + 1) + (NW + 1) + (NIDR + 1) + (NILR + 1) + (NIDW + 1) + (NILW + 1) + 1; }
     DeviceCommand() {
         u32 read_section_num_entries = (NR * 4 + 1);
         u32 write_section_num_entries = (NW * 4 + 1);
