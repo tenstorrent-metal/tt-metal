@@ -8,7 +8,7 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 
 template <size_t NR, size_t NW, size_t NIDR, size_t NILR, size_t NIDW, size_t NILW, bool launch>
-struct MutableCommand {
+struct Command {
    private:
     u32 read_ptr;
     u32 write_ptr;
@@ -22,7 +22,7 @@ struct MutableCommand {
     constexpr u32 size() { return (NR + 1) + (NW + 1) + (NIR + 1) + (NIW + 1) + 1; }
 
    public:
-    MutableCommand() {
+    Command() {
         u32 read_section_num_entries = (NR * 4 + 1);
         u32 write_section_num_entries = (NW * 4 + 1);
         u32 interleaved_dram_read_num_entries = (NIDR * 5 + 1);
