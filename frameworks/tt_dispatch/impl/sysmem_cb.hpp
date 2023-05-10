@@ -1,5 +1,9 @@
 #include "frameworks/tt_dispatch/impl/command.hpp"
+// #include "tt_metal/host_api.hpp"
+#include "tt_metal/impl/device/device.hpp"
 #include "tt_metal/common/base.hpp"
+
+using namespace tt::tt_metal;
 
 struct SystemMemoryCBWriteInterface {
     uint fifo_wr_ptr;

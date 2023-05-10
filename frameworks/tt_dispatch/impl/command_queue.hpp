@@ -27,8 +27,8 @@ class Command {
     EnqueueCommandType type;
 
    public:
-    Command();
-    virtual void handle();
+    Command() {}
+    virtual void handle(){};
 };
 
 class EnqueueReadBufferCommand : public Command {
@@ -109,7 +109,7 @@ class CommandQueue {
                                         // attribute, and we don't want the thread to be destroyed at end of scope
 
         SystemMemoryWriter writer = SystemMemoryWriter(device);
-        shared_ptr<SystemMemoryWriter> p = std::make_unique<SystemMemoryWriter>(&writer);
+        shared_ptr<SystemMemoryWriter> p = std::make_shared<SystemMemoryWriter>(std::move(writer));
         this->sysmem_writer = std::move(p);
     }
 
@@ -119,7 +119,7 @@ class CommandQueue {
     shared_ptr<SystemMemoryWriter> sysmem_writer;
     TSQueue<shared_ptr<Command>> internal_queue;
     void enqueue_command(Command& command, bool blocking) {
-        shared_ptr<Command> p = std::make_unique<Command>(&command);
+        shared_ptr<Command> p = std::make_shared<Command>(std::move(command));
 
         this->internal_queue.push(std::move(p));
 
