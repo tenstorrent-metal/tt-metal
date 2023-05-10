@@ -17,10 +17,10 @@ enum class EnqueueCommandType {
     ENQUEUE_LAUNCH,
 };
 
-void write_to_system_memory(shared_ptr<SystemMemoryWriter> writer, DeviceCommand& command) {
-    writer->cb_reserve_back();
-    writer->noc_write(command);
-    writer->cb_push_back();
+void write_to_system_memory(Device* device, shared_ptr<SystemMemoryWriter> writer, DeviceCommand& command) {
+    writer->cb_reserve_back(device);
+    writer->noc_write(device, command);
+    writer->cb_push_back(device);
 }
 
 class Command {
@@ -34,42 +34,40 @@ class Command {
 class EnqueueReadBufferCommand : public Command {
    private:
     Device* device;
-    DramBuffer* buffer;
+    Buffer& buffer;
     shared_ptr<SystemMemoryWriter> writer;
 
    public:
     static constexpr EnqueueCommandType type = EnqueueCommandType::ENQUEUE_READ_BUFFER;
 
-    EnqueueReadBufferCommand(Device* device, DramBuffer* buffer, shared_ptr<SystemMemoryWriter> writer) :
-        writer(writer) {
+    EnqueueReadBufferCommand(Device* device, Buffer& buffer, shared_ptr<SystemMemoryWriter> writer) :
+        writer(writer), buffer(buffer) {
         this->device = device;
-        this->buffer = buffer;
     }
 
     void handle() {
         DeviceCommand command;
-        write_to_system_memory(this->writer, command);
+        write_to_system_memory(this->device, this->writer, command);
     }
 };
 
 class EnqueueWriteBufferCommand : public Command {
    private:
     Device* device;
-    DramBuffer* buffer;
+    Buffer& buffer;
     shared_ptr<SystemMemoryWriter> writer;
 
    public:
     static constexpr EnqueueCommandType type = EnqueueCommandType::ENQUEUE_WRITE_BUFFER;
 
-    EnqueueWriteBufferCommand(Device* device, DramBuffer* buffer, shared_ptr<SystemMemoryWriter> writer) :
-        writer(writer) {
+    EnqueueWriteBufferCommand(Device* device, Buffer& buffer, shared_ptr<SystemMemoryWriter> writer) :
+        writer(writer), buffer(buffer) {
         this->device = device;
-        this->buffer = buffer;
     }
 
     void handle() {
         DeviceCommand command;
-        write_to_system_memory(this->writer, command);
+        // write_to_system_memory(this->device, this->writer, command);
     }
 };
 
@@ -89,7 +87,7 @@ class EnqueueLaunchCommand : public Command {
 
     void handle() {
         DeviceCommand command;
-        write_to_system_memory(this->writer, command);
+        write_to_system_memory(this->device, this->writer, command);
     }
 };
 
@@ -108,7 +106,7 @@ class CommandQueue {
         thread(worker_logic).detach();  // Detaching as we don't need to keep track of this explicitly with a class
                                         // attribute, and we don't want the thread to be destroyed at end of scope
 
-        SystemMemoryWriter writer = SystemMemoryWriter(device);
+        SystemMemoryWriter writer;
         shared_ptr<SystemMemoryWriter> p = std::make_shared<SystemMemoryWriter>(std::move(writer));
         this->sysmem_writer = std::move(p);
     }
@@ -116,6 +114,7 @@ class CommandQueue {
     ~CommandQueue() { this->finish(); }
 
    private:
+    Device* device;
     shared_ptr<SystemMemoryWriter> sysmem_writer;
     TSQueue<shared_ptr<Command>> internal_queue;
     void enqueue_command(Command& command, bool blocking) {
@@ -128,12 +127,12 @@ class CommandQueue {
         }
     }
 
-    void enqueue_read_buffer(Device* device, DramBuffer* buffer, void* dst, bool blocking) {
+    void enqueue_read_buffer(Device* device, Buffer& buffer, void* dst, bool blocking) {
         EnqueueReadBufferCommand command(device, buffer, this->sysmem_writer);
         this->enqueue_command(command, blocking);
     }
 
-    void enqueue_write_buffer(Device* device, DramBuffer* buffer, void* src, bool blocking) {
+    void enqueue_write_buffer(Device* device, Buffer& buffer, void* src, bool blocking) {
         EnqueueWriteBufferCommand command(device, buffer, this->sysmem_writer);
         this->enqueue_command(command, blocking);
     }
@@ -150,18 +149,20 @@ class CommandQueue {
 
     void finish() { TT_THROW("CommandQueue.finish not yet implemented"); }
 
-    friend void EnqueueReadBuffer(Device* device, CommandQueue& cq, DramBuffer* buffer, void* dst, bool blocking);
-    friend void EnqueueWriteBuffer();
+    friend void EnqueueReadBuffer(Device* device, CommandQueue& cq, Buffer& buffer, void* dst, bool blocking);
+    friend void EnqueueWriteBuffer(Device* device, CommandQueue& cq, Buffer& buffer, void* src, bool blocking);
     friend void Launch();
     friend void Flush(CommandQueue& cq);
     friend void Finish(CommandQueue& cq);
 };
 
-void EnqueueReadBuffer(Device* device, CommandQueue& cq, DramBuffer* buffer, void* dst, bool blocking) {
+void EnqueueReadBuffer(Device* device, CommandQueue& cq, Buffer& buffer, void* dst, bool blocking) {
     cq.enqueue_read_buffer(device, buffer, dst, blocking);
 }
 
-void EnqueueWriteBuffer() { TT_THROW("EnqueueWriteBuffer not yet implemented"); }
+void EnqueueWriteBuffer(Device* device, CommandQueue& cq, Buffer& buffer, void* src, bool blocking) {
+    cq.enqueue_write_buffer(device, buffer, src, blocking);
+}
 
 void EnqueueLaunch() { TT_THROW("EnqueueLaunch not yet implemented"); }
 
