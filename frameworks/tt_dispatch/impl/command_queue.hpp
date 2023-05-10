@@ -23,10 +23,10 @@ string EnqueueCommandTypeToString(EnqueueCommandType ctype) {
     }
 }
 
-void write_to_system_memory(Device* device, shared_ptr<SystemMemoryWriter> writer, DeviceCommand& command) {
-    writer->cb_reserve_back(device);
-    writer->noc_write(device, command);
-    writer->cb_push_back(device);
+void write_to_system_memory(Device* device, SystemMemoryWriter& writer, DeviceCommand& command) {
+    writer.cb_reserve_back(device);
+    writer.noc_write(device, command);
+    writer.cb_push_back(device);
 }
 
 class Command {
@@ -36,21 +36,27 @@ class Command {
     Command() {}
     virtual void handle(){};
     virtual EnqueueCommandType type() = 0;
+    virtual DeviceCommand device_command() = 0;
 };
 
 class EnqueueReadBufferCommand : public Command {
    private:
     Device* device;
     Buffer& buffer;
-    shared_ptr<SystemMemoryWriter> writer;
+    SystemMemoryWriter& writer;
     void* dst;
     static constexpr EnqueueCommandType type_ = EnqueueCommandType::ENQUEUE_READ_BUFFER;
 
    public:
-    EnqueueReadBufferCommand(Device* device, Buffer& buffer, void* dst, shared_ptr<SystemMemoryWriter> writer) :
+    EnqueueReadBufferCommand(Device* device, Buffer& buffer, void* dst, SystemMemoryWriter& writer) :
         writer(writer), buffer(buffer) {
         this->device = device;
         this->dst = dst;
+    }
+
+    DeviceCommand device_command() {
+        DeviceCommand command;
+        return command;
     }
 
     void handle() {
@@ -65,37 +71,42 @@ class EnqueueWriteBufferCommand : public Command {
    private:
     Device* device;
     Buffer& buffer;
-    shared_ptr<SystemMemoryWriter> writer;
+
+    Buffer system_mem_buffer;  // Need to store a temporary sysmem buffer and ensure it is not freed until the command
+                               // has completed on device
+
+    SystemMemoryWriter writer;
     void* src;
     static constexpr EnqueueCommandType type_ = EnqueueCommandType::ENQUEUE_WRITE_BUFFER;
 
    public:
-    EnqueueWriteBufferCommand(Device* device, Buffer& buffer, void* src, shared_ptr<SystemMemoryWriter> writer) :
+    EnqueueWriteBufferCommand(Device* device, Buffer& buffer, void* src, SystemMemoryWriter& writer) :
         writer(writer), buffer(buffer) {
         this->device = device;
         this->src = src;
     }
 
+    DeviceCommand device_command() {
+        DeviceCommand command;
+        return command;
+    }
+
     void handle() {
-        // log_debug(tt::LogDispatch, "Trying to write");
-        std::cout << "HANDLING" << std::endl;
         // Need to ensure the lifetime of this buffer long enough to finish
-        // the transfer... TODO later once I get to multiple back-to-back transfers
-        // Buffer host_buf(this->device, this->buffer.size(), 0, this->buffer.size(), BufferType::SYSTEM_MEMORY);
+        // the transfer, otherwise buffer destroyed and allocator will cleanup... TODO later once I get to multiple
+        // back-to-back transfers
+        this->system_mem_buffer = Buffer(this->device, this->buffer.size(), 0, this->buffer.size(), BufferType::SYSTEM_MEMORY);
 
         // TODO(agrebenisan): PERF ISSUE! For now need to explicitly deep-copy to
         // keep the same API as OpenCL, but eventually need to update cluster to be
         // able to directly write a void pointer to memory
-        // vector<uint> copy((uint*)src, (uint*)src + host_buf.size() / sizeof(uint));
+        vector<uint> copy((uint*)src, (uint*)src + this->system_mem_buffer.size() / sizeof(uint));
 
-        // log_debug(tt::LogDispatch, "Trying to write");
-        // uint sysmem_addr = 0;
-        // this->device->cluster()->write_sysmem_vec(copy, sysmem_addr, 0);
+        this->device->cluster()->write_sysmem_vec(copy, this->system_mem_buffer.address(), 0);
 
-        // DeviceCommand command;
-        // write_to_system_memory(this->device, this->writer, command);
+        DeviceCommand command;
+        write_to_system_memory(this->device, this->writer, command);
 
-        std::cout << "Handled" << std::endl;
         log_debug(tt::LogDispatch, "Handled");
     }
 
@@ -106,13 +117,18 @@ class EnqueueLaunchCommand : public Command {
    private:
     Device* device;
     Program* program;
-    shared_ptr<SystemMemoryWriter> writer;
+    SystemMemoryWriter& writer;
     static constexpr EnqueueCommandType type_ = EnqueueCommandType::ENQUEUE_LAUNCH;
 
    public:
-    EnqueueLaunchCommand(Device* device, Program* program, shared_ptr<SystemMemoryWriter> writer) : writer(writer) {
+    EnqueueLaunchCommand(Device* device, Program* program, SystemMemoryWriter& writer) : writer(writer) {
         this->device = device;
         this->program = program;
+    }
+
+    DeviceCommand device_command() {
+        DeviceCommand command;
+        return command;
     }
 
     void handle() {
@@ -127,36 +143,25 @@ class CommandQueue {
    public:
     CommandQueue(Device* device) {
         auto worker_logic = [this]() {
-            tt::log_debug(tt::LogDispatch, "Initialized worker thread");
-            while (true) {  // Worker thread keeps on flushing
-                tt::log_debug(
-                    tt::LogDispatch, "Handling {}", EnqueueCommandTypeToString(this->internal_queue.peek()->type()));
+            while (true) {       // Worker thread keeps on flushing
                 this->internal_queue.peek()
                     ->handle();  // Only responsible for ensuring that command enqueued onto device... needs to be
                                  // handled prior to popping for 'flush' semantics to work
-                tt::log_debug(tt::LogDispatch, "Popping, size {}", this->internal_queue.size());
                 this->internal_queue.pop();
-                tt::log_debug(tt::LogDispatch, "size {}", this->internal_queue.size());
             }
         };
 
         thread(worker_logic).detach();  // Detaching as we don't need to keep track of this explicitly with a class
                                         // attribute, and we don't want the thread to be destroyed at end of scope
-
-        SystemMemoryWriter writer;
-        shared_ptr<SystemMemoryWriter> p = std::make_shared<SystemMemoryWriter>(std::move(writer));
-        this->sysmem_writer = std::move(p);
     }
 
     ~CommandQueue() { this->finish(); }
 
    private:
     Device* device;
-    shared_ptr<SystemMemoryWriter> sysmem_writer;
+    SystemMemoryWriter sysmem_writer;
     TSQueue<shared_ptr<Command>> internal_queue;
     void enqueue_command(shared_ptr<Command> command, bool blocking) {
-        std::cout << "Enqueued type: " << EnqueueCommandTypeToString(command->type()) << std::endl;
-
         this->internal_queue.push(std::move(command));
 
         if (blocking) {
@@ -185,8 +190,7 @@ class CommandQueue {
     void flush() {
         std::mutex m;
         std::unique_lock<std::mutex> lock(m);
-        this->internal_queue.empty_condition.wait(
-            lock, [this]() { return !this->internal_queue.q.empty(); });
+        this->internal_queue.empty_condition.wait(lock, [this]() { return !this->internal_queue.q.empty(); });
     }
 
     void finish() { TT_THROW("CommandQueue.finish not yet implemented"); }
