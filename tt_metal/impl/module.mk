@@ -15,6 +15,7 @@ TT_METAL_IMPL_SRCS = \
 	tt_metal/impl/allocator/allocator.cpp \
 	tt_metal/impl/allocator/basic_allocator.cpp \
 	tt_metal/impl/allocator/l1_banking_allocator.cpp \
+	tt_metal/impl/allocator/sysmem_allocator.cpp \
 	tt_metal/impl/program.cpp \
 
 TT_METAL_IMPL_OBJS = $(addprefix $(OBJDIR)/, $(TT_METAL_IMPL_SRCS:.cpp=.o))

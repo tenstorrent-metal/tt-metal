@@ -4,6 +4,7 @@
 
 #include "tt_metal/impl/allocator/basic_allocator.hpp"
 #include "tt_metal/impl/allocator/l1_banking_allocator.hpp"
+#include "tt_metal/impl/allocator/sysmem_allocator.hpp"
 #include "llrt/tt_cluster.hpp"
 
 namespace tt {

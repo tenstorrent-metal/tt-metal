@@ -16,6 +16,7 @@ enum class BufferType;
 enum class MemoryAllocator {
     BASIC = 0,
     L1_BANKING = 1,
+    SYSMEM = 2
 };
 
 struct Address {

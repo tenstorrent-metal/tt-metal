@@ -32,6 +32,10 @@ void Device::initialize_allocator(const MemoryAllocator &memory_allocator) {
             this->allocator_ = std::make_unique<L1BankingAllocator>(soc_desc);
         }
         break;
+        case MemoryAllocator::SYSMEM: {
+            this->allocator_ = std::make_unique<SysmemAllocator>(soc_desc);
+        }
+        break;
         default:
             TT_ASSERT(false && "Unsupported memory allocator");
     }
