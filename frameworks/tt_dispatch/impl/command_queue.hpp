@@ -83,7 +83,6 @@ class EnqueueWriteBufferCommand : public Command {
     }
 
     void handle() {
-        TT_ASSERT(false);
         // log_debug(tt::LogDispatch, "Trying to write");
         std::cout << "HANDLING" << std::endl;
         // Need to ensure the lifetime of this buffer long enough to finish
