@@ -88,6 +88,23 @@ class EnqueueWriteBufferCommand : public Command {
 
     DeviceCommand device_command() {
         DeviceCommand command;
+
+        switch (this->buffer.buffer_type()) {
+            case BufferType::DRAM: {
+                tt_xy_pair dram_noc_coordinates = this->buffer.noc_coordinates();
+                command.add_interleaved_dram_write(
+                    this->system_mem_buffer.address(),
+                    this->buffer.address(),
+                    0,  // Need mapping from tt_xy_pair to integer
+                    this->buffer.page_size(),
+                    this->buffer.size() / this->buffer.page_size());
+            } break;
+            case BufferType::L1: {
+                TT_THROW("L1 Buffer write not implemented yet");
+            } break;
+            default: TT_THROW("Invalid buffer type for EnqueueWriteBufferCommand");
+        }
+
         return command;
     }
 
@@ -95,7 +112,8 @@ class EnqueueWriteBufferCommand : public Command {
         // Need to ensure the lifetime of this buffer long enough to finish
         // the transfer, otherwise buffer destroyed and allocator will cleanup... TODO later once I get to multiple
         // back-to-back transfers
-        this->system_mem_buffer = Buffer(this->device, this->buffer.size(), 0, this->buffer.size(), BufferType::SYSTEM_MEMORY);
+        this->system_mem_buffer =
+            Buffer(this->device, this->buffer.size(), 0, this->buffer.size(), BufferType::SYSTEM_MEMORY);
 
         // TODO(agrebenisan): PERF ISSUE! For now need to explicitly deep-copy to
         // keep the same API as OpenCL, but eventually need to update cluster to be

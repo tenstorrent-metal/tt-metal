@@ -7,14 +7,23 @@ using std::vector;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-constexpr u32 NR = 100;
-constexpr u32 NW = 100;
-constexpr u32 NIDR = 100;
-constexpr u32 NILR = 100;
-constexpr u32 NIDW = 100;
-constexpr u32 NILW = 100;
+static constexpr u32 NR = 100;  // Allowing up to 100 reads and writes
+static constexpr u32 NW = 100;
+static constexpr u32 NIDR = 1;  // We only use these on data relays, in which we only do one relay per command
+static constexpr u32 NILR = 1;
+static constexpr u32 NIDW = 1;
+static constexpr u32 NILW = 1;
 
-constexpr u32 SIZE = 1000;
+static constexpr u32 read_section_num_entries = (NR * 4 + 1);
+static constexpr u32 write_section_num_entries = (NW * 4 + 1);
+static constexpr u32 interleaved_dram_read_num_entries = (NIDR * 5 + 1);
+static constexpr u32 interleaved_l1_read_num_entries = (NILR * 5 + 1);
+static constexpr u32 interleaved_dram_write_num_entries = (NIDW * 5 + 1);
+static constexpr u32 interleaved_l1_write_num_entries = (NILW * 5 + 1);
+
+static constexpr u32 SIZE = read_section_num_entries + write_section_num_entries + interleaved_dram_read_num_entries +
+                     interleaved_l1_read_num_entries + interleaved_dram_write_num_entries +
+                     interleaved_l1_write_num_entries;
 
 struct DeviceCommand {
    private:
@@ -26,19 +35,11 @@ struct DeviceCommand {
     u32 interleaved_l1_write_ptr;
     u32 launch_ptr;
 
-
-    array<u32, SIZE> desc;
+    array<u32, SIZE> desc;  // Doing it this way since we may find better sizes for perf
 
    public:
-    static constexpr u32 size() { return (NR + 1) + (NW + 1) + (NIDR + 1) + (NILR + 1) + (NIDW + 1) + (NILW + 1) + 1; }
+    static constexpr u32 size() { return SIZE; }
     DeviceCommand() {
-        u32 read_section_num_entries = (NR * 4 + 1);
-        u32 write_section_num_entries = (NW * 4 + 1);
-        u32 interleaved_dram_read_num_entries = (NIDR * 5 + 1);
-        u32 interleaved_l1_read_num_entries = (NILR * 5 + 1);
-        u32 interleaved_dram_write_num_entries = (NIDW * 5 + 1);
-        u32 interleaved_l1_write_num_entries = (NILW * 5 + 1);
-
         for (u32 i = 0; i < this->size(); i++) {
             this->desc[i] = 0;
         }
