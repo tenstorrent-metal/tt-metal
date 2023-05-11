@@ -321,6 +321,11 @@ int main() {
 
     init_sync_registers();  // this init needs to be done before NCRISC / TRISCs are launched, only done by BRISC
     setup_cb_read_write_interfaces();                // done by both BRISC / NCRISC
+
+#if defined(IS_DISPATCH_KERNEL)
+    setup_cq_read_interface();
+#endif
+
     init_dram_bank_to_noc_coord_lookup_tables();  // done by both BRISC / NCRISC
     init_l1_bank_to_noc_coord_lookup_tables();  // done by both BRISC / NCRISC
 

@@ -8,7 +8,8 @@ using namespace tt::tt_metal;
 struct SystemMemoryCBWriteInterface {
     uint fifo_wr_ptr;
     uint fifo_limit;
-    uint fifo_size;
+    uint fifo_size; // Size in bytes of FIFO
+    uint fifo_size_commands; // How many commands are in fifo
 };
 
 class SystemMemoryWriter {
@@ -18,7 +19,21 @@ class SystemMemoryWriter {
     SystemMemoryWriter() {}
 
     // Ensure that there is enough space to push to the queue first
-    void cb_reserve_back(Device* device) { TT_THROW("cb_reserve_back not implemented yet"); }
+    void cb_reserve_back(Device* device) {
+
+        // TT_THROW("cb_reserve_back not implemented yet");
+        uint* commands_received_ptr; // How many commands I sent
+        uint* commands_acked_ptr; // How many commands were acknowledged
+
+        uint commands_received; // = *commands_received_ptr;
+
+        bool free_space;
+        do {
+            uint commands_acked;
+            uint free_space_commands = this->cb_write_interface.fifo_size_commands - (commands_received - commands_acked);
+            free_space = (bool)free_space_commands;
+        } while (not free_space);
+    }
 
     void noc_write(Device* device, const DeviceCommand& command) {
         const array<uint, SIZE>& desc = command.get_desc();

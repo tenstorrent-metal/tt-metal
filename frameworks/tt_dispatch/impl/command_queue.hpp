@@ -135,8 +135,6 @@ class EnqueueWriteBufferCommand : public Command {
         this->device->cluster()->write_sysmem_vec(copy, this->system_mem_buffer->address(), 0);
 
         write_to_system_memory(this->device, this->writer, this->device_command());
-
-        log_debug(tt::LogDispatch, "Handled");
     }
 
     EnqueueCommandType type() { return this->type_; }

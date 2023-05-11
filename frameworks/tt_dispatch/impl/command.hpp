@@ -59,7 +59,13 @@ struct DeviceCommand {
                            interleaved_l1_write_num_entries;
     }
 
+    /*
+        Ideally, should refactor these APIs to just specify the relay address, no need to be explicit about
+        the intermediate address for the dispatch core, it can figure it out based on the transfer sizes
+    */
+
     void add_read(u32 src, u32 src_noc, u32 dst, u32 bytes) {
+        TT_THROW("add_read not implemented yet");
         this->desc[this->read_ptr] = src;
         this->desc[this->read_ptr + 1] = src_noc;
         this->desc[this->read_ptr + 2] = dst;
@@ -68,6 +74,7 @@ struct DeviceCommand {
     }
 
     void add_write(u32 src, u32 dst, u32 dst_noc, u32 bytes) {
+        TT_THROW("add_write not implemented yet");
         this->desc[this->write_ptr] = src;
         this->desc[this->write_ptr + 1] = dst;
         this->desc[this->write_ptr + 2] = dst_noc;
@@ -76,6 +83,7 @@ struct DeviceCommand {
     }
 
     void add_interleaved_dram_read(u32 src, u32 src_noc, u32 dst, uint num_bytes_per_page, uint num_pages) {
+        TT_THROW("add_interleaved_dram_read not implemented yet");
         this->desc[this->interleaved_dram_read_ptr] = src;
         this->desc[this->interleaved_dram_read_ptr + 1] = src_noc;
         this->desc[this->interleaved_dram_read_ptr + 2] = dst;
@@ -85,6 +93,7 @@ struct DeviceCommand {
     }
 
     void add_interleaved_l1_read(u32 src, u32 src_noc, u32 dst, uint num_bytes_per_page, uint num_pages) {
+        TT_THROW("add_interleaved_l1_read not implemented yet");
         this->desc[this->interleaved_l1_read_ptr] = src;
         this->desc[this->interleaved_l1_read_ptr + 1] = src_noc;
         this->desc[this->interleaved_l1_read_ptr + 2] = dst;
@@ -103,6 +112,7 @@ struct DeviceCommand {
     }
 
     void add_interleaved_l1_write(u32 src, u32 dst, u32 dst_noc, uint num_bytes_per_page, uint num_pages) {
+        TT_THROW("add_interleaved_l1_write not implemented yet");
         this->desc[this->interleaved_l1_write_ptr] = src;
         this->desc[this->interleaved_l1_write_ptr + 1] = dst;
         this->desc[this->interleaved_l1_write_ptr + 2] = dst_noc;

@@ -35,6 +35,8 @@
 CBWriteInterface cb_write_interface[NUM_CIRCULAR_BUFFERS];
 CBReadInterface cb_read_interface[NUM_CIRCULAR_BUFFERS];
 
+CBReadInterface cq_read_interface;
+
 // Use VC 1 for unicast writes, and VC 4 for mcast writes
 #define NOC_UNICAST_WRITE_VC 1
 #define NOC_MULTICAST_WRITE_VC 4
@@ -194,6 +196,23 @@ void setup_cb_read_write_interfaces() {
 
     circular_buffer_config_addr += UINT32_WORDS_PER_CIRCULAR_BUFFER_CONFIG; // move by 3 uint32's
   }
+}
+
+
+// Only the read interface is set up on the device... the write interface
+// belongs to host
+void setup_cq_read_interface() {
+
+    volatile std::uint32_t* command_queue_config_addr = (volatile uint32_t*)(CIRCULAR_BUFFER_CONFIG_BASE);
+
+    uint fifo_addr = command_queue_config_addr[0];
+    uint fifo_size = command_queue_config_addr[1];
+    uint fifo_size_commands = command_queue_config_addr[2];
+    write_to_local_mem_barrier(fifo_size_commands);
+
+    cq_read_interface.fifo_limit = fifo_addr + fifo_size - 1;
+    cq_read_interface.fifo_rd_ptr = fifo_addr;
+    cq_read_interface.fifo_size = fifo_size;
 }
 
 // replicated from ckernels_defs.h, which are currently not included in BRISC / NCRISC builds
