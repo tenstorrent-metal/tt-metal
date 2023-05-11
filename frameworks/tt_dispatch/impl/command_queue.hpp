@@ -1,17 +1,20 @@
 
 #include <memory>
 #include <thread>
-#include "tt_metal/src/firmware/riscv/grayskull/noc/noc_parameters.h"
 
+#include "build_kernels_for_riscv/build_kernels_for_riscv.hpp"
 #include "frameworks/tt_dispatch/impl/sysmem_cb.hpp"
 #include "frameworks/tt_dispatch/impl/thread_safe_queue.hpp"
 #include "tt_metal/common/base.hpp"
 #include "tt_metal/host_api.hpp"
+#include "tt_metal/src/firmware/riscv/grayskull/noc/noc_parameters.h"
+#include "llrt/tt_debug_print_server.hpp"
+
 
 using namespace tt::tt_metal;
 using std::shared_ptr;
-using std::unique_ptr;
 using std::thread;
+using std::unique_ptr;
 
 // Only contains the types of commands which are enqueued onto the device
 enum class EnqueueCommandType { ENQUEUE_READ_BUFFER, ENQUEUE_WRITE_BUFFER, ENQUEUE_LAUNCH, INVALID };
@@ -26,18 +29,17 @@ string EnqueueCommandTypeToString(EnqueueCommandType ctype) {
 }
 
 void write_to_system_memory(Device* device, SystemMemoryWriter& writer, const DeviceCommand& command) {
-    writer.cb_reserve_back(device);
+    // writer.cb_reserve_back(device);
     writer.noc_write(device, command);
-    writer.cb_push_back(device);
+    while(true);
+    // writer.cb_push_back(device);
 }
 
 // TEMPORARY! TODO(agrebenisan): need to use proper macro based on loading noc
 #define NOC_X(x) x
 #define NOC_Y(y) y
 
-uint noc_coord_to_uint(tt_xy_pair coord) {
-    return NOC_XY_ENCODING(NOC_X(coord.x), NOC_Y(coord.y));
-}
+uint noc_coord_to_uint(tt_xy_pair coord) { return NOC_XY_ENCODING(NOC_X(coord.x), NOC_Y(coord.y)); }
 
 class Command {
     EnqueueCommandType type_ = EnqueueCommandType::INVALID;
@@ -69,10 +71,7 @@ class EnqueueReadBufferCommand : public Command {
         return command;
     }
 
-    void handle() {
-        DeviceCommand command;
-        write_to_system_memory(this->device, this->writer, command);
-    }
+    void handle() { TT_THROW("EnqueueReadBufferCommand.handle not implemented yet"); }
 
     EnqueueCommandType type() { return this->type_; }
 };
@@ -82,8 +81,8 @@ class EnqueueWriteBufferCommand : public Command {
     Device* device;
     Buffer& buffer;
 
-    unique_ptr<Buffer> system_mem_buffer;  // Need to store a temporary sysmem buffer and ensure it is not freed until the command
-                               // has completed on device
+    unique_ptr<Buffer> system_mem_buffer;  // Need to store a temporary sysmem buffer and ensure it is not freed until
+                                           // the command has completed on device
 
     SystemMemoryWriter writer;
     void* src;
@@ -158,17 +157,55 @@ class EnqueueLaunchCommand : public Command {
         return command;
     }
 
-    void handle() {
-        DeviceCommand command;
-        write_to_system_memory(this->device, this->writer, command);
-    }
+    void handle() { TT_THROW("EnqueueLaunchCommand.handle not implemented yet"); }
 
     EnqueueCommandType type() { return this->type_; }
 };
 
+void send_dispatch_kernel_to_device(Device* device) {
+    // Ideally, this should be some separate API easily accessible in
+    // TT-metal, don't like the fact that I'm writing this from scratch
+    std::string root_dir = tt::utils::get_root_dir();
+    std::string arch_name = tt::utils::get_env_arch_name();
+    tt::build_kernel_for_riscv_options_t build_kernel_for_riscv_options("unary", "command_queue");
+    std::string out_dir_path = root_dir + "/built_kernels/" + build_kernel_for_riscv_options.name;
+
+    build_kernel_for_riscv_options.fp32_dest_acc_en = false;
+
+    // Hard-coding as BRISC for now, could potentially be NCRISC
+    build_kernel_for_riscv_options.brisc_kernel_file_name = "tt_metal/kernels/dataflow/dispatch/command_queue.cpp";
+    // std::map<string, string> brisc_defines = {{"IS_DISPATCH_KERNEL", ""}, {"DEVICE_DISPATCH_MODE", ""}};
+    // build_kernel_for_riscv_options.brisc_defines = brisc_defines;
+    generate_binary_for_risc(RISCID::BR, &build_kernel_for_riscv_options, out_dir_path, arch_name);
+
+    tt_xy_pair dispatch_core = {1, 11};
+    tt::llrt::test_load_write_read_risc_binary(
+        device->cluster(), "built_kernels/command_queue/brisc/brisc.hex", 0, dispatch_core, 0);
+
+    // Deassert reset of dispatch core BRISC. TODO(agrebenisan): Refactor once Paul's changes in
+    // device->cluster()->set_remote_tensix_risc_reset(tt_cxy_pair(0, dispatch_core), TENSIX_DEASSERT_SOFT_RESET);
+    // tt_start_debug_print_server(device->cluster(), {0}, {dispatch_core});
+    tt::llrt::deassert_brisc_reset_for_all_chips_all_cores(device->cluster(), false);
+    tt::log_debug(tt::LogDispatch, "Deasserted dispatch core");
+    // while(true);
+}
+
 class CommandQueue {
    public:
     CommandQueue(Device* device) {
+        send_dispatch_kernel_to_device(device);
+        // this->num_cqs++;
+
+        // switch (this->num_cqs) {
+        //     case 1: {
+        //         // Logic to write the dispatch kernel to dispatch core
+        //     } break;
+        //     case 2: TT_THROW("2 command queues not implemented yet"); break;
+        //     case 3: TT_THROW("3 command queues not implemented yet"); break;
+        //     case 4: TT_THROW("4 command queues not implemented yet"); break;
+        //     default: TT_THROW("Only a maximum of 4 command queues can be created so far");
+        // }
+
         auto worker_logic = [this]() {
             while (true) {       // Worker thread keeps on flushing
                 this->internal_queue.peek()
@@ -182,7 +219,10 @@ class CommandQueue {
                                         // attribute, and we don't want the thread to be destroyed at end of scope
     }
 
-    ~CommandQueue() { this->finish(); }
+    ~CommandQueue() {
+        this->finish();
+        // this->num_cqs--;
+    }
 
    private:
     Device* device;

@@ -146,16 +146,23 @@ void init_l1_bank_to_noc_coord_lookup_tables() {
 
 // only BRISC to call this
 void init_sync_registers() {
-
-    volatile std::uint32_t* tiles_received_ptr;
-    volatile std::uint32_t* tiles_acked_ptr;
-
+    #ifndef IS_DISPATCH_KERNEL
+    volatile uint* tiles_received_ptr;
+    volatile uint* tiles_acked_ptr;
     for (uint32_t operand = 0; operand < NUM_CIRCULAR_BUFFERS; operand++) {
       tiles_received_ptr = get_cb_tiles_received_ptr(operand);
       tiles_received_ptr[0] = 0;
       tiles_acked_ptr = get_cb_tiles_acked_ptr(operand);
       tiles_acked_ptr[0] = 0;
     }
+    #else
+    // When dispatching, we are never synchronizing on tiles, so we just use
+    // the same stream registers to communicate on commands
+    volatile uint* commands_received_ptr = get_cq_commands_received_ptr();
+    volatile uint* commands_acked_ptr = get_cq_commands_acked_ptr();
+    commands_received_ptr[0] = 0;
+    commands_acked_ptr[0] = 0;
+    #endif
 }
 
 // can be used on NCRICS and/or BRISC, as both can act as tile producers into Tensix
@@ -471,6 +478,39 @@ void cb_wait_front(std::int32_t operand, std::int32_t num_tiles) {
         tiles_received = (std::uint16_t) reg_read_barrier((std::uint32_t)tiles_received_ptr);
         num_tiles_recv = tiles_received - tiles_acked;
     } while (num_tiles_recv < num_tiles_u);
+}
+
+FORCE_INLINE
+void cq_wait_front() {
+    volatile uint* commands_acked_ptr = get_cq_commands_acked_ptr();
+    volatile uint* commands_received_ptr = get_cq_commands_received_ptr();
+
+    uint16_t commands_acked = *commands_received_ptr;
+
+    uint16_t commands_received;
+    uint16_t num_commands_recv;
+
+    do {
+        commands_received = (uint16_t) reg_read_barrier((uint)commands_received_ptr);
+        num_commands_recv = commands_received - commands_acked;
+    } while (num_commands_recv < 1);
+}
+
+FORCE_INLINE
+void cq_pop_front() {
+    volatile uint* commands_acked_ptr = get_cq_commands_acked_ptr();
+    // For now we, later we should be able to read in multiple commands at the same time
+    commands_acked_ptr[0] += 1;
+
+    // For now, hard-coding the table size, eventually should allow for this to be
+    // dynamic
+    uint num_words;
+
+    cq_read_interface.fifo_rd_ptr += num_words;
+
+    if (cq_read_interface.fifo_rd_ptr > cq_read_interface.fifo_limit) {
+        cq_read_interface.fifo_rd_ptr -= cq_read_interface.fifo_size;
+    }
 }
 
 // NOC transfers

@@ -14,6 +14,9 @@
 #include "ckernel_globals.h"
 #include "tools/profiler/kernel_profiler.hpp"
 
+
+#include "debug_print.h"
+
 // TODO: commonize this w/ the runtime -- it's the same configs
 // these consts must be constexprs
 constexpr uint32_t TRISC_BASE = l1_mem::address_map::TRISC_BASE;
@@ -353,7 +356,16 @@ int main() {
     kernel_profiler::mark_time(CC_KERNEL_MAIN_START);
 #endif
     // Run the BRISC kernel
+
+#ifdef IS_DISPATCH_KERNEL
+    // while(true) { // Eventually, we want this to keep looping on some 'done' flag
+        kernel_main();
+
+        // Need some sort of semwait here
+    // }
+#else
     kernel_main();
+#endif
 #if defined(PROFILER_OPTIONS) && (PROFILER_OPTIONS & KERNEL_FUNCT_MARKER)
     kernel_profiler::mark_time(CC_KERNEL_MAIN_END);
 #endif

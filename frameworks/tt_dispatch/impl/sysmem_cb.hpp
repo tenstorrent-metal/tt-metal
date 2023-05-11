@@ -6,10 +6,10 @@
 using namespace tt::tt_metal;
 
 struct SystemMemoryCBWriteInterface {
-    uint fifo_wr_ptr;
-    uint fifo_limit;
-    uint fifo_size; // Size in bytes of FIFO
-    uint fifo_size_commands; // How many commands are in fifo
+    uint fifo_wr_ptr = 0;
+    uint fifo_limit = 0;
+    uint fifo_size = 0; // Size in bytes of FIFO
+    uint fifo_size_commands = 0; // How many commands are in fifo
 };
 
 class SystemMemoryWriter {
@@ -25,20 +25,24 @@ class SystemMemoryWriter {
         uint* commands_received_ptr; // How many commands I sent
         uint* commands_acked_ptr; // How many commands were acknowledged
 
-        uint commands_received; // = *commands_received_ptr;
+        uint commands_received = 0; // = *commands_received_ptr;
 
+        tt::log_debug(tt::LogDispatch, "Reserving space in command queue");
         bool free_space;
         do {
-            uint commands_acked;
+            uint commands_acked = 0;
             uint free_space_commands = this->cb_write_interface.fifo_size_commands - (commands_received - commands_acked);
             free_space = (bool)free_space_commands;
         } while (not free_space);
+
+        tt::log_debug(tt::LogDispatch, "Reserved space in command queue");
     }
 
     void noc_write(Device* device, const DeviceCommand& command) {
         const array<uint, SIZE>& desc = command.get_desc();
         vector<uint32_t> command_vector(desc.begin(), desc.end());
         device->cluster()->write_sysmem_vec(command_vector, cb_write_interface.fifo_wr_ptr, 0);
+        tt::log_debug(tt::LogDispatch, "Wrote to command queue");
     }
 
     void cb_push_back(Device* device) {
@@ -48,5 +52,6 @@ class SystemMemoryWriter {
         if (this->cb_write_interface.fifo_wr_ptr > this->cb_write_interface.fifo_limit) {
             this->cb_write_interface.fifo_wr_ptr -= this->cb_write_interface.fifo_size;
         }
+        tt::log_debug(tt::LogDispatch, "Pushed to command queue");
     }
 };
