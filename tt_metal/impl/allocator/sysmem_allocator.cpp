@@ -206,9 +206,7 @@ SysmemAllocator::L1Bank &SysmemAllocator::bank_for_logical_core(uint32_t bank_id
 
 BankIdToRelativeAddress SysmemAllocator::allocate_sysmem_buffer(uint32_t size_bytes) {
     BankIdToRelativeAddress sysmem_address;
-    std::cout << "Allocating sysmem buffer" << std::endl;
     auto address = this->sysmem_manager->allocate(size_bytes, true);
-    std::cout << "Progress" << std::endl;
     if (not address.has_value()) {
         TT_THROW("Cannot allocate " + std::to_string(size_bytes) + " bytes for sysmem buffer");
     }
@@ -498,7 +496,6 @@ BankIdToRelativeAddress SysmemAllocator::allocate_buffer(
     TT_ASSERT(size % page_size == 0);
     uint32_t num_pages = size / page_size;
     if (num_pages == 1) {
-        std::cout << "SINGLE PAGE" << std::endl;
         return this->allocate_contiguous_buffer(starting_bank_id, size, buffer_type);
     }
     return this->allocate_interleaved_buffer(starting_bank_id, num_pages, page_size, buffer_type);

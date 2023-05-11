@@ -1,6 +1,7 @@
 
 #include <memory>
 #include <thread>
+#include "tt_metal/src/firmware/riscv/grayskull/noc/noc_parameters.h"
 
 #include "frameworks/tt_dispatch/impl/sysmem_cb.hpp"
 #include "frameworks/tt_dispatch/impl/thread_safe_queue.hpp"
@@ -9,6 +10,7 @@
 
 using namespace tt::tt_metal;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::thread;
 
 // Only contains the types of commands which are enqueued onto the device
@@ -23,10 +25,18 @@ string EnqueueCommandTypeToString(EnqueueCommandType ctype) {
     }
 }
 
-void write_to_system_memory(Device* device, SystemMemoryWriter& writer, DeviceCommand& command) {
+void write_to_system_memory(Device* device, SystemMemoryWriter& writer, const DeviceCommand& command) {
     writer.cb_reserve_back(device);
     writer.noc_write(device, command);
     writer.cb_push_back(device);
+}
+
+// TEMPORARY! TODO(agrebenisan): need to use proper macro based on loading noc
+#define NOC_X(x) x
+#define NOC_Y(y) y
+
+uint noc_coord_to_uint(tt_xy_pair coord) {
+    return NOC_XY_ENCODING(NOC_X(coord.x), NOC_Y(coord.y));
 }
 
 class Command {
@@ -72,7 +82,7 @@ class EnqueueWriteBufferCommand : public Command {
     Device* device;
     Buffer& buffer;
 
-    Buffer system_mem_buffer;  // Need to store a temporary sysmem buffer and ensure it is not freed until the command
+    unique_ptr<Buffer> system_mem_buffer;  // Need to store a temporary sysmem buffer and ensure it is not freed until the command
                                // has completed on device
 
     SystemMemoryWriter writer;
@@ -89,13 +99,15 @@ class EnqueueWriteBufferCommand : public Command {
     DeviceCommand device_command() {
         DeviceCommand command;
 
+        tt::log_debug(tt::LogDispatch, "Getting device command");
+
         switch (this->buffer.buffer_type()) {
             case BufferType::DRAM: {
                 tt_xy_pair dram_noc_coordinates = this->buffer.noc_coordinates();
                 command.add_interleaved_dram_write(
-                    this->system_mem_buffer.address(),
+                    this->system_mem_buffer->address(),
                     this->buffer.address(),
-                    0,  // Need mapping from tt_xy_pair to integer
+                    noc_coord_to_uint(dram_noc_coordinates),
                     this->buffer.page_size(),
                     this->buffer.size() / this->buffer.page_size());
             } break;
@@ -112,18 +124,17 @@ class EnqueueWriteBufferCommand : public Command {
         // Need to ensure the lifetime of this buffer long enough to finish
         // the transfer, otherwise buffer destroyed and allocator will cleanup... TODO later once I get to multiple
         // back-to-back transfers
-        this->system_mem_buffer =
-            Buffer(this->device, this->buffer.size(), 0, this->buffer.size(), BufferType::SYSTEM_MEMORY);
+        Buffer a(this->device, this->buffer.size(), 0, this->buffer.size(), BufferType::SYSTEM_MEMORY);
+        this->system_mem_buffer = std::make_unique<Buffer>(std::move(a));
 
         // TODO(agrebenisan): PERF ISSUE! For now need to explicitly deep-copy to
         // keep the same API as OpenCL, but eventually need to update cluster to be
         // able to directly write a void pointer to memory
-        vector<uint> copy((uint*)src, (uint*)src + this->system_mem_buffer.size() / sizeof(uint));
+        vector<uint> copy((uint*)src, (uint*)src + this->system_mem_buffer->size() / sizeof(uint));
 
-        this->device->cluster()->write_sysmem_vec(copy, this->system_mem_buffer.address(), 0);
+        this->device->cluster()->write_sysmem_vec(copy, this->system_mem_buffer->address(), 0);
 
-        DeviceCommand command;
-        write_to_system_memory(this->device, this->writer, command);
+        write_to_system_memory(this->device, this->writer, this->device_command());
 
         log_debug(tt::LogDispatch, "Handled");
     }
@@ -196,6 +207,7 @@ class CommandQueue {
     void enqueue_write_buffer(Device* device, Buffer& buffer, void* src, bool blocking) {
         EnqueueWriteBufferCommand command(device, buffer, src, this->sysmem_writer);
         shared_ptr<EnqueueWriteBufferCommand> p = std::make_shared<EnqueueWriteBufferCommand>(std::move(command));
+
         this->enqueue_command(p, blocking);
     }
 
@@ -208,7 +220,7 @@ class CommandQueue {
     void flush() {
         std::mutex m;
         std::unique_lock<std::mutex> lock(m);
-        this->internal_queue.empty_condition.wait(lock, [this]() { return !this->internal_queue.q.empty(); });
+        this->internal_queue.empty_condition.wait(lock, [this]() { return this->internal_queue.q.empty(); });
     }
 
     void finish() { TT_THROW("CommandQueue.finish not yet implemented"); }
