@@ -187,7 +187,7 @@ void send_dispatch_kernel_to_device(Device* device) {
     // tt_start_debug_print_server(device->cluster(), {0}, {dispatch_core});
     tt::llrt::deassert_brisc_reset_for_all_chips_all_cores(device->cluster(), false);
     tt::log_debug(tt::LogDispatch, "Deasserted dispatch core");
-    // while(true);
+    while(true);
 }
 
 class CommandQueue {
