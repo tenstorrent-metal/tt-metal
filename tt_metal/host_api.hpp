@@ -10,6 +10,7 @@
 #include "tools/profiler/profiler.hpp"
 #include "hostdevcommon/common_runtime_address_map.h"
 #include "hostdevcommon/registers.hpp"
+#include "hostdevcommon/common_values.hpp"
 #include "tt_metal/impl/allocator/allocator.hpp"
 #include "tt_metal/impl/buffers/buffer.hpp"
 #include "tt_metal/impl/buffers/circular_buffer.hpp"

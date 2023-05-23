@@ -2,6 +2,118 @@
 
 #include "tt_metal/llrt/tt_debug_print_server.hpp"
 
+u64 get_noc_multicast_encoding(const CoreCoord& top_left, const CoreCoord& bottom_right) {
+    return NOC_MULTICAST_ENCODING(top_left.x, top_left.y, bottom_right.x, bottom_right.y);
+}
+
+ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& program) {
+    // This function retrieves all the required information to group program binaries into sections,
+    // such that each section is the largest amount of data that can be read into the dispatch
+    // core's L1 at a time. For each section, it also specifies the relay program information,
+    // as described in command.hpp.
+    // Comment from Andrew Grebenisan, the author: Please do not refactor this function into
+    // multiple pieces. It's quite long, however this function does one thing, and I want
+    // potential debug of this function's logic to all be in one spot.
+    ProgramToDeviceMap program_to_device_map;
+    vector<u32>& program_vector = program_to_device_map.bins;
+    vector<ProgramSection>& sections = program_to_device_map.sections;
+
+    // 'section' here refers to a piece of the program buffer
+    // that we can read in one shot into dispatch core L1
+    u32 current_section_idx = 0;
+    auto initialize_section = [&sections]() {
+        // The purpose of this function is to create a new 'section'
+        // as described in the above comment.
+
+        vector<transfer_info> init_vec;
+        map<char, vector<transfer_info>> init_map;
+        init_map.emplace('B', init_vec);
+        init_map.emplace('N', init_vec);
+        init_map.emplace('U', init_vec);
+        init_map.emplace('M', init_vec);
+        init_map.emplace('P', init_vec);
+        ProgramSection section = {.section = init_map, .size_in_bytes = 0};
+        sections.push_back(section);
+    };
+
+
+    // Initialize program_to_device_map with all possible keys
+    initialize_section();
+
+    u32 start_in_bytes = 0;
+    u32 kernel_size_in_bytes = 0;
+    auto write_to_program_device_map = [&](char riscv_type, const vector<u32>& kernel_bin, const CoreRangeSet& cr_set) {
+        u32 num_bytes_so_far = program_vector.size() * sizeof(u32);
+        u32 num_new_bytes = kernel_bin.size() * sizeof(u32);
+
+        if (num_bytes_so_far + num_new_bytes > 1024 * 1024 - UNRESERVED_BASE) {
+            current_section_idx++;
+            kernel_size_in_bytes = 0;
+            initialize_section();
+        }
+
+        start_in_bytes = start_in_bytes + kernel_size_in_bytes;
+        program_vector.insert(program_vector.end(), kernel_bin.begin(), kernel_bin.end());
+        kernel_size_in_bytes = kernel_bin.size() * sizeof(u32);
+
+        for (const CoreRange& core_range : cr_set.ranges()) {
+            CoreCoord physical_start = device->worker_core_from_logical_core(core_range.start);
+            CoreCoord physical_end = device->worker_core_from_logical_core(core_range.end);
+
+            u32 start_x = physical_start.x;
+            u32 start_y = physical_start.y;
+            u32 end_x = physical_end.x;
+            u32 end_y = physical_end.y;
+            u32 noc_multicast_encoding = NOC_MULTICAST_ENCODING(start_x, start_y, end_x, end_y);
+
+            sections.at(current_section_idx)
+                .at(riscv_type)
+                .push_back(std::make_tuple(start_in_bytes, kernel_size_in_bytes, noc_multicast_encoding, core_range.size()));
+        }
+        sections.at(current_section_idx).size_in_bytes += kernel_bin.size() * sizeof(u32);
+    };
+
+    CoreCoord hardcoded_core_for_now = {0, 0};
+    // TODO(agrebenisan): Once Almeet gets rid of kernel polymorphism,
+    // need to come back and clean this up. Ideally this should be as
+    // simple as just getting the type from the kernel.
+    for (Kernel* kernel : program.kernels()) {
+        switch (kernel->kernel_type()) {
+            case (KernelType::DataMovement): {
+                auto dm_kernel = dynamic_cast<DataMovementKernel*>(kernel);
+                switch (dm_kernel->data_movement_processor()) {
+                    case (DataMovementProcessor::RISCV_0): {
+                        vector<u32> bin = tt::llrt::get_risc_binary(
+                            kernel->binary_path(hardcoded_core_for_now) + "/brisc/brisc.hex", 0);
+                        write_to_program_device_map('B', bin, kernel->core_range_set());
+                    } break;
+                    case (DataMovementProcessor::RISCV_1): {
+                        vector<u32> bin = tt::llrt::get_risc_binary(
+                            kernel->binary_path(hardcoded_core_for_now) + "/ncrisc/ncrisc.hex", 1);
+                        write_to_program_device_map('N', bin, kernel->core_range_set());
+                    } break;
+                }
+            } break;
+            case (KernelType::Compute): {
+                for (u32 i = 0; i < 3; i++) {
+                    vector<u32> bin = tt::llrt::get_trisc_binary(
+                        kernel->binary_path(hardcoded_core_for_now) + "/tensix_thread" + std::to_string(i) +
+                            "/tensix_thread" + std::to_string(i) + ".hex",
+                        i);
+                    switch (i) {
+                        case 0: write_to_program_device_map('U', bin, kernel->core_range_set()); break;
+                        case 1: write_to_program_device_map('M', bin, kernel->core_range_set()); break;
+                        case 2: write_to_program_device_map('P', bin, kernel->core_range_set()); break;
+                    }
+                }
+            } break;
+            default: TT_THROW("Invalid kernel type");
+        }
+    }
+
+    return program_to_device_map;
+}
+
 string EnqueueCommandTypeToString(EnqueueCommandType ctype) {
     switch (ctype) {
         case EnqueueCommandType::ENQUEUE_READ_BUFFER: return "EnqueueReadBuffer";
@@ -12,9 +124,9 @@ string EnqueueCommandTypeToString(EnqueueCommandType ctype) {
 
 u32 noc_coord_to_u32(CoreCoord coord) { return NOC_XY_ENCODING(NOC_X(coord.x), NOC_Y(coord.y)); }
 
-
 // EnqueueReadBufferCommandSection
-EnqueueReadBufferCommand::EnqueueReadBufferCommand(Device* device, Buffer& buffer, vector<u32>& dst, SystemMemoryWriter& writer) :
+EnqueueReadBufferCommand::EnqueueReadBufferCommand(
+    Device* device, Buffer& buffer, vector<u32>& dst, SystemMemoryWriter& writer) :
     dst(dst), writer(writer), buffer(buffer) {
     this->device = device;
 }
@@ -32,7 +144,7 @@ const DeviceCommand EnqueueReadBufferCommand::device_command(u32 dst) {
     u32 num_pages_per_remainder_burst = remainder_burst_size / this->buffer.page_size();
 
     // Need to make a PCIE coordinate variable
-    command.add_read_relay(
+    command.add_read_buffer_relay(
         dst,
         NOC_XY_ENCODING(NOC_X(0), NOC_Y(4)),
         this->buffer.address(),
@@ -67,7 +179,8 @@ void EnqueueReadBufferCommand::process() {
 EnqueueCommandType EnqueueReadBufferCommand::type() { return this->type_; }
 
 // EnqueueWriteBufferCommand section
-EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(Device* device, Buffer& buffer, vector<u32>& src, SystemMemoryWriter& writer) :
+EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
+    Device* device, Buffer& buffer, vector<u32>& src, SystemMemoryWriter& writer) :
     writer(writer), src(src), buffer(buffer) {
     TT_ASSERT(
         buffer.buffer_type() == BufferType::DRAM or buffer.buffer_type() == BufferType::L1,
@@ -78,7 +191,7 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(Device* device, Buffer& buf
 const DeviceCommand EnqueueWriteBufferCommand::device_command(u32 src_address) {
     DeviceCommand command;
 
-
+    TT_ASSERT(this->buffer.size() % 32 == 0);
     command.set_data_size_in_bytes(this->buffer.size());
 
     u32 available_l1 = 1024 * 1024 - UNRESERVED_BASE;
@@ -90,7 +203,7 @@ const DeviceCommand EnqueueWriteBufferCommand::device_command(u32 src_address) {
     u32 num_pages_per_remainder_burst = remainder_burst_size / this->buffer.page_size();
 
     // Need to make a PCIE coordinate variable
-    command.add_write_relay(
+    command.add_write_buffer_relay(
         src_address,
         NOC_XY_ENCODING(NOC_X(0), NOC_Y(4)),
         this->buffer.address(),
@@ -103,10 +216,8 @@ const DeviceCommand EnqueueWriteBufferCommand::device_command(u32 src_address) {
         num_pages_per_remainder_burst,
         (u32)(this->buffer.buffer_type()));
 
-
     return command;
 }
-
 
 void EnqueueWriteBufferCommand::process() {
     u32 write_ptr = this->writer.cq_write_interface.fifo_wr_ptr << 4;
@@ -115,7 +226,6 @@ void EnqueueWriteBufferCommand::process() {
     vector<u32> command_vector(command_desc.begin(), command_desc.end());
     u32 cmd_size = DeviceCommand::size_in_bytes() + this->buffer.size();
 
-    // Change noc write name
     this->writer.cq_reserve_back(this->device, cmd_size);
     this->writer.cq_write(this->device, command_vector, write_ptr);
     this->writer.cq_write(this->device, this->src, system_memory_temporary_storage_address);
@@ -123,6 +233,77 @@ void EnqueueWriteBufferCommand::process() {
 }
 
 EnqueueCommandType EnqueueWriteBufferCommand::type() { return this->type_; }
+
+EnqueueProgramCommand::EnqueueProgramCommand(
+    Device* device, Buffer& buffer, ProgramToDeviceMap& program_to_dev_map, SystemMemoryWriter& writer) :
+    buffer(buffer), program_to_dev_map(program_to_dev_map), writer(writer) {
+    this->device = device;
+}
+
+const DeviceCommand EnqueueProgramCommand::device_command(u32) {
+    // if (this->command_cache.count(&this->program)) {
+    //     return this->command_cache.at(&this->program);
+    // }
+    // this->command_cache.emplace(&this->program, command);
+    DeviceCommand command;
+
+    command.launch();
+
+    u32 src = this->buffer.address();
+    u32 src_noc = noc_coord_to_u32(this->buffer.noc_coordinates());
+    for (const ProgramSection& section : this->program_to_dev_map.sections) {
+        u32 transfer_size = section.size_in_bytes;
+        vector<TrailingWriteCommand> write_commands;
+        u32 dst_code_location;
+        for (const auto& [riscv_type, transfer_info_vector] : section.section) {
+            switch (riscv_type) {
+                case 'B': dst_code_location = MEM_BRISC_FIRMWARE_BASE; break;
+                case 'N': dst_code_location = MEM_NCRISC_FIRMWARE_BASE; break;
+                case 'U': dst_code_location = MEM_TRISC0_BASE; break;
+                case 'M': dst_code_location = MEM_TRISC1_BASE; break;
+                case 'P': dst_code_location = MEM_TRISC2_BASE; break;
+                default: TT_THROW("Invalid riscv type");
+            }
+
+            for (const transfer_info& transfer : transfer_info_vector) {
+                TrailingWriteCommand trailing_write = {
+                    .src = std::get<0>(transfer), // Refactor to use methods to get relevant data from tuple
+                    .dst = dst_code_location,
+                    .dst_noc = std::get<2>(transfer),
+                    .transfer_size = std::get<1>(transfer),
+                    .num_receivers = std::get<3>(transfer)};
+                write_commands.push_back(trailing_write);
+            }
+        }
+
+        command.add_write_program_relay(src, src_noc, transfer_size, write_commands);
+        tt::log_debug(tt::LogDispatch, "Testing");
+        // u32 i = 0;
+        // for (u32 el: command.get_desc()) {
+        //     tt::log_debug(tt::LogDispatch, "El idx {}, el {}", i, el);
+        //     i++;
+        // }
+    }
+
+    return command;
+}
+
+void EnqueueProgramCommand::process() {
+    tt::log_debug(tt::LogDispatch, "Debug");
+    u32 write_ptr = this->writer.cq_write_interface.fifo_wr_ptr << 4;
+    u32 system_memory_temporary_storage_address = write_ptr + DeviceCommand::size_in_bytes();
+    const DeviceCommand command = this->device_command(0);
+    const auto command_desc = this->device_command(0).get_desc();
+    vector<u32> command_vector(command_desc.begin(), command_desc.end());
+    u32 cmd_size = DeviceCommand::size_in_bytes();
+
+    this->writer.cq_reserve_back(this->device, cmd_size);
+    tt::log_debug(tt::LogDispatch, "Write ptr {}", this->writer.cq_write_interface.fifo_wr_ptr);
+    this->writer.cq_write(this->device, command_vector, write_ptr);
+    this->writer.cq_push_back(this->device, cmd_size);
+}
+
+EnqueueCommandType EnqueueProgramCommand::type() { return this->type_; }
 
 // FinishCommand section
 FinishCommand::FinishCommand(Device* device, SystemMemoryWriter& writer) : writer(writer) { this->device = device; }
@@ -179,8 +360,10 @@ void send_dispatch_kernel_to_device(Device* device) {
 
 // CommandQueue section
 CommandQueue::CommandQueue(Device* device) {
-    send_dispatch_kernel_to_device(device);
+    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}});
 
+
+    send_dispatch_kernel_to_device(device);
     this->device = device;
 }
 
@@ -225,6 +408,43 @@ void CommandQueue::enqueue_write_buffer(Buffer& buffer, vector<u32>& src, bool b
     this->enqueue_command(command, blocking);
 }
 
+void CommandQueue::enqueue_program(Program& program, bool blocking) {
+
+    TT_ASSERT(not blocking, "EnqueueProgram only has support for non-blocking mode currently");
+
+    // Need to relay the program into DRAM if this is the first time
+    // we are seeing it
+    static int channel_id = 0;  // Are there issues with this being static?
+    if (not this->program_to_buffer.count(&program)) {
+        ProgramToDeviceMap program_to_device_map = ConstructProgramToDeviceMap(this->device, program);
+
+        vector<u32>& program_data = program_to_device_map.bins;
+        u32 program_data_size_in_bytes = program_data.size() * sizeof(u32);
+        unique_ptr<Buffer> program_buffer = std::make_unique<Buffer>(
+            this->device, program_data_size_in_bytes, channel_id, program_data_size_in_bytes, BufferType::DRAM);
+        // tt::log_debug(tt::LogDispatch, "Program buffer addr {}", program_buffer->address());
+        tt::log_debug(tt::LogDispatch, "Program buffer size in B {}", program_data_size_in_bytes);
+
+        this->enqueue_write_buffer(*program_buffer, program_data, blocking);
+        channel_id =
+            (channel_id + 1) % this->device->cluster()
+                                   ->get_soc_desc(0)
+                                   .dram_cores.size();  // TODO(agrebenisan): Pull in num DRAM banks from SOC descriptor
+
+        // We need to hold onto this buffer so that the program doesn't get de-allocated
+        this->program_to_buffer.emplace(&program, std::move(program_buffer));
+        this->program_to_dev_map.emplace(&program, std::move(program_to_device_map));
+    }
+
+    shared_ptr<EnqueueProgramCommand> command = std::make_shared<EnqueueProgramCommand>(
+        this->device,
+        *this->program_to_buffer.at(&program),
+        this->program_to_dev_map.at(&program),
+        this->sysmem_writer);
+
+    this->enqueue_command(command, blocking);
+}
+
 void CommandQueue::finish() {
     FinishCommand command(this->device, this->sysmem_writer);
     shared_ptr<FinishCommand> p = std::make_shared<FinishCommand>(std::move(command));
@@ -253,6 +473,12 @@ void EnqueueWriteBuffer(CommandQueue& cq, Buffer& buffer, vector<u32>& src, bool
     tt::log_debug(tt::LogDispatch, "EnqueueWriteBuffer");
 
     cq.enqueue_write_buffer(buffer, src, blocking);
+}
+
+void EnqueueProgram(CommandQueue& cq, Program& program, bool blocking) {
+    tt::log_debug(tt::LogDispatch, "EnqueueProgram");
+
+    cq.enqueue_program(program, blocking);
 }
 
 void Finish(CommandQueue& cq) {

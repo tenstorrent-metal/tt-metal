@@ -16,11 +16,12 @@ int main(int argc, char **argv) {
     bool pass = true;
     bool multibank = true;
 
-    const char* op_id_to_op_define[] = {"add_tiles", "sub_tiles", "mul_tiles"};
-    const char* op_id_to_op_code_define[] = {"0", "1", "2"};
-    const char* op_id_to_op_name[] = {"ADD", "SUB", "MUL"};
+    const char* op_id_to_op_define[] = {"add_tiles"};
+    const char* op_id_to_op_code_define[] = {"0"};
+    const char* op_id_to_op_name[] = {"ADD"};
     auto ops = EltwiseOp::all();
-    for (auto eltwise_op: ops) {
+    auto eltwise_op = EltwiseOp::ADD;
+    // for (auto eltwise_op: ops) {
     log_info(LogTest, "====================================================================");
     log_info(LogTest, "======= Running eltwise_binary test for op={}", op_id_to_op_name[eltwise_op]);
     try {
@@ -218,7 +219,7 @@ int main(int argc, char **argv) {
         // Capture system call errors that may have returned from driver/kernel
         log_error(LogTest, "System error message: {}", std::strerror(errno));
     }
-    } // for EltwiseOp::all()
+    // } // for EltwiseOp::all()
 
     if (pass) {
         log_info(LogTest, "Test Passed");

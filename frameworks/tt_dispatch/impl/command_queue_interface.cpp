@@ -25,7 +25,7 @@ void SystemMemoryWriter::cq_reserve_back(Device* device, u32 cmd_size_B) {
     u32 rd_ptr;
     do {
         rd_ptr = get_cq_rd_ptr(device);
-
+        tt::log_debug(tt::LogDispatch, "CQ READ {}", rd_ptr);
     } while (this->cq_write_interface.fifo_wr_ptr < rd_ptr and
              this->cq_write_interface.fifo_wr_ptr + cmd_size_16B >= rd_ptr);
 }
@@ -44,8 +44,11 @@ void SystemMemoryWriter::send_write_ptr(Device* device) {
 }
 
 void SystemMemoryWriter::cq_push_back(Device* device, u32 push_size_B) {
+
+    tt::log_debug(tt::LogDispatch, "PUSH SIZE B {}", push_size_B);
     // All data needs to be 32B aligned
     u32 push_size_16B = ((push_size_B + 31) / 32) * 2; // Terse way to find next multiple of 32 in 16B words
+    tt::log_debug(tt::LogDispatch, "PUSH SIZE 16B {}", push_size_16B);
 
     this->cq_write_interface.fifo_wr_ptr += push_size_16B;
 

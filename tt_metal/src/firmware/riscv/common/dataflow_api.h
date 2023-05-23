@@ -1052,7 +1052,9 @@ void cq_wait_front() {
 
 FORCE_INLINE
 void cq_pop_front(u32 cmd_size_16B) {
+    DPRINT << 'A' << cq_read_interface.fifo_rd_ptr << ENDL();
     cq_read_interface.fifo_rd_ptr += cmd_size_16B;
+    DPRINT << 'B' << cq_read_interface.fifo_rd_ptr << ENDL();
 
     if (cq_read_interface.fifo_rd_ptr > cq_read_interface.fifo_limit) {
         cq_read_interface.fifo_rd_ptr -= cq_read_interface.fifo_size;

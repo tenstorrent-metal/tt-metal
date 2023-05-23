@@ -1,9 +1,5 @@
-#include <algorithm>
-
 #include "frameworks/tt_dispatch/impl/command_queue.hpp"
 #include "tt_metal/host_api.hpp"
-#include "tt_metal/tools/profiler/profiler.hpp"
-// #include "llrt/tt_debug_print_server.hpp"
 
 using namespace tt;
 
@@ -259,7 +255,6 @@ bool test_chained_enqueue_writes_then_reads_stress(const ARCH& arch) {
 }
 
 int main(int argc, char **argv) {
-    int pci_express_slot = 0;
 
     ////////////////////////////////////////////////////////////////////////////
     //                      Initial Runtime Args Parse
