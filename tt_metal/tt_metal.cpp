@@ -778,6 +778,12 @@ bool CompileProgram(Device *device, Program &program, bool profile_kernel) {
     tt_set_profiler_state_for_debug_print(profile_kernel);
 
     CompileBlankKernel(device); // PROF_BEGIN("CCBLANK") PROF_END("CCBLANK")
+
+    // Compute kernels generate dependencies for data movement kernels
+    // Kernels running on a core need to be grouped together for compilation
+    // The same group of kernels shouldn't be compiled multiple times
+    auto op_idx = 0;
+    for (auto &[logical_core, kernel_group] : program.core_to_kernel_group()) {
         ValidateL1Buffers(device, program, logical_core);  // PROF_BEGIN("CCGEN_PREAMBLE")
 
         ValidateKernelGroup(kernel_group, logical_core);

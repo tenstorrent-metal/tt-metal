@@ -139,11 +139,11 @@ void test_program_to_device_map() {
     CoreCoord core_coord = {0, 0};
     string bin_path = program.kernels().at(0)->binary_path(core_coord);
 
-    u32 brisc_size  = tt::llrt::get_risc_binary(bin_path + "/brisc/brisc.hex", 0).size() * sizeof(u32);
-    u32 ncrisc_size = tt::llrt::get_risc_binary(bin_path + "/ncrisc/ncrisc.hex", 1).size() * sizeof(u32);
-    u32 trisc0_size = tt::llrt::get_risc_binary(bin_path + "/tensix_thread0/tensix_thread0.hex", 0).size() * sizeof(u32);
-    u32 trisc1_size = tt::llrt::get_risc_binary(bin_path + "/tensix_thread1/tensix_thread1.hex", 1).size() * sizeof(u32);
-    u32 trisc2_size = tt::llrt::get_risc_binary(bin_path + "/tensix_thread2/tensix_thread2.hex", 2).size() * sizeof(u32);
+    u32 brisc_size  = tt::llrt::get_risc_binary(bin_path + "/brisc/brisc.hex").size() * sizeof(u32);
+    u32 ncrisc_size = tt::llrt::get_risc_binary(bin_path + "/ncrisc/ncrisc.hex").size() * sizeof(u32);
+    u32 trisc0_size = tt::llrt::get_risc_binary(bin_path + "/tensix_thread0/tensix_thread0.hex").size() * sizeof(u32);
+    u32 trisc1_size = tt::llrt::get_risc_binary(bin_path + "/tensix_thread1/tensix_thread1.hex").size() * sizeof(u32);
+    u32 trisc2_size = tt::llrt::get_risc_binary(bin_path + "/tensix_thread2/tensix_thread2.hex").size() * sizeof(u32);
 
     auto section = prog_to_device_map.sections.at(0);
     // Test that the code sizes on disk match the sizes seen in the prog to device map

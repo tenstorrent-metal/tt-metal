@@ -36,79 +36,85 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
         sections.push_back(section);
     };
 
-
     // Initialize program_to_device_map with all possible keys
     initialize_section();
 
     u32 start_in_bytes = 0;
     u32 kernel_size_in_bytes = 0;
-    auto write_to_program_device_map = [&](char riscv_type, const vector<u32>& kernel_bin, const CoreRangeSet& cr_set) {
-        u32 num_bytes_so_far = program_vector.size() * sizeof(u32);
-        u32 num_new_bytes = kernel_bin.size() * sizeof(u32);
+    auto write_to_program_device_map =
+        [&](char riscv_type,
+            const Kernel* kernel) {  //, const vector<ll_api::memory>& kernel_bins, const CoreRangeSet& cr_set) {
+            vector<char> riscv_types;
 
-        if (num_bytes_so_far + num_new_bytes > 1024 * 1024 - UNRESERVED_BASE) {
-            current_section_idx++;
-            kernel_size_in_bytes = 0;
-            initialize_section();
-        }
+            switch (riscv_type) {
+                case 'C': riscv_types = {'U', 'M', 'P'}; break;
+                default: riscv_types = {riscv_type};
+            }
 
-        start_in_bytes = start_in_bytes + kernel_size_in_bytes;
-        program_vector.insert(program_vector.end(), kernel_bin.begin(), kernel_bin.end());
-        kernel_size_in_bytes = kernel_bin.size() * sizeof(u32);
+            size_t i = 0;
 
-        for (const CoreRange& core_range : cr_set.ranges()) {
-            CoreCoord physical_start = device->worker_core_from_logical_core(core_range.start);
-            CoreCoord physical_end = device->worker_core_from_logical_core(core_range.end);
+            const vector<ll_api::memory>& kernel_bins = kernel->binaries();
+            CoreRangeSet cr_set = kernel->core_range_set();
 
-            u32 start_x = physical_start.x;
-            u32 start_y = physical_start.y;
-            u32 end_x = physical_end.x;
-            u32 end_y = physical_end.y;
-            u32 noc_multicast_encoding = NOC_MULTICAST_ENCODING(start_x, start_y, end_x, end_y);
+            for (char riscv_type : riscv_types) {
+                const ll_api::memory& kernel_bin = kernel_bins.at(i);
+                i++;
 
-            sections.at(current_section_idx)
-                .at(riscv_type)
-                .push_back(std::make_tuple(start_in_bytes, kernel_size_in_bytes, noc_multicast_encoding, core_range.size()));
-        }
-        sections.at(current_section_idx).size_in_bytes += kernel_bin.size() * sizeof(u32);
-    };
+                u32 num_bytes_so_far = program_vector.size() * sizeof(u32);
+                u32 num_new_bytes = kernel_bin.size() * sizeof(u32);
 
-    CoreCoord hardcoded_core_for_now = {0, 0};
+                if (num_bytes_so_far + num_new_bytes > 1024 * 1024 - UNRESERVED_BASE) {
+                    current_section_idx++;
+                    kernel_size_in_bytes = 0;
+                    initialize_section();
+                }
+
+                start_in_bytes = start_in_bytes + kernel_size_in_bytes;
+
+                kernel_bin.process_spans([&](std::vector<uint32_t>::const_iterator mem_ptr, uint64_t _, uint32_t len) {
+                    program_vector.insert(program_vector.end(), mem_ptr, mem_ptr + len);
+                });
+
+                kernel_size_in_bytes = kernel_bin.size() * sizeof(u32);
+
+                for (const CoreRange& core_range : cr_set.ranges()) {
+                    CoreCoord physical_start = device->worker_core_from_logical_core(core_range.start);
+                    CoreCoord physical_end = device->worker_core_from_logical_core(core_range.end);
+
+                    u32 start_x = physical_start.x;
+                    u32 start_y = physical_start.y;
+                    u32 end_x = physical_end.x;
+                    u32 end_y = physical_end.y;
+                    u32 noc_multicast_encoding = NOC_MULTICAST_ENCODING(start_x, start_y, end_x, end_y);
+
+                    sections.at(current_section_idx)
+                        .at(riscv_type)
+                        .push_back(std::make_tuple(
+                            start_in_bytes, kernel_size_in_bytes, noc_multicast_encoding, core_range.size()));
+                }
+                sections.at(current_section_idx).size_in_bytes += kernel_bin.size() * sizeof(u32);
+            }
+
+        };
+
     // TODO(agrebenisan): Once Almeet gets rid of kernel polymorphism,
     // need to come back and clean this up. Ideally this should be as
     // simple as just getting the type from the kernel.
     for (Kernel* kernel : program.kernels()) {
+        char riscv_type;
         switch (kernel->kernel_type()) {
             case (KernelType::DataMovement): {
                 auto dm_kernel = dynamic_cast<DataMovementKernel*>(kernel);
                 switch (dm_kernel->data_movement_processor()) {
-                    case (DataMovementProcessor::RISCV_0): {
-                        vector<u32> bin = tt::llrt::get_risc_binary(
-                            kernel->binary_path(hardcoded_core_for_now) + "/brisc/brisc.hex", 0);
-                        write_to_program_device_map('B', bin, kernel->core_range_set());
-                    } break;
-                    case (DataMovementProcessor::RISCV_1): {
-                        vector<u32> bin = tt::llrt::get_risc_binary(
-                            kernel->binary_path(hardcoded_core_for_now) + "/ncrisc/ncrisc.hex", 1);
-                        write_to_program_device_map('N', bin, kernel->core_range_set());
-                    } break;
+                    case (DataMovementProcessor::RISCV_0): riscv_type = 'B'; break;
+                    case (DataMovementProcessor::RISCV_1): riscv_type = 'N'; break;
                 }
             } break;
-            case (KernelType::Compute): {
-                for (u32 i = 0; i < 3; i++) {
-                    vector<u32> bin = tt::llrt::get_trisc_binary(
-                        kernel->binary_path(hardcoded_core_for_now) + "/tensix_thread" + std::to_string(i) +
-                            "/tensix_thread" + std::to_string(i) + ".hex",
-                        i);
-                    switch (i) {
-                        case 0: write_to_program_device_map('U', bin, kernel->core_range_set()); break;
-                        case 1: write_to_program_device_map('M', bin, kernel->core_range_set()); break;
-                        case 2: write_to_program_device_map('P', bin, kernel->core_range_set()); break;
-                    }
-                }
-            } break;
+            case (KernelType::Compute): riscv_type = 'C'; break;
             default: TT_THROW("Invalid kernel type");
         }
+
+        write_to_program_device_map(riscv_type, kernel);
     }
 
     return program_to_device_map;
@@ -267,7 +273,7 @@ const DeviceCommand EnqueueProgramCommand::device_command(u32) {
 
             for (const transfer_info& transfer : transfer_info_vector) {
                 TrailingWriteCommand trailing_write = {
-                    .src = std::get<0>(transfer), // Refactor to use methods to get relevant data from tuple
+                    .src = std::get<0>(transfer),  // Refactor to use methods to get relevant data from tuple
                     .dst = dst_code_location,
                     .dst_noc = std::get<2>(transfer),
                     .transfer_size = std::get<1>(transfer),
@@ -344,13 +350,13 @@ void send_dispatch_kernel_to_device(Device* device) {
     std::map<string, string> brisc_defines = {{"IS_DISPATCH_KERNEL", ""}, {"DEVICE_DISPATCH_MODE", ""}};
     build_kernel_for_riscv_options.brisc_defines = brisc_defines;
     bool profile = false;
-    generate_binary_for_risc(RISCID::BR, &build_kernel_for_riscv_options, build_kernel_for_riscv_options.name, arch_name, 0, {}, profile);
+    generate_binary_for_risc(
+        RISCID::BR, &build_kernel_for_riscv_options, build_kernel_for_riscv_options.name, arch_name, 0, {}, profile);
 
     // Currently hard-coded. TODO(agrebenisan): Once we add support for multiple dispatch cores, this can be refactored,
     // but don't yet have a plan for where this variable should exist.
     CoreCoord dispatch_core = {1, 11};
-    tt::llrt::test_load_write_read_risc_binary(
-        device->cluster(), "command_queue/brisc/brisc.hex", 0, dispatch_core, 0);
+    tt::llrt::test_load_write_read_risc_binary(device->cluster(), "command_queue/brisc/brisc.hex", 0, dispatch_core, 0);
 
     // Deassert reset of dispatch core BRISC. TODO(agrebenisan): Refactor once Paul's changes in
     tt::llrt::internal_::setup_riscs_on_specified_core(
@@ -361,7 +367,6 @@ void send_dispatch_kernel_to_device(Device* device) {
 // CommandQueue section
 CommandQueue::CommandQueue(Device* device) {
     tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}});
-
 
     send_dispatch_kernel_to_device(device);
     this->device = device;
@@ -409,7 +414,6 @@ void CommandQueue::enqueue_write_buffer(Buffer& buffer, vector<u32>& src, bool b
 }
 
 void CommandQueue::enqueue_program(Program& program, bool blocking) {
-
     TT_ASSERT(not blocking, "EnqueueProgram only has support for non-blocking mode currently");
 
     // Need to relay the program into DRAM if this is the first time
