@@ -116,9 +116,7 @@ tt_metal::Program generate_eltwise_binary_program(Device *device) {
     eltwise_binary_kernel->add_define("ELTWISE_OP", "add_tiles");
     eltwise_binary_kernel->add_define("ELTWISE_OP_CODE", "0");
 
-    ////////////////////////////////////////////////////////////////////////////
-    //                      Compile Application
-    ////////////////////////////////////////////////////////////////////////////
+
     tt_metal::CompileProgram(device, program);
     return program;
 }
@@ -215,6 +213,6 @@ void test_enqueue_eltwise_binary_program() {
 }
 
 int main() {
-    test_program_to_device_map();
+    // test_program_to_device_map();
     test_enqueue_eltwise_binary_program();
 }

@@ -826,6 +826,7 @@ bool CompileProgram(Device *device, Program &program, bool profile_kernel) {
             // if (enable_compile_cache)
             //     cout << "======= Skipping compiling..." << std::endl;
         }
+
         HashLookup::inst().add(kernel_group_hash);
     }
 

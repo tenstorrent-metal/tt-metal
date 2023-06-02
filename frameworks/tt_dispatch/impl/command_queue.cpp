@@ -50,6 +50,8 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
             default: TT_THROW("Invalid riscv_type");
         }
 
+        tt::log_debug(tt::LogDispatch, "Writing to program device map for {}", riscv_type);
+
         size_t i = 0;
 
         const vector<ll_api::memory>& kernel_bins = kernel->binaries();
@@ -72,6 +74,7 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
 
             kernel_bin.process_spans([&](std::vector<uint32_t>::const_iterator mem_ptr, uint64_t _, uint32_t len) {
                 program_vector.insert(program_vector.end(), mem_ptr, mem_ptr + len);
+                mem_ptr += len;
             });
 
             kernel_size_in_bytes = kernel_bin.size() * sizeof(u32);
@@ -93,6 +96,9 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
             }
             sections.at(current_section_idx).size_in_bytes += kernel_bin.size() * sizeof(u32);
         }
+
+        TT_ASSERT(current_section_idx == 0, "Testing for just one section so far");
+
     };
 
     // TODO(agrebenisan): Once Almeet gets rid of kernel polymorphism,
@@ -196,7 +202,7 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
 const DeviceCommand EnqueueWriteBufferCommand::device_command(u32 src_address) {
     DeviceCommand command;
 
-    TT_ASSERT(this->buffer.size() % 32 == 0);
+    // TT_ASSERT(this->buffer.size() % 32 == 0);
     command.set_data_size_in_bytes(this->buffer.size());
 
     u32 available_l1 = 1024 * 1024 - UNRESERVED_BASE;
@@ -294,7 +300,6 @@ const DeviceCommand EnqueueProgramCommand::device_command(u32) {
 }
 
 void EnqueueProgramCommand::process() {
-    tt::log_debug(tt::LogDispatch, "Debug");
     u32 write_ptr = this->writer.cq_write_interface.fifo_wr_ptr << 4;
     u32 system_memory_temporary_storage_address = write_ptr + DeviceCommand::size_in_bytes();
     const DeviceCommand command = this->device_command(0);
@@ -303,7 +308,6 @@ void EnqueueProgramCommand::process() {
     u32 cmd_size = DeviceCommand::size_in_bytes();
 
     this->writer.cq_reserve_back(this->device, cmd_size);
-    tt::log_debug(tt::LogDispatch, "Write ptr {}", this->writer.cq_write_interface.fifo_wr_ptr);
     this->writer.cq_write(this->device, command_vector, write_ptr);
     this->writer.cq_push_back(this->device, cmd_size);
 }
@@ -349,6 +353,8 @@ void send_dispatch_kernel_to_device(Device* device) {
     std::map<string, string> brisc_defines = {{"IS_DISPATCH_KERNEL", ""}, {"DEVICE_DISPATCH_MODE", ""}};
     build_kernel_for_riscv_options.brisc_defines = brisc_defines;
     bool profile = false;
+
+    GenerateBankToNocCoordHeaders(device, &build_kernel_for_riscv_options, "command_queue");
     generate_binary_for_risc(
         RISCID::BR, &build_kernel_for_riscv_options, build_kernel_for_riscv_options.name, arch_name, 0, {}, profile);
 
@@ -425,7 +431,7 @@ void CommandQueue::enqueue_program(Program& program, bool blocking) {
         u32 program_data_size_in_bytes = program_data.size() * sizeof(u32);
         unique_ptr<Buffer> program_buffer = std::make_unique<Buffer>(
             this->device, program_data_size_in_bytes, channel_id, program_data_size_in_bytes, BufferType::DRAM);
-        // tt::log_debug(tt::LogDispatch, "Program buffer addr {}", program_buffer->address());
+
         tt::log_debug(tt::LogDispatch, "Program buffer size in B {}", program_data_size_in_bytes);
 
         this->enqueue_write_buffer(*program_buffer, program_data, blocking);

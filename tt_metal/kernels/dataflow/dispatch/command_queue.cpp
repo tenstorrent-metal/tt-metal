@@ -38,7 +38,7 @@ void kernel_main() {
         // Control data
         u32 finish = command_ptr[0];              // Whether to notify the host that we have finished
         u32 launch = command_ptr[1];              // Whether or not to launch kernels
-        u32 data_size_in_bytes = command_ptr[2];  // The amount of trailing data after the command table
+        u32 data_size_in_bytes = (command_ptr[2] - 1) | 31 + 1;  // The amount of trailing data after the command table rounded to the nearest multiple of 32
         u32 num_buffer_reads = command_ptr[3];    // How many ReadBuffer commands we are running
         u32 num_buffer_writes = command_ptr[4];   // How many WriteBuffer commands we are running
         u32 num_program_writes =
@@ -63,9 +63,9 @@ void kernel_main() {
         if (finish)
             handle_finish();
 
-        DPRINT << 'D' << 'S' << ':' << ' ' << data_size_in_bytes << ENDL();
-        DPRINT << 'X' << NUM_16B_WORDS_IN_COMMAND_TABLE << ENDL();
+
         // This tells the dispatch core how to update its read pointer
+        DPRINT << 'X' << ':' << ' ' << (data_size_in_bytes >> 4) + NUM_16B_WORDS_IN_COMMAND_TABLE << ENDL();
         cq_pop_front((data_size_in_bytes >> 4) + NUM_16B_WORDS_IN_COMMAND_TABLE);
     }
 }
