@@ -41,61 +41,59 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
 
     u32 start_in_bytes = 0;
     u32 kernel_size_in_bytes = 0;
-    auto write_to_program_device_map =
-        [&](char riscv_type,
-            const Kernel* kernel) {  //, const vector<ll_api::memory>& kernel_bins, const CoreRangeSet& cr_set) {
-            vector<char> riscv_types;
+    auto write_to_program_device_map = [&](char riscv_type, const Kernel* kernel) {
+        vector<char> riscv_types;
+        switch (riscv_type) {
+            case 'C': riscv_types = {'U', 'M', 'P'}; break;
+            case 'N':
+            case 'B': riscv_types = {riscv_type}; break;
+            default: TT_THROW("Invalid riscv_type");
+        }
 
-            switch (riscv_type) {
-                case 'C': riscv_types = {'U', 'M', 'P'}; break;
-                default: riscv_types = {riscv_type};
+        size_t i = 0;
+
+        const vector<ll_api::memory>& kernel_bins = kernel->binaries();
+        CoreRangeSet cr_set = kernel->core_range_set();
+
+        for (char riscv_type : riscv_types) {
+            const ll_api::memory& kernel_bin = kernel_bins.at(i);
+            i++;
+
+            u32 num_bytes_so_far = program_vector.size() * sizeof(u32);
+            u32 num_new_bytes = kernel_bin.size() * sizeof(u32);
+
+            if (num_bytes_so_far + num_new_bytes > 1024 * 1024 - UNRESERVED_BASE) {
+                current_section_idx++;
+                kernel_size_in_bytes = 0;
+                initialize_section();
             }
 
-            size_t i = 0;
+            start_in_bytes = start_in_bytes + kernel_size_in_bytes;
 
-            const vector<ll_api::memory>& kernel_bins = kernel->binaries();
-            CoreRangeSet cr_set = kernel->core_range_set();
+            kernel_bin.process_spans([&](std::vector<uint32_t>::const_iterator mem_ptr, uint64_t _, uint32_t len) {
+                program_vector.insert(program_vector.end(), mem_ptr, mem_ptr + len);
+            });
 
-            for (char riscv_type : riscv_types) {
-                const ll_api::memory& kernel_bin = kernel_bins.at(i);
-                i++;
+            kernel_size_in_bytes = kernel_bin.size() * sizeof(u32);
 
-                u32 num_bytes_so_far = program_vector.size() * sizeof(u32);
-                u32 num_new_bytes = kernel_bin.size() * sizeof(u32);
+            for (const CoreRange& core_range : cr_set.ranges()) {
+                CoreCoord physical_start = device->worker_core_from_logical_core(core_range.start);
+                CoreCoord physical_end = device->worker_core_from_logical_core(core_range.end);
 
-                if (num_bytes_so_far + num_new_bytes > 1024 * 1024 - UNRESERVED_BASE) {
-                    current_section_idx++;
-                    kernel_size_in_bytes = 0;
-                    initialize_section();
-                }
+                u32 start_x = physical_start.x;
+                u32 start_y = physical_start.y;
+                u32 end_x = physical_end.x;
+                u32 end_y = physical_end.y;
+                u32 noc_multicast_encoding = NOC_MULTICAST_ENCODING(start_x, start_y, end_x, end_y);
 
-                start_in_bytes = start_in_bytes + kernel_size_in_bytes;
-
-                kernel_bin.process_spans([&](std::vector<uint32_t>::const_iterator mem_ptr, uint64_t _, uint32_t len) {
-                    program_vector.insert(program_vector.end(), mem_ptr, mem_ptr + len);
-                });
-
-                kernel_size_in_bytes = kernel_bin.size() * sizeof(u32);
-
-                for (const CoreRange& core_range : cr_set.ranges()) {
-                    CoreCoord physical_start = device->worker_core_from_logical_core(core_range.start);
-                    CoreCoord physical_end = device->worker_core_from_logical_core(core_range.end);
-
-                    u32 start_x = physical_start.x;
-                    u32 start_y = physical_start.y;
-                    u32 end_x = physical_end.x;
-                    u32 end_y = physical_end.y;
-                    u32 noc_multicast_encoding = NOC_MULTICAST_ENCODING(start_x, start_y, end_x, end_y);
-
-                    sections.at(current_section_idx)
-                        .at(riscv_type)
-                        .push_back(std::make_tuple(
-                            start_in_bytes, kernel_size_in_bytes, noc_multicast_encoding, core_range.size()));
-                }
-                sections.at(current_section_idx).size_in_bytes += kernel_bin.size() * sizeof(u32);
+                sections.at(current_section_idx)
+                    .at(riscv_type)
+                    .push_back(std::make_tuple(
+                        start_in_bytes, kernel_size_in_bytes, noc_multicast_encoding, core_range.size()));
             }
-
-        };
+            sections.at(current_section_idx).size_in_bytes += kernel_bin.size() * sizeof(u32);
+        }
+    };
 
     // TODO(agrebenisan): Once Almeet gets rid of kernel polymorphism,
     // need to come back and clean this up. Ideally this should be as
@@ -108,6 +106,7 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
                 switch (dm_kernel->data_movement_processor()) {
                     case (DataMovementProcessor::RISCV_0): riscv_type = 'B'; break;
                     case (DataMovementProcessor::RISCV_1): riscv_type = 'N'; break;
+                    default: TT_THROW("Invalid kernel type");
                 }
             } break;
             case (KernelType::Compute): riscv_type = 'C'; break;
@@ -264,7 +263,7 @@ const DeviceCommand EnqueueProgramCommand::device_command(u32) {
         for (const auto& [riscv_type, transfer_info_vector] : section.section) {
             switch (riscv_type) {
                 case 'B': dst_code_location = MEM_BRISC_FIRMWARE_BASE; break;
-                case 'N': dst_code_location = MEM_NCRISC_FIRMWARE_BASE; break;
+                case 'N': dst_code_location = MEM_NCRISC_INIT_IRAM_L1_BASE; break;
                 case 'U': dst_code_location = MEM_TRISC0_BASE; break;
                 case 'M': dst_code_location = MEM_TRISC1_BASE; break;
                 case 'P': dst_code_location = MEM_TRISC2_BASE; break;
