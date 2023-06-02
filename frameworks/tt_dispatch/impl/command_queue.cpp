@@ -237,6 +237,9 @@ void EnqueueWriteBufferCommand::process() {
     vector<u32> command_vector(command_desc.begin(), command_desc.end());
     u32 cmd_size = DeviceCommand::size_in_bytes() + this->buffer.size();
 
+    tt::log_debug(tt::LogDispatch, "K {}", this->buffer.size());
+    tt::log_debug(tt::LogDispatch, "Q {}", DeviceCommand::size_in_bytes());
+    tt::log_debug(tt::LogDispatch, "V {}", cmd_size);
     this->writer.cq_reserve_back(this->device, cmd_size);
     this->writer.cq_write(this->device, command_vector, write_ptr);
     this->writer.cq_write(this->device, this->src, system_memory_temporary_storage_address);
@@ -257,7 +260,7 @@ const DeviceCommand EnqueueProgramCommand::device_command(u32) {
     // }
     // this->command_cache.emplace(&this->program, command);
     DeviceCommand command;
-
+    command.set_data_size_in_bytes(0);
     command.launch();
 
     u32 src = this->buffer.address();
@@ -288,7 +291,6 @@ const DeviceCommand EnqueueProgramCommand::device_command(u32) {
         }
 
         command.add_write_program_relay(src, src_noc, transfer_size, write_commands);
-        tt::log_debug(tt::LogDispatch, "Testing");
         // u32 i = 0;
         // for (u32 el: command.get_desc()) {
         //     tt::log_debug(tt::LogDispatch, "El idx {}, el {}", i, el);
@@ -304,6 +306,7 @@ void EnqueueProgramCommand::process() {
     u32 system_memory_temporary_storage_address = write_ptr + DeviceCommand::size_in_bytes();
     const DeviceCommand command = this->device_command(0);
     const auto command_desc = this->device_command(0).get_desc();
+
     vector<u32> command_vector(command_desc.begin(), command_desc.end());
     u32 cmd_size = DeviceCommand::size_in_bytes();
 
