@@ -21,15 +21,10 @@ using std::thread;
 using std::tuple;
 using std::unique_ptr;
 
-typedef u32 start_in_bytes;
-typedef u32 kernel_size_in_bytes;
-typedef u32 noc_multicast_encoding;
-typedef u32 num_receivers;
-
-typedef tuple<start_in_bytes, kernel_size_in_bytes, noc_multicast_encoding, num_receivers> transfer_info;
+typedef tuple<u32 /* addr */, u32 /* start_in_bytes */, u32 /* kernel_size_in_bytes */, u32 /* noc_multicast_encoding */, u32 /* num_receivers */> transfer_info;
 struct ProgramSection {
     // Maps RISCV type to src, transfer size, and multicast encoding
-    map<char, vector<transfer_info>> section;
+    map<char, vector<transfer_info>> section; // Maps the RISC-V type to transfer info
     size_t size_in_bytes;
 
     vector<transfer_info>& at(char key) { return this->section.at(key); }
@@ -160,7 +155,7 @@ class CommandQueue {
     SystemMemoryWriter sysmem_writer;
     TSQueue<shared_ptr<Command>>
         processing_thread_queue;  // These are commands that have not been placed in system memory
-    thread processing_thread;
+    // thread processing_thread;
     map<const Program*, unique_ptr<Buffer>>
         program_to_buffer;  // Using raw pointer since I want to be able to hash program inexpensively. This implies
                             // program object cannot be destroyed during the lifetime of the user's program

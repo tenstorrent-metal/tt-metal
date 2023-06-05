@@ -1,6 +1,8 @@
 #include "frameworks/tt_dispatch/impl/command_queue.hpp"
 #include "tt_metal/host_api.hpp"
 
+#include "tests/tt_metal/llrt/test_libs/debug_mailbox.hpp"
+
 using namespace tt;
 
 u32 NUM_TILES = 2048;
@@ -191,7 +193,6 @@ void test_enqueue_eltwise_binary_program() {
     {
         CommandQueue cq(device);
 
-
         // Enqueue program inputs
         vector<u32> inpa(NUM_TILES, 0x40000000); // 2 in float
         vector<u32> inpb(NUM_TILES, 0x40800000); // 4 in float
@@ -204,9 +205,10 @@ void test_enqueue_eltwise_binary_program() {
         Buffer out(device, NUM_TILES * 2048, 0, 2048, BufferType::DRAM);
         vector<u32> out_vec;
 
+        read_trisc_debug_mailbox(device->cluster(), 0, {1, 11}, 0);
+
         Finish(cq);
         // EnqueueReadBuffer(cq, out, out_vec, true);
-        for (volatile int i = 0; i < 1000000; i++);
         vector<u32> golden_out(NUM_TILES, 0x40C00000); // 6 in float
         TT_ASSERT(out_vec == golden_out);
     }

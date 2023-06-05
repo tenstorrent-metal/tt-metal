@@ -39,7 +39,7 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
     // Initialize program_to_device_map with all possible keys
     initialize_section();
 
-    u32 start_in_bytes = 0;
+    u32 start_in_bytes = 150 * 1024;  // UNRESERVED_BASE;
     u32 kernel_size_in_bytes = 0;
     auto write_to_program_device_map = [&](char riscv_type, const Kernel* kernel) {
         vector<char> riscv_types;
@@ -64,17 +64,14 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
             u32 num_bytes_so_far = program_vector.size() * sizeof(u32);
             u32 num_new_bytes = kernel_bin.size() * sizeof(u32);
 
-            if (num_bytes_so_far + num_new_bytes > 1024 * 1024 - UNRESERVED_BASE) {
+            if (num_bytes_so_far + num_new_bytes > 1024 * 1024 - 150 * 1024) { //UNRESERVED_BASE) {
                 current_section_idx++;
                 kernel_size_in_bytes = 0;
                 initialize_section();
             }
 
-            start_in_bytes = start_in_bytes + kernel_size_in_bytes;
-
-            kernel_bin.process_spans([&](std::vector<uint32_t>::const_iterator mem_ptr, uint64_t _, uint32_t len) {
+            kernel_bin.process_spans([&](std::vector<uint32_t>::const_iterator mem_ptr, uint64_t addr, uint32_t len) {
                 program_vector.insert(program_vector.end(), mem_ptr, mem_ptr + len);
-                mem_ptr += len;
             });
 
             kernel_size_in_bytes = kernel_bin.size() * sizeof(u32);
@@ -89,16 +86,28 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
                 u32 end_y = physical_end.y;
                 u32 noc_multicast_encoding = NOC_MULTICAST_ENCODING(start_x, start_y, end_x, end_y);
 
-                sections.at(current_section_idx)
+                u32 start_in_bytes_copy = start_in_bytes;
+
+                kernel_bin.process_spans([&](std::vector<uint32_t>::const_iterator mem_ptr, uint64_t addr, uint32_t len) {
+
+                    u32 transfer_size_in_bytes = len * sizeof(u32);
+                    tt::log_debug(tt::LogDispatch, "RISCV TYPE {}, ADDR {}, START IN L1 {}, KERNEL SIZE IN BYTES {}, NOC ENCODING {}",
+                    riscv_type, addr, start_in_bytes, transfer_size_in_bytes, noc_multicast_encoding);
+
+                    sections.at(current_section_idx)
                     .at(riscv_type)
                     .push_back(std::make_tuple(
-                        start_in_bytes, kernel_size_in_bytes, noc_multicast_encoding, core_range.size()));
+                        addr, start_in_bytes, transfer_size_in_bytes, noc_multicast_encoding, core_range.size()
+                    ));
+                    start_in_bytes += transfer_size_in_bytes;
+
+                });
             }
+            start_in_bytes = start_in_bytes + kernel_size_in_bytes;
             sections.at(current_section_idx).size_in_bytes += kernel_bin.size() * sizeof(u32);
         }
 
         TT_ASSERT(current_section_idx == 0, "Testing for just one section so far");
-
     };
 
     // TODO(agrebenisan): Once Almeet gets rid of kernel polymorphism,
@@ -146,7 +155,7 @@ const DeviceCommand EnqueueReadBufferCommand::device_command(u32 dst) {
     DeviceCommand command;
     command.set_data_size_in_bytes(this->buffer.size());
 
-    u32 available_l1 = 1024 * 1024 - UNRESERVED_BASE;
+    u32 available_l1 = 1024 * 1024 - 150 * 1024; //UNRESERVED_BASE;
     u32 potential_burst_size = available_l1;
     u32 num_bursts = this->buffer.size() / (available_l1);
     u32 num_pages_per_burst = potential_burst_size / this->buffer.page_size();
@@ -196,6 +205,8 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
     TT_ASSERT(
         buffer.buffer_type() == BufferType::DRAM or buffer.buffer_type() == BufferType::L1,
         "Trying to write to an invalid buffer");
+
+    tt::log_debug(tt::LogDispatch, "BUFFER SIZE {}", buffer.size());
     this->device = device;
 }
 
@@ -205,13 +216,23 @@ const DeviceCommand EnqueueWriteBufferCommand::device_command(u32 src_address) {
     // TT_ASSERT(this->buffer.size() % 32 == 0);
     command.set_data_size_in_bytes(this->buffer.size());
 
-    u32 available_l1 = 1024 * 1024 - UNRESERVED_BASE;
+    u32 available_l1 = 1024 * 1024 - 150 * 1024; //UNRESERVED_BASE;
     u32 potential_burst_size = available_l1;
     u32 num_bursts = this->buffer.size() / (available_l1);
     u32 num_pages_per_burst = potential_burst_size / this->buffer.page_size();
     u32 burst_size = num_pages_per_burst * this->buffer.page_size();
     u32 remainder_burst_size = this->buffer.size() - (num_bursts * burst_size);
     u32 num_pages_per_remainder_burst = remainder_burst_size / this->buffer.page_size();
+
+
+    tt::log_debug(tt::LogDispatch, "buffer_size {}", this->buffer.size());
+    tt::log_debug(tt::LogDispatch, "src_address {}", src_address);
+    tt::log_debug(tt::LogDispatch, "potential_burst_size {}", potential_burst_size);
+    tt::log_debug(tt::LogDispatch, "num bursts {}", num_bursts);
+    tt::log_debug(tt::LogDispatch, "num_pages_per_burst {}", num_pages_per_burst);
+    tt::log_debug(tt::LogDispatch, "burst_size {}", burst_size);
+    tt::log_debug(tt::LogDispatch, "remainder_burst_size {}", remainder_burst_size);
+    tt::log_debug(tt::LogDispatch, "num_pages_per_remainder_burst {}", num_pages_per_remainder_burst);
 
     // Need to make a PCIE coordinate variable
     command.add_write_buffer_relay(
@@ -233,13 +254,11 @@ const DeviceCommand EnqueueWriteBufferCommand::device_command(u32 src_address) {
 void EnqueueWriteBufferCommand::process() {
     u32 write_ptr = this->writer.cq_write_interface.fifo_wr_ptr << 4;
     u32 system_memory_temporary_storage_address = write_ptr + DeviceCommand::size_in_bytes();
+
     const auto command_desc = this->device_command(system_memory_temporary_storage_address).get_desc();
     vector<u32> command_vector(command_desc.begin(), command_desc.end());
     u32 cmd_size = DeviceCommand::size_in_bytes() + this->buffer.size();
 
-    tt::log_debug(tt::LogDispatch, "K {}", this->buffer.size());
-    tt::log_debug(tt::LogDispatch, "Q {}", DeviceCommand::size_in_bytes());
-    tt::log_debug(tt::LogDispatch, "V {}", cmd_size);
     this->writer.cq_reserve_back(this->device, cmd_size);
     this->writer.cq_write(this->device, command_vector, write_ptr);
     this->writer.cq_write(this->device, this->src, system_memory_temporary_storage_address);
@@ -265,37 +284,42 @@ const DeviceCommand EnqueueProgramCommand::device_command(u32) {
 
     u32 src = this->buffer.address();
     u32 src_noc = noc_coord_to_u32(this->buffer.noc_coordinates());
+
     for (const ProgramSection& section : this->program_to_dev_map.sections) {
         u32 transfer_size = section.size_in_bytes;
         vector<TrailingWriteCommand> write_commands;
         u32 dst_code_location;
         for (const auto& [riscv_type, transfer_info_vector] : section.section) {
             switch (riscv_type) {
-                case 'B': dst_code_location = MEM_BRISC_FIRMWARE_BASE; break;
-                case 'N': dst_code_location = MEM_NCRISC_INIT_IRAM_L1_BASE; break;
-                case 'U': dst_code_location = MEM_TRISC0_BASE; break;
-                case 'M': dst_code_location = MEM_TRISC1_BASE; break;
-                case 'P': dst_code_location = MEM_TRISC2_BASE; break;
+                case 'B': dst_code_location = MEM_BRISC_INIT_LOCAL_L1_BASE; break; //MEM_BRISC_FIRMWARE_BASE; break;
+                case 'N': dst_code_location = MEM_NCRISC_INIT_LOCAL_L1_BASE; break; //MEM_NCRISC_INIT_IRAM_L1_BASE; break;
+                case 'U': dst_code_location = MEM_TRISC0_INIT_LOCAL_L1_BASE; break; //MEM_TRISC0_BASE; break;
+                case 'M': dst_code_location = MEM_TRISC1_INIT_LOCAL_L1_BASE; break; //MEM_TRISC1_BASE; break;
+                case 'P': dst_code_location = MEM_TRISC2_INIT_LOCAL_L1_BASE; break; //MEM_TRISC2_BASE; break;
                 default: TT_THROW("Invalid riscv type");
             }
 
-            for (const transfer_info& transfer : transfer_info_vector) {
+            for (const auto &[kernel_addr, src, kernel_size_in_bytes, noc_multicast_encoding, num_receivers] : transfer_info_vector) {
+
+                u32 dst_addr = tt::llrt::relocate_dev_addr(kernel_addr, dst_code_location);
                 TrailingWriteCommand trailing_write = {
-                    .src = std::get<0>(transfer),  // Refactor to use methods to get relevant data from tuple
-                    .dst = dst_code_location,
-                    .dst_noc = std::get<2>(transfer),
-                    .transfer_size = std::get<1>(transfer),
-                    .num_receivers = std::get<3>(transfer)};
+                    .src = src,  // Refactor to use methods to get relevant data from tuple
+                    .dst = dst_addr,
+                    .dst_noc = noc_multicast_encoding,
+                    .transfer_size = kernel_size_in_bytes,
+                    .num_receivers = num_receivers};
+
+                tt::log_debug(tt::LogDispatch, "TRANSFER SRC {}", trailing_write.src);
+                tt::log_debug(tt::LogDispatch, "TRANSFER DST {}", trailing_write.dst);
+                tt::log_debug(tt::LogDispatch, "TRANSFER DST NOC {}", trailing_write.dst_noc);
+                tt::log_debug(tt::LogDispatch, "TRANSFER SIZE {}", trailing_write.transfer_size);
+                tt::log_debug(tt::LogDispatch, "TRANSFER NUM RECV {}", trailing_write.num_receivers);
+
                 write_commands.push_back(trailing_write);
             }
         }
 
         command.add_write_program_relay(src, src_noc, transfer_size, write_commands);
-        // u32 i = 0;
-        // for (u32 el: command.get_desc()) {
-        //     tt::log_debug(tt::LogDispatch, "El idx {}, el {}", i, el);
-        //     i++;
-        // }
     }
 
     return command;
@@ -370,11 +394,14 @@ void send_dispatch_kernel_to_device(Device* device) {
     tt::llrt::internal_::setup_riscs_on_specified_core(
         device->cluster(), 0, tt::llrt::TensixRiscsOptions::BRISC_ONLY, {dispatch_core});
     device->cluster()->set_remote_tensix_risc_reset(tt_cxy_pair(0, dispatch_core), TENSIX_DEASSERT_SOFT_RESET);
+
+    // TODO(agrebenisan): REMOVE!!! For time being, hardcoding in the core I am setting up the mem[0] jump for
+    tt::llrt::program_brisc_startup_addr(device->cluster(), 0, {1, 1});
 }
 
 // CommandQueue section
 CommandQueue::CommandQueue(Device* device) {
-    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}});
+    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}, {1, 1}});
 
     send_dispatch_kernel_to_device(device);
     this->device = device;

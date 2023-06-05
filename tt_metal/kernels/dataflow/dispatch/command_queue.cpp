@@ -1,15 +1,14 @@
 #include "tt_metal/kernels/dataflow/dispatch/command_queue.hpp"
+
 #include "debug_print.h"
 
 void kernel_main() {
-
-    // DPRINT << 'W' << 'A' << 'S' << 'S' << 'U' << 'P' << ENDL();
     InterleavedAddrGen<true> dram_addr_gen;
     InterleavedAddrGen<false> l1_addr_gen;
     // Read command from host command queue... l1 read addr since
     // pulling in the actual command into l1
-    static constexpr u32 command_start_addr = 150 * 1024;
-
+    static constexpr u32 command_start_addr = UNRESERVED_BASE;
+    static constexpr u32 data_start_addr = 150 * 1024;  // Hard-coded for now
 
     // These are totally temporary until PK checks in his changes for
     // separating kernels from firmware
@@ -22,22 +21,11 @@ void kernel_main() {
 
     // For time being, while true is here until Paul's changes,
     // in which while true loop will be in the firmware
-    int i = 0;
     while (true) {
         volatile u32* command_ptr = reinterpret_cast<volatile u32*>(command_start_addr);
         cq_wait_front();
         // Hardcoded for time being, need to clean this up
-        uint64_t src_noc_addr;
-        // if (i == 1) {
-        //     // Bug in read pointer
-        // src_noc_addr = get_noc_addr(NOC_X(0), NOC_Y(4), 956 << 4);
-        // } else {
-        src_noc_addr = get_noc_addr(NOC_X(0), NOC_Y(4), cq_read_interface.fifo_rd_ptr << 4);
-        // }
-
-        i++;
-        // For now, hardcoding the data start, but we can definitely
-        // pre-compute the right number
+        uint64_t src_noc_addr = get_noc_addr(NOC_X(0), NOC_Y(4), cq_read_interface.fifo_rd_ptr << 4);
 
         noc_async_read(src_noc_addr, u32(command_start_addr), NUM_16B_WORDS_IN_COMMAND_TABLE << 4);
         noc_async_read_barrier();
@@ -45,12 +33,12 @@ void kernel_main() {
         // Control data
         u32 finish = command_ptr[0];              // Whether to notify the host that we have finished
         u32 launch = command_ptr[1];              // Whether or not to launch kernels
-        u32 data_size_in_bytes = command_ptr[2];// - 1) | 31 + 1;  // The amount of trailing data after the command table rounded to the nearest multiple of 32
+        u32 data_size_in_bytes = command_ptr[2];  // The amount of trailing data after the command table rounded to the
+                                                  // nearest multiple of 32
         u32 num_buffer_reads = command_ptr[3];    // How many ReadBuffer commands we are running
         u32 num_buffer_writes = command_ptr[4];   // How many WriteBuffer commands we are running
         u32 num_program_writes =
             command_ptr[5];  // How many relays we need to make for program data (this needs more in depth explanation)
-        command_ptr += 6;
 
         DPRINT << 'F' << ':' << ' ' << finish << ENDL();
         DPRINT << 'L' << ':' << ' ' << launch << ENDL();
@@ -58,28 +46,19 @@ void kernel_main() {
         DPRINT << 'R' << ':' << ' ' << num_buffer_reads << ENDL();
         DPRINT << 'W' << ':' << ' ' << num_buffer_writes << ENDL();
         DPRINT << 'P' << ':' << ' ' << num_program_writes << ENDL();
+        DPRINT << ENDL();
 
+        command_ptr = reinterpret_cast<volatile u32*>(command_start_addr + (16) * sizeof(u32));
+        read_buffers(num_buffer_reads, command_ptr, dram_addr_gen, l1_addr_gen);
+        write_buffers(num_buffer_writes, command_ptr, dram_addr_gen, l1_addr_gen);
 
-        // read_buffers(num_buffer_reads, command_ptr, dram_addr_gen, l1_addr_gen);
-        // write_buffers(num_buffer_writes, command_ptr, dram_addr_gen, l1_addr_gen);
-
-        // DPRINT << 'H' << 'B' << 'M' << ENDL();
-        command_ptr = reinterpret_cast<volatile u32*>(command_start_addr + (6 + 4 * 11) * sizeof(u32));
+        command_ptr = reinterpret_cast<volatile u32*>(command_start_addr + (16 + 4 * 11) * sizeof(u32));
         write_program(num_program_writes, command_ptr);
 
         if (finish)
             handle_finish();
 
-
         // This tells the dispatch core how to update its read pointer
-        DPRINT << 'K' << ':' << ' ' << ((data_size_in_bytes)) << ENDL();
-        DPRINT << 'Q' << ':' << ' ' << ((DeviceCommand::size_in_bytes())) << ENDL();
-        DPRINT << 'V' << ':' << ' ' << ((data_size_in_bytes + DeviceCommand::size_in_bytes()) >> 4) << ENDL();
-
         cq_pop_front(data_size_in_bytes + DeviceCommand::size_in_bytes());
-
-        if (i == 2) {
-            break;
-        }
     }
 }
