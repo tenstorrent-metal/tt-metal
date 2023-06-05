@@ -27,9 +27,9 @@ void DeviceCommand::add_buffer_relay(
     u32 num_pages_per_remainder_burst,
     u32 banking_enum) {
 
-    tt::log_debug(tt::LogDispatch, "Writing buffer relay to addr {}", this->relay_buffer_entry_idx);
-    tt::log_debug(tt::LogDispatch, "Addr 0 {}", addr0);
-    tt::log_debug(tt::LogDispatch, "addr0_noc {}", addr0_noc);
+    // tt::log_debug(tt::LogDispatch, "Writing buffer relay to addr {}", this->relay_buffer_entry_idx);
+    // tt::log_debug(tt::LogDispatch, "Addr 0 {}", addr0);
+    // tt::log_debug(tt::LogDispatch, "addr0_noc {}", addr0_noc);
 
     this->desc[this->relay_buffer_entry_idx] = addr0;
     this->desc[this->relay_buffer_entry_idx + 1] = addr0_noc;

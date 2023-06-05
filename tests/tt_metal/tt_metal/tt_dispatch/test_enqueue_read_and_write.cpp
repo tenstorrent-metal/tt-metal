@@ -68,7 +68,7 @@ bool test_enqueue_read_buffer(const ARCH& arch, BufferType buftype) {
     // Need to scope the following code since there is a lifetime issue where buffers created need to be destroyed prior
     // to deleting a device
     {
-        int num_tiles = 1;
+        int num_tiles = 500;
 
         Buffer bufa(device, 2048 * num_tiles, 0, 2048, buftype);
 
@@ -89,6 +89,10 @@ bool test_enqueue_read_buffer(const ARCH& arch, BufferType buftype) {
             CommandQueue cq(device);
             EnqueueReadBuffer(cq, bufa, res, true);
         }
+
+        // for (int i = 0; i < src.size(); i++) {
+        //     std::cout << "I: " << i << ", " << src.at(i) << ", " << res.at(i) << std::endl;
+        // }
 
         pass = src == res;
         TT_ASSERT(pass);

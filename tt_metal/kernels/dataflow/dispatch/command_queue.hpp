@@ -85,14 +85,14 @@ FORCE_INLINE void write_buffers(
         u32 num_pages_per_remainder_burst = command_ptr[9];
         u32 banking_enum = command_ptr[10];
 
-        DPRINT << "SRC_ADDR: " << src_addr << ENDL();
-        DPRINT << "src_noc: " << src_noc << ENDL();
-        DPRINT << "src_noc: " << src_noc << ENDL();
-        DPRINT << "dst_noc_start: " << dst_noc_start << ENDL();
-        DPRINT << "num_bursts: " << num_bursts << ENDL();
-        DPRINT << "burst_size: " << burst_size << ENDL();
-        DPRINT << "num_pages_per_burst: " << num_pages_per_burst << ENDL();
-        DPRINT << "page_size: " << page_size << ENDL();
+        //DPRINT << "SRC_ADDR: " << src_addr << ENDL();
+        //DPRINT << "src_noc: " << src_noc << ENDL();
+        //DPRINT << "src_noc: " << src_noc << ENDL();
+        //DPRINT << "dst_noc_start: " << dst_noc_start << ENDL();
+        //DPRINT << "num_bursts: " << num_bursts << ENDL();
+        //DPRINT << "burst_size: " << burst_size << ENDL();
+        //DPRINT << "num_pages_per_burst: " << num_pages_per_burst << ENDL();
+        //DPRINT << "page_size: " << page_size << ENDL();
 
         u64 src_noc_addr = (u64(src_noc) << 32) | src_addr;
         switch (banking_enum) {
@@ -163,7 +163,7 @@ FORCE_INLINE void read_buffer(
         }
         noc_async_read_barrier();
 
-        noc_async_write(data_addr, dst_noc_addr, burst_size);
+        noc_async_write(DATA_ADDR, dst_noc_addr, burst_size);
         dst_addr += burst_size;
         noc_async_write_barrier();
     }
@@ -180,7 +180,7 @@ FORCE_INLINE void read_buffer(
         }
         noc_async_read_barrier();
 
-        noc_async_write(data_addr, dst_noc_addr, remainder_burst_size);
+        noc_async_write(DATA_ADDR, dst_noc_addr, remainder_burst_size);
         noc_async_write_barrier();
     }
 }
@@ -202,6 +202,18 @@ FORCE_INLINE void read_buffers(
         u32 remainder_burst_size = command_ptr[8];
         u32 num_pages_per_remainder_burst = command_ptr[9];
         u32 banking_enum = command_ptr[10];
+
+        // //DPRINT << "dst_addr: " << dst_addr << ENDL();
+        // //DPRINT << "dst_noc: " << dst_noc << ENDL();
+        // //DPRINT << "src_addr: " << src_addr << ENDL();
+        // //DPRINT << "src_noc_start: " << src_noc_start << ENDL();
+        // //DPRINT << "num_bursts: " << num_bursts << ENDL();
+        // //DPRINT << "burst_size: " << burst_size << ENDL();
+        // //DPRINT << "num_pages_per_burst: " << num_pages_per_burst << ENDL();
+        // //DPRINT << "page_size: " << page_size << ENDL();
+        // //DPRINT << "remainder_burst_size: " << remainder_burst_size << ENDL();
+        // //DPRINT << "num_pages_per_remainder_burst: " << num_pages_per_remainder_burst << ENDL();
+        // //DPRINT << "banking_enum: " << banking_enum << ENDL();
 
         switch (banking_enum) {
             case 0:  // DRAM
@@ -254,11 +266,11 @@ FORCE_INLINE void write_program_section(
         u32 transfer_size = command_ptr[3];
         u32 num_receivers = command_ptr[4];
 
-        DPRINT << 'S' << src << ENDL();
-        DPRINT << 'D' << dst << ENDL();
-        DPRINT << 'D' << 'N' << dst_noc << ENDL();
-        DPRINT << 'T' << 'S' << transfer_size << ENDL();
-        DPRINT << '#' << 'R' << num_receivers << ENDL();
+        //DPRINT << 'S' << src << ENDL();
+        //DPRINT << 'D' << dst << ENDL();
+        //DPRINT << 'D' << 'N' << dst_noc << ENDL();
+        //DPRINT << 'T' << 'S' << transfer_size << ENDL();
+        //DPRINT << '#' << 'R' << num_receivers << ENDL();
         command_ptr += 5;
         noc_async_write_multicast(src, u64(dst_noc) << 32 | dst, transfer_size, num_receivers);
     }
@@ -283,12 +295,12 @@ FORCE_INLINE void write_program(u32 num_program_relays, volatile u32*& command_p
         // Don't need a barrier, will just wait for kernels to finish
 
         // noc_async_write_multicast(DISPATCH_MESSAGE_REMOTE_SENDER_ADDR, DISPATCH_MESSAGE_REMOTE_SENDER_ADDR, 8, num_worker_cores);
-        // DPRINT << "WAITING" << ENDL();
+        // //DPRINT << "WAITING" << ENDL();
         // noc_async_write_barrier();
-        // DPRINT << "DONE WAITING" << ENDL();
+        // //DPRINT << "DONE WAITING" << ENDL();
 
         // This is only required until PK checks in his changes to separate kernels from firmware
-        // DPRINT << *reinterpret_cast<volatile u32*>(DEASSERT_RESET_SRC_L1_ADDR) << ENDL();
+        // //DPRINT << *reinterpret_cast<volatile u32*>(DEASSERT_RESET_SRC_L1_ADDR) << ENDL();
 
         // noc_semaphore_set_multicast(DEASSERT_RESET_SRC_L1_ADDR, worker_cores_multicast_soft_reset_addr, num_worker_cores);
 

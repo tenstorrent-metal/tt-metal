@@ -50,7 +50,7 @@ ProgramToDeviceMap ConstructProgramToDeviceMap(const Device* device, Program& pr
             default: TT_THROW("Invalid riscv_type");
         }
 
-        tt::log_debug(tt::LogDispatch, "Writing to program device map for {}", riscv_type);
+        // tt::log_debug(tt::LogDispatch, "Writing to program device map for {}", riscv_type);
 
         size_t i = 0;
 
@@ -206,7 +206,7 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
         buffer.buffer_type() == BufferType::DRAM or buffer.buffer_type() == BufferType::L1,
         "Trying to write to an invalid buffer");
 
-    tt::log_debug(tt::LogDispatch, "BUFFER SIZE {}", buffer.size());
+    // tt::log_debug(tt::LogDispatch, "BUFFER SIZE {}", buffer.size());
     this->device = device;
 }
 
@@ -225,14 +225,14 @@ const DeviceCommand EnqueueWriteBufferCommand::device_command(u32 src_address) {
     u32 num_pages_per_remainder_burst = remainder_burst_size / this->buffer.page_size();
 
 
-    tt::log_debug(tt::LogDispatch, "buffer_size {}", this->buffer.size());
-    tt::log_debug(tt::LogDispatch, "src_address {}", src_address);
-    tt::log_debug(tt::LogDispatch, "potential_burst_size {}", potential_burst_size);
-    tt::log_debug(tt::LogDispatch, "num bursts {}", num_bursts);
-    tt::log_debug(tt::LogDispatch, "num_pages_per_burst {}", num_pages_per_burst);
-    tt::log_debug(tt::LogDispatch, "burst_size {}", burst_size);
-    tt::log_debug(tt::LogDispatch, "remainder_burst_size {}", remainder_burst_size);
-    tt::log_debug(tt::LogDispatch, "num_pages_per_remainder_burst {}", num_pages_per_remainder_burst);
+    // tt::log_debug(tt::LogDispatch, "buffer_size {}", this->buffer.size());
+    // tt::log_debug(tt::LogDispatch, "src_address {}", src_address);
+    // tt::log_debug(tt::LogDispatch, "potential_burst_size {}", potential_burst_size);
+    // tt::log_debug(tt::LogDispatch, "num bursts {}", num_bursts);
+    // tt::log_debug(tt::LogDispatch, "num_pages_per_burst {}", num_pages_per_burst);
+    // tt::log_debug(tt::LogDispatch, "burst_size {}", burst_size);
+    // tt::log_debug(tt::LogDispatch, "remainder_burst_size {}", remainder_burst_size);
+    // tt::log_debug(tt::LogDispatch, "num_pages_per_remainder_burst {}", num_pages_per_remainder_burst);
 
     // Need to make a PCIE coordinate variable
     command.add_write_buffer_relay(
@@ -309,11 +309,11 @@ const DeviceCommand EnqueueProgramCommand::device_command(u32) {
                     .transfer_size = kernel_size_in_bytes,
                     .num_receivers = num_receivers};
 
-                tt::log_debug(tt::LogDispatch, "TRANSFER SRC {}", trailing_write.src);
-                tt::log_debug(tt::LogDispatch, "TRANSFER DST {}", trailing_write.dst);
-                tt::log_debug(tt::LogDispatch, "TRANSFER DST NOC {}", trailing_write.dst_noc);
-                tt::log_debug(tt::LogDispatch, "TRANSFER SIZE {}", trailing_write.transfer_size);
-                tt::log_debug(tt::LogDispatch, "TRANSFER NUM RECV {}", trailing_write.num_receivers);
+                // tt::log_debug(tt::LogDispatch, "TRANSFER SRC {}", trailing_write.src);
+                // tt::log_debug(tt::LogDispatch, "TRANSFER DST {}", trailing_write.dst);
+                // tt::log_debug(tt::LogDispatch, "TRANSFER DST NOC {}", trailing_write.dst_noc);
+                // tt::log_debug(tt::LogDispatch, "TRANSFER SIZE {}", trailing_write.transfer_size);
+                // tt::log_debug(tt::LogDispatch, "TRANSFER NUM RECV {}", trailing_write.num_receivers);
 
                 write_commands.push_back(trailing_write);
             }
@@ -462,7 +462,7 @@ void CommandQueue::enqueue_program(Program& program, bool blocking) {
         unique_ptr<Buffer> program_buffer = std::make_unique<Buffer>(
             this->device, program_data_size_in_bytes, channel_id, program_data_size_in_bytes, BufferType::DRAM);
 
-        tt::log_debug(tt::LogDispatch, "Program buffer size in B {}", program_data_size_in_bytes);
+        // tt::log_debug(tt::LogDispatch, "Program buffer size in B {}", program_data_size_in_bytes);
 
         this->enqueue_write_buffer(*program_buffer, program_data, blocking);
         channel_id =
