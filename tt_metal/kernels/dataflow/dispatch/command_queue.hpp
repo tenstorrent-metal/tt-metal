@@ -8,7 +8,7 @@
 // Dispatch constants
 // u64 worker_cores_multicast_soft_reset_addr = get_noc_multicast_addr(1, 1, 12, 10, 200 * 1024);//TENSIX_SOFT_RESET_ADDR);
 // u64 worker_cores_multicast_notify_addr = get_noc_multicast_addr(1, 1, 12, 10, DISPATCH_MESSAGE_REMOTE_SENDER_ADDR);
-// u64 worker_cores_multicast_soft_reset_addr = get_noc_addr(1, 1, 200 * 1024);//TENSIX_SOFT_RESET_ADDR);
+u64 worker_cores_multicast_soft_reset_addr = get_noc_addr(1, 1, 200 * 1024);//TENSIX_SOFT_RESET_ADDR);
 // u64 worker_cores_multicast_notify_addr = get_noc_addr(1, 1, DISPATCH_MESSAGE_REMOTE_SENDER_ADDR);
 u32 num_worker_cores = 108;
 
@@ -302,7 +302,7 @@ FORCE_INLINE void write_program(u32 num_program_relays, volatile u32*& command_p
 
         // This is only required until PK checks in his changes to separate kernels from firmware
         // //DPRINT << *reinterpret_cast<volatile u32*>(DEASSERT_RESET_SRC_L1_ADDR) << ENDL();
-        u64 worker_cores_multicast_soft_reset_addr = get_noc_addr(1, 1, TENSIX_SOFT_RESET_ADDR);
+        // u64 worker_cores_multicast_soft_reset_addr = get_noc_addr(1, 1, TENSIX_SOFT_RESET_ADDR);
         noc_semaphore_set_remote(DEASSERT_RESET_SRC_L1_ADDR, worker_cores_multicast_soft_reset_addr);
 
         // Wait on worker cores to notify me that they have completed
