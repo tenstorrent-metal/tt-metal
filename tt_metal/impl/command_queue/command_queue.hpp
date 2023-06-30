@@ -7,8 +7,8 @@
 
 
 #include "build_kernels_for_riscv/build_kernels_for_riscv.hpp"
-#include "tt_metal/impl/dispatch/command_queue_interface.hpp"
-#include "tt_metal/impl/dispatch/thread_safe_queue.hpp"
+#include "tt_metal/impl/command_queue/command_queue_interface.hpp"
+#include "tt_metal/impl/command_queue/thread_safe_queue.hpp"
 #include "tt_metal/common/base.hpp"
 #include "tt_metal/common/tt_backend_api_types.hpp"
 #include "tt_metal/impl/program.hpp"
@@ -91,10 +91,6 @@ ProgramSrcToDstAddrMap ConstructProgramSrcToDstAddrMap(const Device* device, Pro
 enum class EnqueueCommandType { ENQUEUE_READ_BUFFER, ENQUEUE_WRITE_BUFFER, ENQUEUE_PROGRAM, FINISH, INVALID };
 
 string EnqueueCommandTypeToString(EnqueueCommandType ctype);
-
-// TEMPORARY! TODO(agrebenisan): need to use proper macro based on loading noc
-#define NOC_X(x) x
-#define NOC_Y(y) y
 
 #define NOC_MULTICAST_ENCODING(x_start, y_start, x_end, y_end)                                          \
     ((x_start) << (2 * NOC_ADDR_NODE_ID_BITS)) | ((y_start) << (3 * NOC_ADDR_NODE_ID_BITS)) | (x_end) | \

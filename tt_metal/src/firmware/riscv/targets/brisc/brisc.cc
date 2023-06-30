@@ -207,6 +207,9 @@ void device_setup() {
     #ifdef TT_METAL_DEVICE_DISPATCH_MODE
     *use_ncrisc = true;
     #endif
+    #ifdef IS_DISPATCH_KERNEL
+    *use_ncrisc = false;
+    #endif
     if (*use_ncrisc) {
         l1_to_ncrisc_iram_copy();
         // Bring NCRISC out of reset, keep TRISCs under reset
@@ -300,6 +303,9 @@ int main() {
 
     #ifdef TT_METAL_DEVICE_DISPATCH_MODE
     *use_triscs = true;
+    #endif
+    #ifdef IS_DISPATCH_KERNEL
+    *use_triscs = false;
     #endif
 
     if (*use_triscs) {

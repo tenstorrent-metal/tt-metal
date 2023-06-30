@@ -2,7 +2,7 @@
 
 #include "dataflow_api.h"
 #include "debug_print.h"
-#include "tt_metal/impl/dispatch/device_command.hpp"
+#include "tt_metal/impl/command_queue/device_command.hpp"
 
 template <typename T>
 void write_buffer(

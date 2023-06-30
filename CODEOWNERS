@@ -36,10 +36,10 @@ tt_metal/host_api.hpp @abhullar-tt @TT-billteng @davorchap
 # tt_metal/impl/ @abhullar-tt @TT-billteng
 # tt_metal/impl/**/module.mk @tt-rkim @abhullar-tt @TT-billteng
 
-# metal - dispatch
-tt_metal/impl/dispatch/ @DrJessop @davorchap
-tt_metal/impl/dispatch/**/module.mk @DrJessop @davorchap @tt-rkim
-tt_metal/kernels/dataflow/dispatch/ @DrJessop @davorchap
+# metal - command_queue
+tt_metal/impl/command_queue/ @DrJessop @davorchap
+tt_metal/impl/command_queue/**/module.mk @DrJessop @davorchap @tt-rkim
+tt_metal/kernels/dataflow/command_queue/ @DrJessop @davorchap
 docs/source/frameworks/tt_dispatch.rst @DrJessop @davorchap
 
 # metal - fw, llks, risc-v

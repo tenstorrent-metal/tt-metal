@@ -16,10 +16,10 @@ TT_METAL_IMPL_SRCS = \
 	tt_metal/impl/allocator/basic_allocator.cpp \
 	tt_metal/impl/allocator/l1_banking_allocator.cpp \
 	tt_metal/impl/program.cpp \
-	tt_metal/impl/dispatch/device_command.cpp \
-	tt_metal/impl/dispatch/command_queue_interface.cpp \
-	tt_metal/impl/dispatch/debug_tools.cpp \
-	tt_metal/impl/dispatch/command_queue.cpp
+	tt_metal/impl/command_queue/device_command.cpp \
+	tt_metal/impl/command_queue/command_queue_interface.cpp \
+	tt_metal/impl/command_queue/debug_tools.cpp \
+	tt_metal/impl/command_queue/command_queue.cpp
 
 TT_METAL_IMPL_OBJS = $(addprefix $(OBJDIR)/, $(TT_METAL_IMPL_SRCS:.cpp=.o))
 TT_METAL_IMPL_DEPS = $(addprefix $(OBJDIR)/, $(TT_METAL_IMPL_SRCS:.cpp=.d))

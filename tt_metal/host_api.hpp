@@ -21,7 +21,7 @@
 #include "tt_metal/impl/program.hpp"
 #include "llrt/llrt.hpp"
 
-#include "tt_metal/impl/dispatch/command_queue.hpp"
+#include "tt_metal/impl/command_queue/command_queue.hpp"
 
 // To be removed at a later time, but need a global
 // command queue for the time being.

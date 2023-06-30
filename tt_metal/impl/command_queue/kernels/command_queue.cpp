@@ -1,4 +1,4 @@
-#include "tt_metal/kernels/dataflow/dispatch/command_queue.hpp"
+#include "tt_metal/impl/command_queue/kernels/command_queue.hpp"
 
 #include "debug_print.h"
 
@@ -26,8 +26,8 @@ void kernel_main() {
         volatile u32* command_ptr = reinterpret_cast<volatile u32*>(command_start_addr);
 
         cq_wait_front();
-        // Hardcoded for time being, need to clean this up
-        uint64_t src_noc_addr = get_noc_addr(NOC_X(0), NOC_Y(4), cq_read_interface.fifo_rd_ptr << 4);
+        // PCIE_CORE_X/Y are defines that must be provided to the kernel from host
+        uint64_t src_noc_addr = get_noc_addr(PCIE_CORE_X, PCIE_CORE_Y, cq_read_interface.fifo_rd_ptr << 4);
 
         noc_async_read(src_noc_addr, u32(command_start_addr), NUM_16B_WORDS_IN_DEVICE_COMMAND << 4);
         noc_async_read_barrier();
