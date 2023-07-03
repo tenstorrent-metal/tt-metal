@@ -531,7 +531,6 @@ void send_dispatch_kernel_to_device(Device* device) {
     // TODO(agrebenisan): Get command queue cores from soc descriptor... needs refactor there
     CoreCoord cq_core = {0, 9};
     u32 pcie_slot = 0;
-    CoreCoord pcie_core = device->cluster()->get_soc_desc(pcie_slot).pcie_cores.at(0);
     auto cq_kernel = tt::tt_metal::CreateDataMovementKernel(
         cq_program,
         "tt_metal/impl/command_queue/kernels/command_queue.cpp",
