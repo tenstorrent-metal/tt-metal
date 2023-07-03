@@ -539,9 +539,11 @@ void send_dispatch_kernel_to_device(Device* device) {
         tt::tt_metal::DataMovementProcessor::RISCV_0,
         tt::tt_metal::NOC::RISCV_0_default
     );
+
+    CoreCoord pcie_core = device->cluster()->get_soc_desc(pcie_slot).pcie_cores.at(0);
     cq_kernel->add_define("IS_DISPATCH_KERNEL", "1");
-    cq_kernel->add_define("PCIE_CORE_X", "0");
-    cq_kernel->add_define("PCIE_CORE_Y", "4");
+    cq_kernel->add_define("PCIE_CORE_X", std::to_string(pcie_core.x));
+    cq_kernel->add_define("PCIE_CORE_Y", std::to_string(pcie_core.y));
 
     const char* DISPATCH_MAP_DUMP = std::getenv("TT_METAL_DISPATCH_MAP_DUMP");
     if (DISPATCH_MAP_DUMP) {
