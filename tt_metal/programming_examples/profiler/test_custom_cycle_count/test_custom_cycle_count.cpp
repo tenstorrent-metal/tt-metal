@@ -7,7 +7,7 @@
 
 using namespace tt;
 
-bool RunCustomCycle(tt_metal::Device *device, int loop_count, string run_name = " ")
+bool RunCustomCycle(tt_metal::Device *device, int loop_count, bool dumpProfile = false)
 {
     bool pass = true;
 
@@ -44,7 +44,6 @@ bool RunCustomCycle(tt_metal::Device *device, int loop_count, string run_name = 
 
     EnqueueProgram(*::detail::GLOBAL_CQ, program, false);
     Finish(*::detail::GLOBAL_CQ);
-    tt_metal::DumpDeviceProfileResults(device, program);
 
     return pass;
 }
@@ -66,6 +65,7 @@ int main(int argc, char **argv) {
         loop_count = 2001;
         pass &= RunCustomCycle(device, loop_count);
 
+        tt_metal::detail::DumpDeviceProfileResults(device);
         pass &= tt_metal::CloseDevice(device);
 
     } catch (const std::exception &e) {

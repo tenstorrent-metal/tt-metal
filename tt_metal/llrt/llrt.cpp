@@ -14,6 +14,8 @@
 
 #include "tools/cpuprof/cpuprof.h"
 #include "dev_msgs.h"
+#include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
+#include "tt_metal/third_party/tracy/public/tracy/TracyOpenCL.hpp"
 
 namespace tt {
 
@@ -304,6 +306,7 @@ namespace internal_ {
 
 static bool check_if_riscs_on_specified_core_done(chip_id_t chip_id, const CoreCoord &core, int run_state) {
 
+    ZoneScoped;
     std::function<bool(uint64_t)> get_mailbox_is_done = [&](uint64_t run_mailbox_address) {
         constexpr int RUN_MAILBOX_BOGUS = 3;
         std::vector<uint32_t> run_mailbox_read_val = {RUN_MAILBOX_BOGUS};

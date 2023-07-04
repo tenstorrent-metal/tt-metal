@@ -8,6 +8,7 @@
 #include "tt_metal/common/math.hpp"
 #include "common/assert.hpp"
 #include "tt_metal/impl/device/device.hpp"
+#include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
 
 #include "llrt/llrt.hpp"
 
@@ -24,6 +25,7 @@ void validate_buffer_size_and_page_size(uint64_t size, uint64_t page_size, const
 
 Buffer::Buffer(Device *device, uint64_t size, uint64_t page_size, const BufferType buffer_type)
     : device_(device), size_(size), page_size_(page_size), buffer_type_(buffer_type) {
+    ZoneScoped;
     TT_FATAL(this->device_ != nullptr and this->device_->allocator_ != nullptr);
     validate_buffer_size_and_page_size(size, page_size, buffer_type);
     this->allocate();
@@ -31,10 +33,12 @@ Buffer::Buffer(Device *device, uint64_t size, uint64_t page_size, const BufferTy
 
 Buffer::Buffer(const Buffer &other)
     : device_(other.device_), size_(other.size_), page_size_(other.page_size_), buffer_type_(other.buffer_type_) {
+    ZoneScoped;
     this->allocate();
 }
 
 Buffer &Buffer::operator=(const Buffer &other) {
+    ZoneScoped;
     if (this != &other) {
         this->device_ = other.device_;
         this->size_ = other.size_;
@@ -64,6 +68,7 @@ Buffer &Buffer::operator=(Buffer &&other) {
 }
 
 void Buffer::allocate() {
+    ZoneScoped;
     TT_ASSERT(this->device_ != nullptr);
     // L1 buffers are allocated top down!
     bool bottom_up = this->buffer_type_ == BufferType::DRAM;

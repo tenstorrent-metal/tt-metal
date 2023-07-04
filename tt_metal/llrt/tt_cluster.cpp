@@ -17,6 +17,7 @@
 #include "tools/profiler/profiler.hpp"
 #include "tt_metal/third_party/umd/device/util.hpp"
 #include "watcher.hpp"
+#include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
 
 using std::cout;
 using std::endl;
@@ -473,6 +474,7 @@ void Cluster::write_sysmem(const void* vec, uint32_t size_in_bytes, uint64_t add
 
 void Cluster::read_sysmem(void *vec, uint32_t size_in_bytes, uint64_t addr, chip_id_t src_device_id) const {
     // TODO: Uplift
+    ZoneScoped;
     constexpr uint16_t channel = 0;
     this->device_->read_from_sysmem(vec, addr, channel, size_in_bytes, src_device_id);
 }

@@ -372,11 +372,38 @@ def import_device_profile_log(logPath):
     return devicesData
 
 
-def is_new_launch(tsRisc):
+def is_new_launch_core(tsRisc):
     timerID, tsValue, risc = tsRisc
     if risc == "BRISC" and timerID == 1:
         return True
     return False
+
+def is_new_launch_device(tsCore, coreOpMap):
+    timerID, tsValue, risc, core = tsCore
+    isNewOp = False
+    isNewOpFinished = False
+    if risc == "BRISC" and timerID == 1:
+        if not coreOpMap:
+            isNewOp = True
+        #Remove
+        # if core in coreOpMap.keys():
+            # for opDuration in coreOpMap.items():
+                # print (opDuration)
+            # print (coreOpMap[core])
+            # print (tsCore)
+        assert core not in coreOpMap.keys(), "Unexpected BRISC start"
+        coreOpMap[core] = (tsValue,)
+    elif risc == "BRISC" and timerID == 4:
+        assert core in coreOpMap.keys(), "Unexpected BRISC end"
+        coreOpMap[core] = (coreOpMap[core][0],tsValue)
+        isNewOpFinished = True
+        for opDuration in coreOpMap.values():
+            pairSize = len(opDuration)
+            assert pairSize == 1 or pairSize == 2, "Wrong op duration"
+            if pairSize == 1:
+                isNewOpFinished = False
+                break
+    return isNewOp, isNewOpFinished
 
 
 def risc_to_core_timeseries(devicesData):
@@ -392,7 +419,7 @@ def risc_to_core_timeseries(devicesData):
             launches = []
             for ts in tmpTimeseries:
                 timerID, tsValue, risc = ts
-                if is_new_launch(ts):
+                if is_new_launch_core(ts):
                     launches.append([ts])
                 else:
                     if len(launches) > 0:
@@ -418,6 +445,17 @@ def core_to_device_timeseries(devicesData):
 
         for risc in tmpTimeseries["riscs"].keys():
             tmpTimeseries["riscs"][risc]["timeseries"].sort(key=lambda x: x[1])
+
+        launches = [[]]
+        coreOpMap = {}
+        for ts in tmpTimeseries['riscs']['TENSIX']["timeseries"]:
+            isNewOp, isNewOpFinished = is_new_launch_device(ts, coreOpMap)
+            launches[-1].append(ts)
+            if isNewOpFinished:
+                coreOpMap = {}
+                launches.append([])
+
+        tmpTimeseries['riscs']['TENSIX']["launches"]=launches
 
         deviceData["cores"]["DEVICE"] = tmpTimeseries
 
@@ -682,8 +720,9 @@ def session_first_last_analysis(riscData, analysis):
 
 def launch_first_last_analysis(riscData, analysis):
     durations = []
-    for launch in riscData["launches"]:
-        durations += first_last_analysis(launch, analysis)
+    if "launches" in riscData.keys():
+        for launch in riscData["launches"]:
+            durations += first_last_analysis(launch, analysis)
     return durations
 
 
@@ -733,6 +772,7 @@ def timeseries_analysis(riscData, name, analysis):
                 "Sum": tmpDF.loc[:, "diff"].sum(),
                 "First": tmpDF.loc[0, "diff"],
             },
+            "series": tmpList
         }
     if tmpDict:
         if "analysis" not in riscData.keys():
@@ -759,7 +799,6 @@ def device_analysis(name, analysis, devicesData):
         assert risc in deviceData["cores"][core]["riscs"].keys()
         riscData = deviceData["cores"][core]["riscs"][risc]
         timeseries_analysis(riscData, name, analysis)
-
 
 def generate_device_level_summary(devicesData):
     for chipID, deviceData in devicesData["devices"].items():
@@ -1022,32 +1061,27 @@ def main(setup, device_input_log, output_folder, port, no_print_stats, no_webapp
     if port:
         setup.webappPort = port
 
-    try:
-        devicesData = import_log_run_stats(setup)
-    except Exception:
-        print("ERROR: Bad device profile log format", file=sys.stderr)
-        sys.exit(1)
+    devicesData = import_log_run_stats(setup)
 
     prepare_output_folder(setup)
 
-    print_chrome_tracing_json(devicesData, setup)
+    # print_chrome_tracing_json(devicesData, setup)
 
-    print_stats_outfile(devicesData, setup)
-    print_rearranged_csv(devicesData, setup)
-    print_json(devicesData, setup)
+    # print_stats_outfile(devicesData, setup)
+    # print_rearranged_csv(devicesData, setup)
+    # print_json(devicesData, setup)
 
-    if not no_print_stats:
-        print_stats(devicesData, setup)
+    if not no_print_stats: print_stats(devicesData, setup)
 
-    timelineFigs = {}
-    if not no_plots:
-        timelineFigs = generate_plots(devicesData, setup)
+    # timelineFigs = {}
+    # if not no_plots:
+        # timelineFigs = generate_plots(devicesData, setup)
 
-    if not no_artifacts:
-        generate_artifact_tarball(setup)
+    # if not no_artifacts:
+        # generate_artifact_tarball(setup)
 
-    if not no_webapp:
-        run_dashbaord_webapp(devicesData, timelineFigs, setup)
+    # if not no_webapp:
+        # run_dashbaord_webapp(devicesData, timelineFigs, setup)
 
 
 if __name__ == "__main__":

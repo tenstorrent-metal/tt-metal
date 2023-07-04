@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
         while (*trisc_run != RUN_SYNC_MSG_GO);
 
         kernel_profiler::init_profiler();
-        kernel_profiler::mark_time(CC_MAIN_START);
+        kernel_profiler::mark_fw_start();
 
 #if !defined(UCK_CHLKC_MATH)
         setup_cb_read_write_interfaces(0, mailboxes->launch.max_cb_index, cb_init_read, cb_init_write);
@@ -106,6 +106,7 @@ int main(int argc, char *argv[])
         tensix_sync();
         *trisc_run = RUN_SYNC_MSG_DONE;
 
-        kernel_profiler::mark_time(CC_MAIN_END);
+        kernel_profiler::mark_fw_end();
+        kernel_profiler::finish();
     }
 }

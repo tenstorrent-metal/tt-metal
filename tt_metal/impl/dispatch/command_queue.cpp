@@ -13,12 +13,14 @@
 #include "tt_metal/impl/buffers/semaphore.hpp"
 #include "tt_metal/third_party/umd/device/tt_xy_pair.h"
 #include "dev_msgs.h"
+#include "hostdevcommon/common_runtime_address_map.h"
 #include <algorithm> // for copy() and assign()
 #include <iterator> // for back_inserter
 
+#include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
+#include "tt_metal/third_party/tracy/public/tracy/TracyOpenCL.hpp"
 namespace tt::tt_metal {
 
-#include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
 
 uint32_t get_noc_multicast_encoding(const CoreCoord& top_left, const CoreCoord& bottom_right) {
     return NOC_MULTICAST_ENCODING(top_left.x, top_left.y, bottom_right.x, bottom_right.y);
@@ -932,6 +934,7 @@ void EnqueueProgram(CommandQueue& cq, Program& program, bool blocking) {
 
 void Finish(CommandQueue& cq) {
     detail::DispatchStateCheck(true);
+    ZoneScopedN("Finish");
     cq.finish();
 }
 

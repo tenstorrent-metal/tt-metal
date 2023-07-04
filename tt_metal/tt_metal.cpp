@@ -17,6 +17,7 @@
 #include "tt_metal/detail/tt_metal.hpp"
 #include "tt_metal/detail/program.hpp"
 
+#include "tt_metal/third_party/tracy/public/tracy/TracyOpenCL.hpp"
 #include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
 
 namespace tt {
@@ -331,7 +332,9 @@ namespace detail {
 }
 
 Device *CreateDevice(chip_id_t device_id, const std::vector<uint32_t>& l1_bank_remap) {
+    ZoneScoped;
     Device * dev = new Device(device_id, l1_bank_remap);
+    detail::InitDeviceProfiler(dev);
     const char *TT_METAL_SLOW_DISPATCH_MODE = std::getenv("TT_METAL_SLOW_DISPATCH_MODE");
     if (TT_METAL_SLOW_DISPATCH_MODE == nullptr) {
         detail::GLOBAL_CQ = std::make_unique<CommandQueue>(dev);

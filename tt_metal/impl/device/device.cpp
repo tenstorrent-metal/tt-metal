@@ -209,12 +209,17 @@ void Device::initialize_and_launch_firmware() {
     // Barrier between L1 writes above and deassert below
     tt::Cluster::instance().l1_barrier(this->id());
 
+    tracy::enable_set_cpu_time();
     // Deassert worker cores
     for (uint32_t y = 0; y < grid_size.y; y++) {
         for (uint32_t x = 0; x < grid_size.x; x++) {
             CoreCoord logical_core(x, y);
             CoreCoord worker_core = this->worker_core_from_logical_core(logical_core);
 
+            if (x == 0 && y == 0)
+            {
+                tracy::set_cpu_time();
+            }
             if (this->storage_only_cores_.find(logical_core) == this->storage_only_cores_.end()) {
                 tt::Cluster::instance().deassert_risc_reset_at_core(tt_cxy_pair(this->id(), worker_core));
             }
@@ -238,6 +243,7 @@ void Device::initialize_and_launch_firmware() {
 }
 
 void Device::clear_l1_state() {
+    ZoneScoped;
     CoreCoord logical_grid_size = this->logical_grid_size();
     TT_ASSERT(this->l1_size_per_core() % sizeof(uint32_t) == 0);
     std::vector<uint32_t> zero_vec(this->l1_size_per_core() / sizeof(uint32_t), 0);

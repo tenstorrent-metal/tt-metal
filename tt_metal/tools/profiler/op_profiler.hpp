@@ -165,26 +165,30 @@ namespace op_profiler {
                         bool freshTTmetalLogs = true)
                 {
                     TT_ASSERT (profileFolder != "", "Bad log folder location, folder has been setup wrong");
-                    tt::tt_metal::detail::SetProfilerDir(profileFolder + "/" + opName + "/" + to_string(callCount));
-                    if (freshTTmetalLogs)
-                    {
-                        tt::tt_metal::detail::FreshProfilerHostLog();
-                        tt::tt_metal::detail::FreshProfilerDeviceLog();
-                    }
+                    profileFolder = ".profiler/logs";
+                    tt::tt_metal::detail::SetHostProfilerDir(profileFolder + "/tt_metal");
+                    tt::tt_metal::detail::SetDeviceProfilerDir(profileFolder + "/tt_metal");
 
-                    opProfiler.setOutputDir(profileFolder + "/" + opName);
+                    opProfiler.setHostOutputDir(profileFolder + "/ops");
                     //If it is the first call to this op, freshen the log
-                    if (callCount > 1)
+                    if (globalCallCount > 1)
                     {
                         opProfiler.setHostNewLogFlag(false);
+                    }
+                    else
+                    {
+                        opProfiler.setHostNewLogFlag(true);
+                        tt::tt_metal::detail::FreshProfilerHostLog();
+                        tt::tt_metal::detail::FreshProfilerDeviceLog();
                     }
                 }
 
                 OpData& get_op_data()
                 {
 #if defined(PROFILER)
-                    TT_ASSERT (opStack.size() > 0, "Something is wrong, cannot get op data, op stack is empty");
-                    return opStack.top();
+                    //TT_ASSERT (opStack.size() > 0, "Something is wrong, cannot get op data, op stack is empty");
+                    //return opStack.top();
+                    return unknownOp;
 #else
                     return unknownOp;
 #endif
@@ -546,14 +550,14 @@ namespace op_profiler {
             OpProfileScope (const string& scopeNameArg, OpType opType) : scopeName(scopeNameArg)
             {
 #if defined(PROFILER)
-                start_profiling (scopeName, opType);
+                //start_profiling (scopeName, opType);
 #endif
             }
 
             ~OpProfileScope ()
             {
 #if defined(PROFILER)
-                stop_profiling (scopeName);
+                //stop_profiling (scopeName);
 #endif
             }
     };

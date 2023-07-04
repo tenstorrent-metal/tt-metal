@@ -125,6 +125,9 @@ void DeviceModule(py::module &m_device) {
     m_device.def("Synchronize", &detail::Synchronize, R"doc(
         Wait for all kernels on TT device to complete.
     )doc");
+    m_device.def("DumpDeviceProfiler", &detail::DumpDeviceProfiler, R"doc(
+        Dump device side profiling data.
+    )doc");
     m_device.def("DeallocateBuffers", &detail::DeallocateBuffers, R"doc(
         Deallocate all buffers associated with Device handle
     )doc");
