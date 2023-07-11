@@ -12,19 +12,19 @@ cd $TT_METAL_HOME
 export PYTHONPATH=$TT_METAL_HOME
 export ARCH_NAME=grayskull
 
-env pytest tests/python_api_testing/models/stable_diffusion/perf_unbatched_stable.py
+env TT_METAL_DEVICE_DISPATCH_MODE=1 pytest tests/python_api_testing/models/stable_diffusion/perf_unbatched_stable.py
 
 env pytest tests/python_api_testing/models/vit/tests/perf_vit.py
 
 env pytest tests/python_api_testing/models/vgg/tests/perf_vgg.py
 
-env pytest tests/python_api_testing/models/llama/perf_llama.py
+env TT_METAL_DEVICE_DISPATCH_MODE=1 pytest tests/python_api_testing/models/llama/perf_llama.py
 
 env pytest tests/python_api_testing/models/roberta/perf_roberta.py
 
 env pytest tests/python_api_testing/models/whisper/perf_whisper.py
 
-env pytest tests/python_api_testing/models/t5/perf_t5.py
+env TT_METAL_DEVICE_DISPATCH_MODE=1 pytest tests/python_api_testing/models/t5/perf_t5.py
 
 env pytest tests/python_api_testing/models/resnet/tests/perf_resnet.py
 
