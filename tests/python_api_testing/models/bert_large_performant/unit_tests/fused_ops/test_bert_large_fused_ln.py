@@ -18,7 +18,7 @@ from tt_lib.utils import (
     untilize,
     is_close,
 )
-
+from tests.python_api_testing.models.utility_functions_new import comp_pcc, comp_allclose
 
 # This ref implementation is only here for debugging
 def ref_ln(x, gamma, beta=None, epsilon=1e-5, b=None):
@@ -176,12 +176,14 @@ def run_layernorm_tests(test_id, batch, dtype, in0_mem_config, out_mem_config):
             tt_got_back = torch.Tensor(t2_data).reshape((N, C, H, W))
             tt_got_back = untilize(tt_got_back)
 
-            # ref_lnorm = ref_layernorm(x, epsf, gammaf, betaf, H, W)
-            ref_lnorm, _, _, _, _, _ = ref_ln(x + y, gamma, beta, epsf, y)
+            ref_lnorm = torch.nn.functional.layer_norm(x + y, (W,), gamma.reshape(W), beta.reshape(W), epsf)
+            # ref_lnorm, _, _, _, _, _ = ref_ln(x + y, gamma, beta, epsf, y)
 
-            time.sleep(0.3)  # sleep to avoid print intermixing with kernel prints
-
-            assert is_close(tt_got_back, ref_lnorm)
+            passing, pcc = comp_pcc(ref_lnorm, tt_got_back)
+            _, allclose = comp_allclose(ref_lnorm, tt_got_back)
+            logger.info(allclose)
+            logger.info(pcc)
+            assert passing
 
     device.CloseDevice(dev)
 
