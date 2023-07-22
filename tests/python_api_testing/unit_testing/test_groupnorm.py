@@ -17,7 +17,7 @@ from tt_lib.utils import (
     tilize_to_list,
     untilize,
 )
-
+from tests.python_api_testing.models.utility_functions_new import comp_pcc, comp_allclose
 
 def ref_groupnorm(x, group_size, eps, **kwargs):
     n_channels = x.shape[1]
@@ -126,7 +126,11 @@ def run_groupnorm_tests(test_id, group_size, dtype, in0_mem_config, out_mem_conf
             tt_got_back = torch.Tensor(t2_data).reshape((N, C, H, W))
             tt_got_back = untilize(tt_got_back)
 
-            torch.isclose(golden, tt_got_back)
+            passing, pcc = comp_pcc(golden, tt_got_back)
+            _, allclose = comp_allclose(golden, tt_got_back)
+            logger.info(allclose)
+            logger.info(pcc)
+            assert passing
 
     device.CloseDevice(dev)
 
