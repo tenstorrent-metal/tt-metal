@@ -75,5 +75,3 @@ def test_gs_demo():
     # # actually save the input
     logger.info(f"Input audio is saved as sample_audio.npy.")
     logger.info(f"GS's predicted Output: {tt_predicted_label}.")
-
-    tt_lib.device.CloseDevice(device)

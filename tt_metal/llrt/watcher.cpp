@@ -61,7 +61,7 @@ constexpr uint16_t DEBUG_SANITIZE_NOC_SENTINEL_OK_16 = 0xbada;
 
 static bool enabled = false;
 static std::mutex watch_mutex;
-static std::unordered_map<void *, std::shared_ptr<WatcherDevice>> devices;
+static std::unordered_map<const void *, std::shared_ptr<WatcherDevice>> devices;
 static FILE *logfile = nullptr;
 static std::chrono::time_point start_time = std::chrono::system_clock::now();
 static std::vector<string> kernel_names;
@@ -569,7 +569,7 @@ void watcher_init(int device_id,
     log_debug(LogLLRuntime, "Watcher initialized device {}", device_id);
 }
 
-void watcher_attach(void *dev,
+void watcher_attach(const void *dev,
                     int device_id,
                     const std::function<CoreCoord ()>& get_grid_size,
                     const std::function<CoreCoord (CoreCoord)>& worker_from_logical,
@@ -602,10 +602,10 @@ void watcher_attach(void *dev,
     // Always register the device w/ watcher, even if disabled
     // This allows dump() to be called from debugger
     std::shared_ptr<watcher::WatcherDevice> wdev(new watcher::WatcherDevice(device_id, get_grid_size, worker_from_logical, storage_only_cores));
-    watcher::devices.insert(pair<void *, std::shared_ptr<watcher::WatcherDevice>>(dev, wdev));
+    watcher::devices.insert(pair<const void *, std::shared_ptr<watcher::WatcherDevice>>(dev, wdev));
 }
 
-void watcher_detach(void *old) {
+void watcher_detach(const void *old) {
 
     const std::lock_guard<std::mutex> lock(watcher::watch_mutex);
 

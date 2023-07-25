@@ -161,7 +161,7 @@ def test_llama_decoder_split_inference(pcc, has_layer_norm, is_causal, reset_see
     # TT hardware execution ============================================================
     # The first call --------------------------
     device = tt_lib.device.CreateDevice(0)
-    tt_lib.device.SetDefaultDevice(device)
+
 
     # prepare input for TT hardware
     tt_llama_input = llama_input.unsqueeze(1)
@@ -184,7 +184,7 @@ def test_llama_decoder_split_inference(pcc, has_layer_norm, is_causal, reset_see
 
     # The second call -------------------------------------------------------
     device = tt_lib.device.CreateDevice(0)
-    tt_lib.device.SetDefaultDevice(device)
+
 
     # send input tensor from host to tt device
     tt_input = torch_to_tt_tensor_rm(first_out, device)

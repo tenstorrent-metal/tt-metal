@@ -48,18 +48,7 @@ class CircularBuffer;
  * |----------------|------------------------------------------------------------------|-----------------|-----------------------------------------------------|----------|
  * | device_id      | ID of device to target                                           | chip_id_t (int) | 0 to (Device::detect_num_available_devices - 1)     | Yes      |
  * */
-Device *CreateDevice(chip_id_t device_id, const std::vector<uint32_t>& l1_bank_remap = {});
-
-/**
- * Resets device and closes device
- *
- * Return value: bool
- *
- * | Argument | Description                | Type     | Valid Range | Required |
- * |----------|----------------------------|----------|-------------|----------|
- * | device   | Pointer to a device object | Device * |             | True     |
- */
-bool CloseDevice(Device *device);
+const Device& CreateDevice(chip_id_t device_id, const std::vector<uint32_t>& l1_bank_remap = {});
 
 // ==================================================
 //                  HOST API: program & kernels
@@ -184,7 +173,7 @@ uint32_t CreateSemaphore(Program &program, const std::variant<CoreRange,CoreRang
 *  | page_size   | buffer page size                        | uint64_t   |             | Yes      |
 *  | buffer_type | type of buffer (L1 or DRAM)             | BufferType |             | Yes      |
 */
-Buffer CreateBuffer(Device *device, std::uint64_t size, std::uint64_t page_size, const BufferType buffer_type);
+Buffer CreateBuffer(const Device &device, std::uint64_t size, std::uint64_t page_size, const BufferType buffer_type);
 
 /**
 *  Deallocates buffer from device by marking its memory as free.
@@ -196,6 +185,7 @@ Buffer CreateBuffer(Device *device, std::uint64_t size, std::uint64_t page_size,
 *  | buffer   | The buffer to deallocate from device | Buffer & |             | Yes      |
 */
 void DeallocateBuffer(Buffer &buffer);
+
 
 // ==================================================
 //           COMPILE & EXECUTE KENRNELS
@@ -321,7 +311,7 @@ void Finish(CommandQueue& cq);
  * | device        | The device holding the program being profiled.    | Device *        |                           | True     |
  * | program       | The program being profiled.                       | const Program & |                           | True     |
  * */
-void DumpDeviceProfileResults(Device *device, const Program &program);
+void DumpDeviceProfileResults(const Device &device, const Program &program);
 
 
 }  // namespace tt_metal

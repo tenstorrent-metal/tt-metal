@@ -131,7 +131,7 @@ def test_llama_decoder_inference(pcc, reset_seeds):
 
     # Initialize the device
     device = tt_lib.device.CreateDevice(0)
-    tt_lib.device.SetDefaultDevice(device)
+
 
     run_test_llama_decoder_inference(
         device,

@@ -28,13 +28,13 @@ int main(int argc, char **argv) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device = tt_metal::CreateDevice(device_id);
+        const tt_metal::Device &device = tt_metal::CreateDevice(device_id);
         Shape shape = {1, 1, TILE_HEIGHT, TILE_WIDTH};
         Tensor a = tt::numpy::random::random(shape).to(Layout::TILE).to(device);;
         Tensor c = layernorm(a, 1e-4f);
         Tensor d = c.cpu();
         Tensor host_a = a.cpu(); // Move tensor a to host to validate
-        pass &= CloseDevice(device);
+
     } catch (const std::exception &e) {
         pass = false;
         log_error(LogTest, "{}", e.what());

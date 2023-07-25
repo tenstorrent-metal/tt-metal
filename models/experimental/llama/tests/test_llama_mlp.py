@@ -105,7 +105,7 @@ def test_LlamaMLP_inference(
 ):
     # Initialize the device
     device = tt_lib.device.CreateDevice(0)
-    tt_lib.device.SetDefaultDevice(device)
+
 
     run_test_LlamaMLP_inference(
         device, model_version, tokenizer_version, batch, seq_len, on_weka, pcc

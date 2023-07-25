@@ -66,5 +66,3 @@ if __name__ == "__main__":
 
     print("Max diff=")
     print_diff_argmax(tt_got_back, ref_sm)
-
-    device.CloseDevice(device)

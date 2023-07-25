@@ -37,13 +37,8 @@ class DeviceFixture : public ::testing::Test {
         }
     }
 
-    void TearDown() override {
-        for (unsigned int id = 0; id < devices_.size(); id++) {
-            tt::tt_metal::CloseDevice(devices_.at(id));
-        }
-    }
 
-    std::vector<tt::tt_metal::Device*> devices_;
+    std::vector<std::reference_wrapper<const tt::tt_metal::Device> > devices_;
     tt::ARCH arch_;
     size_t num_devices_;
 };

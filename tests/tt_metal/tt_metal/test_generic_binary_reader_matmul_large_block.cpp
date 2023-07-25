@@ -138,7 +138,7 @@ int main(int argc, char **argv) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -351,7 +351,7 @@ int main(int argc, char **argv) {
         // print_vec(tensor.get_values(), 128, 128, "Golden");
 
         pass &= (tensor.get_values() == result_untilized);
-        pass &= tt_metal::CloseDevice(device);;
+
 
     } catch (const std::exception &e) {
         pass = false;

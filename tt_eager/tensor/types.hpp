@@ -161,7 +161,7 @@ struct OwnedStorage {
 using DeviceBuffer = std::shared_ptr<Buffer>;
 struct DeviceStorage {
     DeviceBuffer buffer;
-    Device* device;
+    const Device &device;
     MemoryConfig memory_config;
 
     static constexpr auto attribute_names = std::make_tuple("memory_config");

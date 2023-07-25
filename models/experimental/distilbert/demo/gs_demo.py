@@ -24,7 +24,7 @@ from models.experimental.distilbert.tt.distilbert import *
 def test_gs_demo(model_name):
     device = tt_lib.device.CreateDevice(0)
 
-    tt_lib.device.SetDefaultDevice(device)
+
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -62,5 +62,3 @@ def test_gs_demo(model_name):
     logger.info(question)
     logger.info("GS's Predicted answer: ")
     logger.info(answer)
-
-    tt_lib.device.CloseDevice(device)

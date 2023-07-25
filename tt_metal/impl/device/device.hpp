@@ -69,8 +69,6 @@ class Device {
 
     chip_id_t id() const { return id_; }
 
-    bool is_initialized() const { return this->initialized_; }
-
     int num_dram_channels() const;
 
     uint32_t l1_size_per_core() const;
@@ -137,7 +135,7 @@ class Device {
     // core.y represents different channels along one <x>
     const std::set<CoreCoord> &ethernet_cores() const { return this->ethernet_cores_; }
 
-    void deallocate_buffers();
+    void deallocate_buffers() const;
 
     // machine epsilon
     float sfpu_eps() const;
@@ -147,7 +145,7 @@ class Device {
 
     // Checks that the given arch is on the given pci_slot and that it's responding
     // Puts device into reset
-    bool initialize(const std::vector<uint32_t>& l1_bank_remap = {});
+    void initialize(const std::vector<uint32_t>& l1_bank_remap = {});
     void initialize_cluster();
     void initialize_allocator(const std::vector<uint32_t>& l1_bank_remap = {});
     void initialize_build();
@@ -155,8 +153,8 @@ class Device {
     void initialize_and_launch_firmware();
     void clear_l1_state();
     // Puts device into reset
-    bool close();
-    friend bool CloseDevice(Device *device);
+    void close() const;
+
 
     // TODO: Uplift usage of friends. Buffer and Program just need access to allocator
     friend class Buffer;

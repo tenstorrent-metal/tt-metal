@@ -48,7 +48,7 @@ constexpr static DataType get_data_type() {
 }
 
 template<typename T>
-static Tensor full(const Shape& shape, T value, const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr, const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
+static Tensor full(const Shape& shape, T value, const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device , const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     constexpr DataType data_type = detail::get_data_type<T>();
     auto owned_buffer = tt_metal::owned_buffer::create<T>(tt_metal::compute_volume(shape));
     std::fill(std::begin(owned_buffer), std::end(owned_buffer), value);
@@ -62,7 +62,7 @@ static Tensor full(const Shape& shape, T value, const Layout layout = Layout::RO
 } // namespace detail
 
 template<typename T>
-static Tensor full(const Shape& shape, const T value, const DataType data_type, const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr, const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
+static Tensor full(const Shape& shape, const T value, const DataType data_type, const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device , const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     switch (data_type) {
         case DataType::UINT32: {
             return detail::full<uint32_t>(shape, uint32_t(value), layout, device, output_mem_config);
@@ -78,11 +78,11 @@ static Tensor full(const Shape& shape, const T value, const DataType data_type, 
     }
 }
 
-static Tensor zeros(const Shape& shape, const DataType data_type = DataType::BFLOAT16, const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr, const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
+static Tensor zeros(const Shape& shape, const DataType data_type = DataType::BFLOAT16, const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device , const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     return full(shape, 0.0f, data_type, layout, device, output_mem_config);
 }
 
-static Tensor ones(const Shape& shape, const DataType data_type = DataType::BFLOAT16, const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr, const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
+static Tensor ones(const Shape& shape, const DataType data_type = DataType::BFLOAT16, const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device , const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     return full(shape, 1.0f, data_type, layout, device, output_mem_config);
 }
 
@@ -116,7 +116,7 @@ static Tensor ones_like(const Tensor& input_tensor, std::optional<DataType> data
 }
 
 template<typename T>
-static Tensor arange(int64_t start, int64_t stop, int64_t step, const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr, const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
+static Tensor arange(int64_t start, int64_t stop, int64_t step, const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device , const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     constexpr DataType data_type = detail::get_data_type<T>();
     // Current implementation restrictions
     TT_ASSERT(step > 0, "Step must be greater than 0");
@@ -141,7 +141,7 @@ static Tensor arange(int64_t start, int64_t stop, int64_t step, const Layout lay
 
 template<typename T,bool IS_UPPER>
 static Tensor index_trilu(const Shape& shape, const int32_t diag, DataType data_type,
-			  const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr,
+			  const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device ,
 			  const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     // Current implementation restrictions
     auto owned_buffer = tt_metal::owned_buffer::create<T>(tt_metal::compute_volume(shape));
@@ -170,7 +170,7 @@ static Tensor index_trilu(const Shape& shape, const int32_t diag, DataType data_
 
 template<typename T>
 static Tensor manual_insertion(const Tensor& input_tensor, const Shape& shape, DataType data_type,
-			  const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr,
+			  const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device ,
 			  const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     TT_ASSERT(input_tensor.layout() == Layout::ROW_MAJOR);
     TT_ASSERT(shape[0] * shape[1] * shape[2] * shape[3] == input_tensor.volume(), "Required shape volume must match old shape volume");
@@ -186,13 +186,13 @@ static Tensor manual_insertion(const Tensor& input_tensor, const Shape& shape, D
 }
 
 template<typename T>
-static Tensor index_tril(const Shape& shape, const int32_t diag, DataType data_type, const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr,
+static Tensor index_tril(const Shape& shape, const int32_t diag, DataType data_type, const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device ,
 		   const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     return index_trilu<T,false>(shape, diag, data_type, layout, device, output_mem_config);
 }
 
 template<typename T>
-static Tensor index_triu(const Shape& shape,const int32_t diag, DataType data_type, const Layout layout = Layout::ROW_MAJOR, Device * device = nullptr,
+static Tensor index_triu(const Shape& shape,const int32_t diag, DataType data_type, const Layout layout = Layout::ROW_MAJOR, std::optional<std::reference_wrapper<const Device> > device ,
 		   const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
     return index_trilu<T,true>(shape, diag, data_type, layout, device, output_mem_config);
 }

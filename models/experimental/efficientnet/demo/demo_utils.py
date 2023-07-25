@@ -69,7 +69,7 @@ def load_imagenet_labels():
 def run_gs_demo(efficientnet_model_constructor):
     device = tt_lib.device.CreateDevice(0)
 
-    tt_lib.device.SetDefaultDevice(device)
+
 
     img_path = ROOT / "input_image.jpg"
     download_images(img_path)
@@ -91,7 +91,7 @@ def run_gs_demo(efficientnet_model_constructor):
         output = tt2torch_tensor(output)
         output = output.squeeze(0).squeeze(0)
 
-    tt_lib.device.CloseDevice(device)
+
     probabilities = torch.nn.functional.softmax(output[0], dim=0)
 
     # Check the top 5 categories that are predicted.

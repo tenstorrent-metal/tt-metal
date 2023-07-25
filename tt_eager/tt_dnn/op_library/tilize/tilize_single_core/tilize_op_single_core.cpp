@@ -29,7 +29,7 @@ operation::ProgramWithCallbacks tilize_single_core(const Tensor &a, Tensor& outp
     tt_metal::Buffer *src0_buffer = a.buffer();
 
     // This should allocate a DRAM buffer on the device
-    tt_metal::Device *device = a.device();
+    const tt_metal::Device &device = a.device();
     auto output_shape = output.shape();
 
     tt_metal::Buffer *dst_buffer = output.buffer();
@@ -191,7 +191,7 @@ operation::ProgramWithCallbacks tilize_with_val_padding_single_core(const Tensor
     CoreRange core = {.start={0, 0}, .end={0, 0}};
 
     // This should allocate a DRAM buffer on the device
-    tt_metal::Device *device = a.device();
+    const tt_metal::Device &device = a.device();
 
     tt_metal::Buffer *src0_buffer = a.buffer();
 

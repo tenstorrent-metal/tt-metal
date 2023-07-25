@@ -50,6 +50,6 @@ def test_mnist_inference(model_location_generator):
         tt_output = tt_model(test_input)
         tt_output = tt2torch_tensor(tt_output)
         tt_output = tt_output.squeeze()
-        tt_lib.device.CloseDevice(device)
+
 
     logger.info(f"Tt prediction: {tt_output.topk(10).indices[0]}")

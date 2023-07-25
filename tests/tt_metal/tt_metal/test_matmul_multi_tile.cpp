@@ -96,7 +96,7 @@ bool run_matmul(const tt::ARCH& arch, const bool with_bias) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -296,7 +296,7 @@ bool run_matmul(const tt::ARCH& arch, const bool with_bias) {
         }
         DeallocateBuffer(dst_dram_buffer);
 
-        pass &= tt_metal::CloseDevice(device);;
+
 
     } catch (const std::exception &e) {
         pass = false;

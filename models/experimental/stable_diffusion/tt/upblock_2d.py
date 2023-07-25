@@ -92,7 +92,6 @@ class TtUpBlock2D(nn.Module):
         temb=None,
         upsample_size=None,
     ) -> ttl.tensor.Tensor:
-        device = ttl.device.GetDefaultDevice()
         if not isinstance(hidden_states,ttl.tensor.Tensor):
             hidden_states = ttl.tensor.Tensor(hidden_states.reshape(-1).tolist(),hidden_states.shape,
                                               ttl.tensor.DataType.BFLOAT16,ttl.tensor.Layout.ROW_MAJOR).to(device)

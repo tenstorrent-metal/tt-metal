@@ -275,5 +275,3 @@ if __name__ == "__main__":
 
     print("Layernorm max absdiff=")
     print_diff_argmax(tt_got_back, ref_lnorm)
-
-    device.CloseDevice(device)

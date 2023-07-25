@@ -241,7 +241,7 @@ uint64_t base_alloc(const AllocatorConfig &config, BankManager &bank_manager, ui
     return bank_manager.allocate_buffer(size, page_size, bottom_up);
 }
 
-uint64_t allocate_buffer(Allocator &allocator, uint32_t size, uint32_t page_size, const BufferType &buffer_type, bool bottom_up) {
+uint64_t allocate_buffer(const Allocator &allocator, uint32_t size, uint32_t page_size, const BufferType &buffer_type, bool bottom_up) {
     uint64_t address = 0;
     switch (buffer_type) {
         case BufferType::DRAM: return allocator.descriptor.dram.alloc(allocator.config, allocator.dram_manager, size, page_size, bottom_up);
@@ -253,7 +253,7 @@ uint64_t allocate_buffer(Allocator &allocator, uint32_t size, uint32_t page_size
     return address;
 }
 
-void deallocate_buffer(Allocator &allocator, uint64_t address, const BufferType &buffer_type) {
+void deallocate_buffer(const Allocator &allocator, uint64_t address, const BufferType &buffer_type) {
     switch (buffer_type) {
         case BufferType::DRAM:
             allocator.dram_manager.deallocate_buffer(address);
@@ -267,12 +267,12 @@ void deallocate_buffer(Allocator &allocator, uint64_t address, const BufferType 
     }
 }
 
-void deallocate_buffers(Allocator &allocator) {
+void deallocate_buffers(const Allocator &allocator) {
     allocator.dram_manager.deallocate_all();
     allocator.l1_manager.deallocate_all();
 }
 
-void clear(Allocator &allocator) {
+void clear(const Allocator &allocator) {
     allocator.dram_manager.clear();
     allocator.l1_manager.clear();
 }

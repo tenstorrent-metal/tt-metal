@@ -76,5 +76,3 @@ def test_tile_major_reshape_sweep(reset_seeds, first_grayskull_device):
     assert eq
 
     del xtt
-
-    tt_lib.device.CloseDevice(device)

@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device = tt_metal::CreateDevice(device_id);
+        const tt_metal::Device &device = tt_metal::CreateDevice(device_id);
 
 
 
@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
         pass = first_kernel_result[0] == first_expected_result;
         pass = second_kernel_result[0] == second_expected_result;
 
-        pass &= tt_metal::CloseDevice(device);;
+
 
     } catch (const std::exception &e) {
         pass = false;

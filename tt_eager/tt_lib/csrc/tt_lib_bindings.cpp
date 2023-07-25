@@ -65,29 +65,6 @@ void DeviceModule(py::module &m_device) {
         | device_id        | Device index           | int                 |                              | Yes      |
         +------------------+------------------------+---------------------+------------------------------+----------+
     )doc");
-    m_device.def("CloseDevice", &CloseDevice, R"doc(
-        Reset an instance of TT accelerator device to default state and relinquish connection to device.
-
-        +------------------+------------------------+-----------------------+-------------+----------+
-        | Argument         | Description            | Data type             | Valid range | Required |
-        +==================+========================+=======================+=============+==========+
-        | device           | TT Device to close     | tt_lib.device.Device  |             | Yes      |
-        +------------------+------------------------+-----------------------+-------------+----------+
-    )doc");
-
-    m_device.def("SetDefaultDevice", &AutoFormat::SetDefaultDevice, R"doc(
-        Sets the default device to use for ops when inputs aren't on device.
-
-        +------------------+------------------------+-----------------------+-------------+----------+
-        | Argument         | Description            | Data type             | Valid range | Required |
-        +==================+========================+=======================+=============+==========+
-        | device           | TT Device to use       | tt_lib.device.Device  |             | Yes      |
-        +------------------+------------------------+-----------------------+-------------+----------+
-    )doc");
-
-    m_device.def("GetDefaultDevice", &AutoFormat::GetDefaultDevice, R"doc(
-        Gets the default device to use for ops when inputs aren't on device.
-    )doc");
 
     m_device.def("EnablePersistentKernelCache", &detail::EnablePersistentKernelCache, R"doc(
         Enable kernel compilation cache to be persistent across runs. When this is called, kernels will not be compiled if the output binary path exists.

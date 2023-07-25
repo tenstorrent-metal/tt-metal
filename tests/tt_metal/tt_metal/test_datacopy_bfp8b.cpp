@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
 
         pass &= (src_vec == result_vec);
 
-        pass &= tt_metal::CloseDevice(device);
+
 
     } catch (const std::exception &e) {
         pass = false;

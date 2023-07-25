@@ -228,7 +228,7 @@ void Device::initialize_and_launch_firmware() {
     log_debug("Firmware init complete");
 }
 
-void Device::clear_l1_state() {
+void Device::clear_l1_state() const {
     CoreCoord logical_grid_size = this->logical_grid_size();
     TT_ASSERT(this->l1_size_per_core() % sizeof(uint32_t) == 0);
     std::vector<uint32_t> zero_vec(this->l1_size_per_core() / sizeof(uint32_t), 0);
@@ -236,7 +236,7 @@ void Device::clear_l1_state() {
     for (uint32_t x = 0; x < logical_grid_size.x; x++) {
         for (uint32_t y = 0; y < logical_grid_size.y; y++) {
             CoreCoord logical_core(x, y);
-            detail::WriteToDeviceL1(this, logical_core, start_address, zero_vec);
+            detail::WriteToDeviceL1(*this, logical_core, start_address, zero_vec);
         }
     }
 }
@@ -268,12 +268,9 @@ bool Device::initialize(const std::vector<uint32_t>& l1_bank_remap) {
                          [&, this]() -> const std::set<CoreCoord>& { return this->storage_only_cores(); },
                          get_compile_outpath()
                          );
-
-    this->initialized_ = true;
-    return true;
 }
 
-bool Device::close() {
+void Device::close() const{
     log_info(tt::LogMetal, "Closing device {}", this->id_);
     if (not this->initialized_) {
         TT_THROW("Cannot close device {} that has not been initialized!", this->id_);
@@ -288,14 +285,11 @@ bool Device::close() {
 
     this->active_devices_.deactivate_device(this->id_);
 
-    this->initialized_ = false;
     return true;
 }
 
 Device::~Device() {
-    if (this->initialized_) {
-        this->close();
-    }
+    this->close();
 }
 
 tt::ARCH Device::arch() const {
@@ -435,7 +429,7 @@ void Device::dump_memory_blocks(const BufferType &buffer_type, std::ofstream &ou
     return allocator::dump_memory_blocks(*this->allocator_, buffer_type, out);
 }
 
-void Device::deallocate_buffers(){
+void Device::deallocate_buffers() const{
     allocator::deallocate_buffers(*allocator_);
 }
 

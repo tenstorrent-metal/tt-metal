@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device = tt_metal::CreateDevice(device_id);
+        const tt_metal::Device &device = tt_metal::CreateDevice(device_id);
 
 
 
@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
         run_operations();
         program_cache::disable_and_clear();
 
-        pass &= CloseDevice(device);
+
 
     } catch (const std::exception &e) {
         pass = false;

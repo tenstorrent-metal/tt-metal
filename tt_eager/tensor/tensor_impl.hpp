@@ -350,7 +350,7 @@ std::string to_string_row_major(const BufferType& buffer, const Shape& shape, Da
 // ======================================================================================
 //                                      Validators
 // ======================================================================================
-void validate_on_device_dtype_and_layout(Device *device, DataType dtype, Layout layout);
+void validate_on_device_dtype_and_layout( DataType dtype, Layout layout);
 
 // -----------------------------------------------------------------------------------------------------------------------------------------------
 // ===============================================================================================================================================
@@ -361,11 +361,11 @@ void validate_on_device_dtype_and_layout(Device *device, DataType dtype, Layout 
 // ======================================================================================
 //                           Data reader, writer, and initializers
 // ======================================================================================
-DeviceBuffer allocate_sharded_buffer_on_device(uint32_t buffer_size_bytes, Device *device, uint32_t shard_size, const MemoryConfig& memory_config);
+DeviceBuffer allocate_sharded_buffer_on_device(uint32_t buffer_size_bytes, const Device &device, uint32_t shard_size, const MemoryConfig& memory_config);
 
 DeviceBuffer allocate_buffer_on_device(
     uint32_t buffer_size_bytes,
-    Device *device,
+    const Device &device,
     const Shape& shape,
     DataType data_type,
     Layout layout,
@@ -405,7 +405,7 @@ inline void write_data_to_device_buffer(const BufferType<T>& data_to_write, Devi
 }
 
 template <typename T, template<typename> typename BufferType>
-inline DeviceBuffer initialize_data_on_device(const BufferType<T>& data_to_write, Device* device, const Shape& shape, DataType data_type, Layout layout, const MemoryConfig& memory_config) {
+inline DeviceBuffer initialize_data_on_device(const BufferType<T>& data_to_write, const Device &device, const Shape& shape, DataType data_type, Layout layout, const MemoryConfig& memory_config) {
     ZoneScoped;
     TT_ASSERT(device != nullptr);
     auto packed_size_in_bytes = packed_buffer_size_bytes<T>(data_to_write.size());
@@ -415,7 +415,7 @@ inline DeviceBuffer initialize_data_on_device(const BufferType<T>& data_to_write
 }
 
 template <typename T>
-inline DeviceBuffer to_device_buffer(const Storage& storage, Device* device, const Shape& shape, DataType data_type, Layout layout, const MemoryConfig& memory_config) {
+inline DeviceBuffer to_device_buffer(const Storage& storage, const Device& device, const Shape& shape, DataType data_type, Layout layout, const MemoryConfig& memory_config) {
     return std::visit(
         [&device, &shape, &data_type, &layout, memory_config] (auto&& storage) -> DeviceBuffer {
             using StorageType = std::decay_t<decltype(storage)>;
@@ -481,12 +481,11 @@ inline Tensor to_host(const Tensor &tensor) {
 }
 
 template <typename T>
-inline Tensor to_device(const Tensor &tensor, Device *target_device, const MemoryConfig &memory_config) {
+inline Tensor to_device(const Tensor &tensor, const Device &target_device, const MemoryConfig &memory_config) {
     TT_ASSERT(tensor.storage_type() != StorageType::DEVICE);
     if (tensor.storage_type() ==  StorageType::OWNED) {
         TT_ASSERT(tensor.is_allocated(), "Need host buffer on device to exist to copy data to device!");
     }
-    TT_ASSERT(target_device != nullptr && "Need target device in order to move tensor to device!");
     TT_ASSERT(tensor.is_allocated() && "Need data to exist in order to move it to device");
     TT_ASSERT(!memory_config.is_sharded(), "Sharded tensors cannot be directly written from device");
 

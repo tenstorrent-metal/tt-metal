@@ -33,7 +33,7 @@ bool test_write_interleaved_sticks_and_then_read_interleaved_sticks(const tt::AR
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -56,7 +56,7 @@ bool test_write_interleaved_sticks_and_then_read_interleaved_sticks(const tt::AR
         tt_metal::detail::ReadFromBuffer(sticks_buffer, dst_vec);
 
         pass &= (src_vec == dst_vec);
-        pass &= tt_metal::CloseDevice(device);
+
     } catch (const std::exception &e) {
         pass = false;
         // Capture the exception error message
@@ -76,7 +76,7 @@ bool interleaved_stick_reader_single_bank_tilized_writer_datacopy_test(const tt:
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -200,7 +200,7 @@ bool interleaved_stick_reader_single_bank_tilized_writer_datacopy_test(const tt:
         }
 
         DeallocateBuffer(dst_dram_buffer);
-        pass &= tt_metal::CloseDevice(device);
+
 
     } catch (const std::exception &e) {
         pass = false;
@@ -242,7 +242,7 @@ bool interleaved_tilized_reader_interleaved_stick_writer_datacopy_test(const tt:
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -364,7 +364,7 @@ bool interleaved_tilized_reader_interleaved_stick_writer_datacopy_test(const tt:
             print_vec_of_uint32_as_packed_bfloat16(result_vec, num_output_tiles);
         }
 
-        pass &= tt_metal::CloseDevice(device);
+
 
     } catch (const std::exception &e) {
         pass = false;
@@ -393,7 +393,7 @@ bool test_interleaved_l1_datacopy(const tt::ARCH& arch) {
     bool pass = true;
 
     int device_id = 0;
-    tt_metal::Device *device =
+    const tt_metal::Device &device =
         tt_metal::CreateDevice(device_id);
 
 
@@ -498,7 +498,7 @@ bool test_interleaved_l1_datacopy(const tt::ARCH& arch) {
 
     pass = (host_buffer == readback_buffer);
 
-    pass &= tt_metal::CloseDevice(device);
+
 
     TT_FATAL(pass);
 

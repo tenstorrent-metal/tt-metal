@@ -100,7 +100,6 @@ def parse_conv2d_interface(
 def Conv2d(*args, **kwargs):
     if UseDeviceConv.READY:
         conv1_weight, conv1_bias, conv1_params = parse_conv2d_interface(*args, **kwargs)
-        device = ttl.device.GetDefaultDevice()
         return run_conv_on_device_wrapper(
             conv1_weight.reshape(-1).tolist(),
             conv1_params,
@@ -112,7 +111,6 @@ def Conv2d(*args, **kwargs):
     return fallback_ops.Conv2d(*args, **kwargs)
 
 def concat(tensors, dim=0):
-    device = ttl.device.GetDefaultDevice()
     new_tensors = []
     for t in tensors:
         if torch.is_tensor(t):

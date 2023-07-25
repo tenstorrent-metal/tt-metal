@@ -35,7 +35,7 @@ operation::ProgramWithCallbacks multi_core_attn_matmul(const Tensor &a, const Te
     tt_metal::Buffer *src1_buffer = b.buffer();
 
     // This should allocate a DRAM buffer on the device
-    tt_metal::Device *device = a.device();
+    const tt_metal::Device &device = a.device();
     Shape cshape = output.shape();
 
     // A block of work is one MtNt

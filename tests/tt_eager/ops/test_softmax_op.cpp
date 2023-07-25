@@ -32,11 +32,13 @@ int main(int argc, char **argv) {
     //                      Device Setup
     ////////////////////////////////////////////////////////////////////////////
     int device_id = 0;
-    tt_metal::Device *device = tt_metal::CreateDevice(device_id);
+    const tt_metal::Device &device = tt_metal::CreateDevice(device_id);
+    Shape shape = {1, 1, TILE_HEIGHT, TILE_WIDTH};
+    Tensor a = tt::numpy::random::random(shape).to(Layout::TILE).to(device);
+    Tensor c = tt::operations::primary::softmax_in_place(a);
+    Tensor d = c.cpu();
+    Tensor host_a = a.cpu(); // Move tensor a to host to validate
 
-    run_softmax(device, {1, 1, TILE_HEIGHT, TILE_WIDTH});
-    run_softmax(device, {1, 1, TILE_HEIGHT * 2, TILE_WIDTH * 2});
-    pass &= CloseDevice(device);
 
 
     if (pass) {

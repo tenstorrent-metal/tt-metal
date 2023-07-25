@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
         auto result_bfp16 = unpack_uint32_vec_into_bfloat16_vec(result_vec);
         auto result_flat_layout = convert_to_flat_layout(result_bfp16);
         pass &= (tensor.get_values() == result_flat_layout); // src1 is all 0's
-        pass &= tt_metal::CloseDevice(device);;
+
 
     } catch (const std::exception &e) {
         pass = false;

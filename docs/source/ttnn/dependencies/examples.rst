@@ -130,9 +130,6 @@ This type of TT Tensor can be created on host machine and can be passed to `TT-L
 A `TT-LIB` operation will automatically pad the tensor so that the size of last dimension is even, move it to TT Accelerator device,
 execute the operation, move output tensor back to host, and finally unpad the output tensor.
 
-To use this functionality, you must call `tt_lib.device.SetDefaultDevice(tt_device)` to set your TT Accelerator device
-as the default device that will be used to execute operations on tensors that are on host machine.
-
 So if you want to use a TT Tensor with odd size of last dimension,
 the first example with running one operation on TT Accelerator device
 can be modified as follow:
@@ -145,10 +142,6 @@ can be modified as follow:
     if __name__ == "__main__":
         # Initialize TT Accelerator device on PCI slot 0
         tt_device = tt_lib.device.CreateDevice(0)
-
-        # Set default TT Accelerator device
-        # This device will be used to execute TT Tensors that are not assigned to a device
-        tt_lib.device.SetDefaultDevice(tt_device)
 
         # Create random PyTorch tensor
         py_tensor = torch.randn((1, 1, 32, 31))

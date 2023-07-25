@@ -27,7 +27,7 @@ from models.experimental.convnet_mnist.convnet_mnist_utils import get_test_data
 def test_mnist_inference():
     device = tt_lib.device.CreateDevice(0)
 
-    tt_lib.device.SetDefaultDevice(device)
+
 
     tt_convnet, pt_convnet = convnet_mnist(device)
 
@@ -45,5 +45,3 @@ def test_mnist_inference():
 
         _, tt_predicted = torch.max(tt_output.data, -1)
         logger.info(f"tt_predicted {tt_predicted.squeeze()}")
-
-    tt_lib.device.CloseDevice(device)

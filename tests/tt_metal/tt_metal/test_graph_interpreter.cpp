@@ -25,10 +25,10 @@ struct hlk_args_t {
     std::int32_t dummy;
 };
 }
-void run_compile_blank(tt_metal::Device *device) {
+void run_compile_blank(const tt_metal::Device &device) {
 
     // Create and config an OP
-    tt::build_kernel_for_riscv_options_t build_kernel_for_riscv_options(device->id(), "blank_op");
+    tt::build_kernel_for_riscv_options_t build_kernel_for_riscv_options(device.id(), "blank_op");
 
     log_info(tt::LogBuildKernels, "Compiling OP: {}", build_kernel_for_riscv_options.name);
 
@@ -130,12 +130,10 @@ bool run_chained_sfpu_test(int chain_length) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
-
-
-        run_compile_blank(device);
+        run_compile_blank(*device);
 
         ////////////////////////////////////////////////////////////////////////////
         //                      Application Setup
@@ -304,7 +302,7 @@ bool run_chained_sfpu_test(int chain_length) {
         DeallocateBuffer(src_dram_buffer);
         DeallocateBuffer(dst_dram_buffer);
 
-        pass &= tt_metal::CloseDevice(device);
+
         delete device;
 
 
@@ -333,7 +331,7 @@ bool run_binary_add_and_then_eltwise_gelu_test() {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -526,7 +524,7 @@ bool run_binary_add_and_then_eltwise_gelu_test() {
             print_vec_of_uint32_as_packed_bfloat16(result_vec, num_tiles);
         }
 
-        pass &= tt_metal::CloseDevice(device);
+
         delete device;
 
 
@@ -568,7 +566,7 @@ bool run_forked_binary_test() {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -1004,7 +1002,7 @@ bool run_forked_binary_test() {
             print_vec_of_uint32_as_packed_bfloat16(result_vec, num_tiles);
         }
 
-        pass &= tt_metal::CloseDevice(device);
+
         delete device;
 
 

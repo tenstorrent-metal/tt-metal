@@ -140,17 +140,17 @@ void Cluster::open_device(
             skip_driver_allocs,
             perform_harvesting);
 
-        this->device_->clean_system_resources();
-        this->device_->set_driver_host_address_params(host_address_params);
-        this->device_->set_driver_eth_interface_params(eth_interface_params);
+        this->device_.clean_system_resources();
+        this->device_.set_driver_host_address_params(host_address_params);
+        this->device_.set_driver_eth_interface_params(eth_interface_params);
     } else if (this->target_type_ == TargetDevice::Versim) {
         this->device_ = std::make_unique<tt_VersimDevice>(sdesc_path, ndesc_path);
     }
-    this->device_->set_device_dram_address_params(dram_address_params);
-    this->device_->set_device_l1_address_params(l1_address_params);
+    this->device_.set_device_dram_address_params(dram_address_params);
+    this->device_.set_device_l1_address_params(l1_address_params);
 
     this->sdesc_per_chip_ = get_metal_desc_from_tt_desc(
-        this->device_->get_virtual_soc_descriptors(), this->device_->get_harvesting_masks_for_soc_descriptors());
+        this->device_.get_virtual_soc_descriptors(), this->device_.get_harvesting_masks_for_soc_descriptors());
 }
 
 #ifdef ARCH_WORMHOLE
@@ -236,17 +236,17 @@ void Cluster::configure_static_tlbs(const std::uint32_t &chip) {
     // Setup static TLBs for all worker cores
     for (auto &core : statically_mapped_cores) {
         auto tlb_index = get_static_tlb_index(core);
-        this->device_->configure_tlb(chip, core, tlb_index, address);
+        this->device_.configure_tlb(chip, core, tlb_index, address);
     }
     // Setup static TLBs for MMIO mapped data space
     uint64_t peer_dram_offset = DEVICE_DATA.DRAM_CHANNEL_0_PEER2PEER_REGION_START;
     for (uint32_t tlb_id = DYNAMIC_TLB_BASE_INDEX; tlb_id < DYNAMIC_TLB_BASE_INDEX + DYNAMIC_TLB_COUNT; tlb_id++) {
-        this->device_->configure_tlb(
+        this->device_.configure_tlb(
             chip, CoreCoord(DEVICE_DATA.DRAM_CHANNEL_0_X, DEVICE_DATA.DRAM_CHANNEL_0_Y), tlb_id, peer_dram_offset);
         // Align address space of 16MB TLB to 16MB boundary
         peer_dram_offset += DEVICE_DATA.DYNAMIC_TLB_16M_SIZE;
     }
-    this->device_->setup_core_to_tlb_map([](CoreCoord core) { return get_static_tlb_index(core); });
+    this->device_.setup_core_to_tlb_map([](CoreCoord core) { return get_static_tlb_index(core); });
 }
 
 void Cluster::start_device(const tt_device_params &device_params) {
@@ -254,19 +254,19 @@ void Cluster::start_device(const tt_device_params &device_params) {
     TT_FATAL(this->device_ != nullptr, "Device not initialized, make sure compile is done before running!");
 
     if (this->target_type_ == TargetDevice::Silicon && device_params.init_device) {
-        for (auto &device_id : this->device_->get_target_mmio_device_ids()) {
+        for (auto &device_id : this->device_.get_target_mmio_device_ids()) {
             configure_static_tlbs(device_id);
         }
         // tt::tlb_config::activate_static_tlbs(device);
     }
 
-    this->device_->start_device(device_params);
+    this->device_.start_device(device_params);
 }
 
 void Cluster::close_device() {
     log_info(tt::LogDevice, "Closing device driver");
     if (this->device_) {
-        this->device_->close_device();
+        this->device_.close_device();
         this->device_.reset();
     }
     this->sdesc_per_chip_.clear();
@@ -278,18 +278,18 @@ uint32_t Cluster::get_harvested_rows(chip_id_t chip) const {
     if (this->target_type_ == TargetDevice::Versim) {
         return 0;
     } else {
-        return this->device_->harvested_rows_per_target.at(chip);
+        return this->device_.harvested_rows_per_target.at(chip);
     }
 }
 
 // clean up bad system resource state that may be carried over
 void Cluster::clean_system_resources() const {
     TT_FATAL(this->device_ != nullptr, "Device not initialized, make sure compile is done before running!");
-    this->device_->clean_system_resources();
+    this->device_.clean_system_resources();
 }
 
 void Cluster::verify_eth_fw() const {
-    const std::unordered_set<chip_id_t> &all_chips = this->device_->get_all_chips_in_cluster();
+    const std::unordered_set<chip_id_t> &all_chips = this->device_.get_all_chips_in_cluster();
     for (const chip_id_t &chip : all_chips) {
         std::vector<uint32_t> fw_versions;
         for (const CoreCoord &eth_core : get_soc_desc(chip).ethernet_cores) {
@@ -304,7 +304,7 @@ void Cluster::verify_eth_fw() const {
 int Cluster::get_device_aiclk(const chip_id_t &chip_id) const {
     if (this->target_device_ids_.find(chip_id) != this->target_device_ids_.end()) {
         chip_id_t mmio_device_id = this->cluster_desc_->get_closest_mmio_capable_chip(chip_id);
-        return this->device_->get_clocks().at(mmio_device_id);
+        return this->device_.get_clocks().at(mmio_device_id);
     }
     TT_THROW("Cannot get frequency for device {} that is not initialized!", chip_id);
     return 0;
@@ -334,22 +334,17 @@ void Cluster::reset_debug_print_server_buffers() const {
     }
 }
 
-void Cluster::assert_risc_reset(const chip_id_t &chip) const { this->device_->assert_risc_reset(chip); }
+void Cluster::assert_risc_reset(const chip_id_t &chip) const { this->device_.assert_risc_reset(chip); }
 
 void Cluster::deassert_risc_reset_at_core(const tt_cxy_pair &physical_chip_coord) const {
     const metal_SocDescriptor &soc_desc = this->get_soc_desc(physical_chip_coord.chip);
     tt_cxy_pair virtual_chip_coord = soc_desc.convert_to_umd_coordinates(physical_chip_coord);
-    this->device_->deassert_risc_reset_at_core(virtual_chip_coord);
-}
-
-void Cluster::deassert_risc_reset(const chip_id_t &target_device_id, bool start_stagger) const {
-    if (this->target_type_ == TargetDevice::Versim) {
-        // Not running silicon multichip test
-        this->device_->deassert_risc_reset(*this->target_device_ids_.begin());
+    this->device_.deassert_risc_reset_at_core(virtual_chip_coord);
+        this->device_.deassert_risc_reset(*this->target_device_ids_.begin());
     } else if (this->target_type_ == TargetDevice::Silicon) {
         log_debug(tt::LogLLRuntime, "Stagger start : {}", start_stagger);
         TT_ASSERT(not start_stagger, "UMD currently does not support staggered deassert of RISC reset");
-        this->device_->deassert_risc_reset(target_device_id);
+        this->device_.deassert_risc_reset(target_device_id);
     }
 }
 
@@ -411,10 +406,10 @@ void Cluster::write_core(
             soc_desc, {core.x, core.y}, addr, sz_in_bytes);
     }
     tt_cxy_pair virtual_core = soc_desc.convert_to_umd_coordinates(core);
-    this->device_->write_to_device(mem_ptr, sz_in_bytes, virtual_core, addr, "LARGE_WRITE_TLB");
-    if (this->device_->get_target_remote_device_ids().find(virtual_core.chip) !=
-        this->device_->get_target_remote_device_ids().end()) {
-            this->device_->wait_for_non_mmio_flush();
+    this->device_.write_to_device(mem_ptr, sz_in_bytes, virtual_core, addr, "LARGE_WRITE_TLB");
+    if (this->device_.get_target_remote_device_ids().find(virtual_core.chip) !=
+        this->device_.get_target_remote_device_ids().end()) {
+            this->device_.wait_for_non_mmio_flush();
         }
 }
 
@@ -429,7 +424,7 @@ void Cluster::read_core(
     }
 
     tt_cxy_pair virtual_core = soc_desc.convert_to_umd_coordinates(core);
-    this->device_->read_from_device(mem_ptr, virtual_core, addr, size_in_bytes, "LARGE_READ_TLB");
+    this->device_.read_from_device(mem_ptr, virtual_core, addr, size_in_bytes, "LARGE_READ_TLB");
 }
 
 void Cluster::read_core(
@@ -447,10 +442,10 @@ void Cluster::write_reg(const std::uint32_t *mem_ptr, tt_cxy_pair target, uint64
         tt::llrt::watcher_sanitize_host_noc_write(soc_desc, {target.x, target.y}, addr, size_in_bytes);
     }
     tt_cxy_pair virtual_target = soc_desc.convert_to_umd_coordinates(target);
-    this->device_->write_to_device(mem_ptr, size_in_bytes, virtual_target, addr, "REG_TLB");
-    if (this->device_->get_target_remote_device_ids().find(virtual_target.chip) !=
-        this->device_->get_target_remote_device_ids().end()) {
-        this->device_->wait_for_non_mmio_flush();
+    this->device_.write_to_device(mem_ptr, size_in_bytes, virtual_target, addr, "REG_TLB");
+    if (this->device_.get_target_remote_device_ids().find(virtual_target.chip) !=
+        this->device_.get_target_remote_device_ids().end()) {
+        this->device_.wait_for_non_mmio_flush();
     }
 }
 
@@ -463,18 +458,18 @@ void Cluster::read_reg(std::uint32_t *mem_ptr, tt_cxy_pair target, uint64_t addr
         tt::llrt::watcher_sanitize_host_noc_read(soc_desc, {target.x, target.y}, addr, size_in_bytes);
     }
     tt_cxy_pair virtual_target = soc_desc.convert_to_umd_coordinates(target);
-    this->device_->read_from_device(mem_ptr, virtual_target, addr, size_in_bytes, "REG_TLB");
+    this->device_.read_from_device(mem_ptr, virtual_target, addr, size_in_bytes, "REG_TLB");
 }
 
 void Cluster::write_sysmem(const void* vec, uint32_t size_in_bytes, uint64_t addr, chip_id_t src_device_id) const {
     constexpr uint16_t channel = 0;
-    this->device_->write_to_sysmem(vec, size_in_bytes, addr, channel, src_device_id);
+    this->device_.write_to_sysmem(vec, size_in_bytes, addr, channel, src_device_id);
 }
 
 void Cluster::read_sysmem(void *vec, uint32_t size_in_bytes, uint64_t addr, chip_id_t src_device_id) const {
     // TODO: Uplift
     constexpr uint16_t channel = 0;
-    this->device_->read_from_sysmem(vec, addr, channel, size_in_bytes, src_device_id);
+    this->device_.read_from_sysmem(vec, addr, channel, size_in_bytes, src_device_id);
 }
 
 void Cluster::verify_sw_fw_versions(
@@ -504,7 +499,7 @@ void Cluster::dram_barrier(chip_id_t chip_id) const {
     for (uint32_t channel = 0; channel < this->get_soc_desc(chip_id).get_num_dram_channels(); channel++) {
         dram_channels.insert(channel);
     }
-    this->device_->dram_membar(chip_id, "LARGE_WRITE_TLB", dram_channels);
+    this->device_.dram_membar(chip_id, "LARGE_WRITE_TLB", dram_channels);
 }
 
 // L1 barrier is used to implement host-to-device synchronization and should be used when all previous writes to L1 need
@@ -513,23 +508,23 @@ void Cluster::dram_barrier(chip_id_t chip_id) const {
 // binaries, metadata, and data to compute on are committed before launching kernels
 void Cluster::l1_barrier(chip_id_t chip_id) const {
     // Sets and resets L1 barrier of all tensix cores and ethernet cores
-    this->device_->l1_membar(chip_id, "LARGE_WRITE_TLB");
+    this->device_.l1_membar(chip_id, "LARGE_WRITE_TLB");
 }
 
 uint32_t Cluster::get_num_host_channels(chip_id_t device_id) const {
-    return this->device_->get_num_host_channels(device_id);
+    return this->device_.get_num_host_channels(device_id);
 }
 
 uint32_t Cluster::get_host_channel_size(chip_id_t device_id, uint32_t channel) const {
-    return this->device_->get_host_channel_size(device_id, channel);
+    return this->device_.get_host_channel_size(device_id, channel);
 }
 
 void *Cluster::host_dma_address(uint64_t offset, chip_id_t src_device_id, uint16_t channel) const {
-    return this->device_->host_dma_address(offset, src_device_id, channel);
+    return this->device_.host_dma_address(offset, src_device_id, channel);
 }
 
 uint64_t Cluster::get_pcie_base_addr_from_device() const {
-    return this->device_->get_pcie_base_addr_from_device();
+    return this->device_.get_pcie_base_addr_from_device();
 }
 
 // Ethernet cluster api

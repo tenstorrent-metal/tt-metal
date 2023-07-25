@@ -14,7 +14,7 @@ using namespace tt::tt_metal;
 class CommandQueueFixture : public ::testing::Test {
    protected:
     tt::ARCH arch_;
-    Device* device_;
+    const Device &device_ = tt::tt_metal::CreateDevice(device_id);
     uint32_t pcie_id;
 
     void SetUp() override {
@@ -26,14 +26,11 @@ class CommandQueueFixture : public ::testing::Test {
         this->arch_ = tt::get_arch_from_string(tt::test_utils::get_env_arch_name());
 
         const int device_id = 0;
-        this->device_ = tt::tt_metal::CreateDevice(device_id);
+        // this->device_ = tt::tt_metal::CreateDevice(device_id);
 
         this->pcie_id = 0;
     }
 
-    void TearDown() override {
-        tt::tt_metal::CloseDevice(this->device_);
-    }
 };
 
 

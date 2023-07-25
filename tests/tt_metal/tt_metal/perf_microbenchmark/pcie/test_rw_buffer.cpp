@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
 
     // Device Setup
     int device_id = 0;
-    tt_metal::Device* device = tt_metal::CreateDevice(device_id);
+    const Device &device = tt_metal::CreateDevice(device_id);
 
     // Application Setup
     uint32_t single_tile_size = 2 * 1024;
@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
 
     // Validation & Teardown
     pass &= (src_vec == result_vec);
-    pass &= tt_metal::CloseDevice(device);
+
   } catch (const std::exception& e) {
     pass = false;
     log_error(LogTest, "{}", e.what());

@@ -155,7 +155,7 @@ int main(int argc, char **argv) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device =
+        const tt_metal::Device &device =
             tt_metal::CreateDevice(device_id);
 
 
@@ -356,7 +356,7 @@ int main(int argc, char **argv) {
             result_untilized,
             [&](const bfloat16& a, const bfloat16& b) { return tt::test_utils::is_close<bfloat16>(a, b, 0.015f); }
         );
-        pass &= tt_metal::CloseDevice(device);;
+
         log_info(LogTest, "Closing device");
 
     } catch (const std::exception &e) {

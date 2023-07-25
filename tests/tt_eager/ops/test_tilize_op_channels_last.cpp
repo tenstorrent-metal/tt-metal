@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
         //                      Device Setup
         ////////////////////////////////////////////////////////////////////////////
         int device_id = 0;
-        tt_metal::Device *device = tt_metal::CreateDevice(device_id);
+        const tt_metal::Device &device = tt_metal::CreateDevice(device_id);
 
 
 
@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
         auto golden_vec = owned_buffer::get_as<bfloat16>(golden);
         auto result_vec = owned_buffer::get_as<bfloat16>(c);
         pass &= (result_vec == golden_vec);
-        pass &= tt_metal::CloseDevice(device);;
+
 
     } catch (const std::exception &e) {
         pass = false;

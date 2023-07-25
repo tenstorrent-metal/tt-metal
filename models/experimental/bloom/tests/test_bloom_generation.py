@@ -337,5 +337,3 @@ if __name__ == "__main__":
 
     logger.info(f"Decoded output night: {output_sentance_night}")
     logger.info(f"Decoded output alice: {output_sentance_alice}")
-
-    tt_lib.device.CloseDevice(device)

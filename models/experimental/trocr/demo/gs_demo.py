@@ -21,7 +21,7 @@ from models.experimental.trocr.tt.trocr import trocr_causal_llm
 def test_gs_demo(model_name):
     device = tt_lib.device.CreateDevice(0)
 
-    tt_lib.device.SetDefaultDevice(device)
+
 
     processor = TrOCRProcessor.from_pretrained(model_name)
     model = VisionEncoderDecoderModel.from_pretrained(model_name)
@@ -46,4 +46,3 @@ def test_gs_demo(model_name):
 
     logger.info("GS's Predicted Output")
     logger.info(tt_generated_text)
-    tt_lib.device.CloseDevice(device)

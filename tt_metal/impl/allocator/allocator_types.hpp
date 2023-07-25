@@ -61,8 +61,8 @@ constexpr static std::uint32_t STORAGE_ONLY_UNRESERVED_BASE = STORAGE_ONLY_RESER
 namespace allocator {
 
 struct InitAndAllocFuncs {
-    std::function<void(Allocator &, const AllocatorConfig &)> init;
-    std::function<uint64_t(const AllocatorConfig &, BankManager &, uint64_t, uint64_t, bool)> alloc;
+    std::function<void(const Allocator &, const AllocatorConfig &)> init;
+    std::function<uint64_t(const AllocatorConfig &, const BankManager &, uint64_t, uint64_t, bool)> alloc;
 };
 
 // Holds callback functions required by allocators that specify how to initialize the bank managers and what the allocation scheme

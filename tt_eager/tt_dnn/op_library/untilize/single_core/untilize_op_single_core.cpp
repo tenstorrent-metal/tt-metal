@@ -59,7 +59,7 @@ operation::ProgramWithCallbacks untilize_single_core(const Tensor &a, Tensor& ou
     uint32_t leftover_width_in_row = num_leftover_tiles * output.element_size();
 
     // This should allocate a DRAM buffer on the device
-    tt_metal::Device *device = a.device();
+    const tt_metal::Device &device = a.device();
 
     tt_metal::Buffer *dst_buffer = output.buffer();
     TT_ASSERT(dst_buffer != nullptr, "Output buffer should be allocated on device!");
@@ -191,7 +191,7 @@ operation::ProgramWithCallbacks untilize_with_unpadding_single_core(const Tensor
     int32_t num_tiles = a.volume() / TILE_HW;
 
     // This should allocate a DRAM buffer on the device
-    tt_metal::Device *device = a.device();
+    const tt_metal::Device &device = a.device();
 
     tt_metal::Buffer *dst_buffer = output.buffer();
     TT_ASSERT(dst_buffer != nullptr, "Output buffer should be allocated on device!");

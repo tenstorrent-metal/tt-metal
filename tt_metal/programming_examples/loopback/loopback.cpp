@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
         * Silicon accelerator setup
         */
         constexpr int device_id = 0;
-        Device *device =
+        const Device &device =
             CreateDevice(device_id);
 
         /*
@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
 
         pass &= input_vec == result_vec;
 
-        pass &= CloseDevice(device);
+
 
     } catch (const std::exception &e) {
         tt::log_error(tt::LogTest, "Test failed with exception!");

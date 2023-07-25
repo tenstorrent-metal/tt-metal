@@ -530,7 +530,7 @@ namespace op_profiler {
 #endif
     }
 
-    static void dump_device_profiler_results (Device *device, Program &program)
+    static void dump_device_profiler_results (const Device & device, Program &program)
     {
 #if defined(PROFILER)
         if (getDeviceProfilerState())

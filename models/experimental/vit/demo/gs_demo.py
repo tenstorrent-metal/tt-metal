@@ -20,7 +20,7 @@ def test_gs_demo():
     # Initialize the device
     device = tt_lib.device.CreateDevice(0)
 
-    tt_lib.device.SetDefaultDevice(device)
+
 
     image_processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
     HF_model = ViTForImageClassification.from_pretrained(

@@ -245,15 +245,12 @@ def device_init_destroy(request):
     arch = getattr(ttl.device.Arch, silicon_arch_name.upper())
 
     device = ttl.device.CreateDevice(device_id)
-    ttl.device.SetDefaultDevice(device)
-
     yield device
 
-    ttl.device.CloseDevice(device)
 
 
 @pytest.fixture(scope="function")
-def device(device_init_destroy):
+def device(device_init_destroy, request):
     import tt_lib as ttl
 
     device = ttl.device.GetDefaultDevice()
@@ -280,11 +277,8 @@ def clear_compile_cache():
 
 @pytest.fixture(autouse=True)
 def reset_default_device():
-    import tt_lib as ttl
-
-    device = ttl.device.GetDefaultDevice()
     yield
-    ttl.device.SetDefaultDevice(device)
+
 
 
 @pytest.fixture(scope="function")
