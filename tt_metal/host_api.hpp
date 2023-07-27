@@ -48,17 +48,27 @@ class Buffer;
 Device *CreateDevice(tt::ARCH arch, int pcie_slot);
 
 /**
- * Initializes a device by creating a tt_cluster object and memory manager. Puts device into reset.
- *
- * Currently device has a 1:1 mapping with tt_cluster
+ * Initializes a device and memory manager, also puts device into reset.
+ * Device can be initialized with different memory allocation schemes which dictate how host divides up addressable memory space.
+ * There are currently two supported schemes:
+ * - MemoryAllocator::BASIC:\n
+ *      Creates one DRAM bank per DRAM channel and one L1 bank per Tensix core.
+ *      All of DRAM is addressable whereas total addressable L1 space is in range [UNRESERVED_BASE, total L1 size).
+ *      Reserved region holds FW, Kernels, CircularBuffer config, Semaphores, mailboxes etc
+ * - MemoryAllocator::L1_BANKING:\n
+ *      Create one DRAM bank per DRAM channel that is entirely addressable.
+ *      L1 banks are structured such that there is one L1 bank per compute with storage core which is addressable in range [UNRESERVED_BASE, total L1 size)
+ *      and (total L1 size) / (L1 bank size) num L1 banks per storage only cores. L1 space of storage only cores are entirely addressable since no kernels are placed on these cores.
+ *      Dispatch cores do not have any L1 banks.
  *
  * Return value: bool
  *
  * | Argument                    | Description                                 | Type                 | Valid Range         | Required |
  * |-----------------------------|---------------------------------------------|----------------------|---------------------|----------|
  * | device                      | Pointer to device object                    | Device *             |                     | Yes      |
+ * | memory_allocator            | Type of memory allocator scheme to use      | MemoryAllocator enum | BASIC or L1_BANKING | No       |
  */
-bool InitializeDevice(Device *device);
+bool InitializeDevice(Device *device, const MemoryAllocator &memory_allocator = MemoryAllocator::L1_BANKING);
 
 /**
  * Resets device and closes device

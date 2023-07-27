@@ -16,6 +16,11 @@ enum class BufferType;
 class Buffer;
 class Program;
 
+enum class MemoryAllocator {
+    BASIC = 0,
+    L1_BANKING = 1,
+};
+
 // A physical PCIexpress Tenstorrent device
 class Device {
    public:
@@ -35,6 +40,8 @@ class Device {
     tt::ARCH arch() const { return arch_; }
 
     int pcie_slot() const { return pcie_slot_; }
+
+    MemoryAllocator allocator_scheme() const { return this->allocator_scheme_; }
 
     tt_cluster *cluster() const;  // Need to access cluster in llrt APIs
 
@@ -79,10 +86,10 @@ class Device {
 
     // Checks that the given arch is on the given pci_slot and that it's responding
     // Puts device into reset
-    bool initialize(const std::vector<uint32_t>& l1_bank_remap = {});
-    friend bool InitializeDevice(Device *device);
+    bool initialize(const MemoryAllocator &memory_allocator=MemoryAllocator::L1_BANKING, const std::vector<uint32_t>& l1_bank_remap = {});
+    friend bool InitializeDevice(Device *device, const MemoryAllocator &memory_allocator);
     void initialize_cluster();
-    void initialize_allocator(const std::vector<uint32_t>& l1_bank_remap = {});
+    void initialize_allocator(const MemoryAllocator &memory_allocator=MemoryAllocator::L1_BANKING, const std::vector<uint32_t>& l1_bank_remap = {});
     void initialize_harvesting_information();
     // Puts device into reset
     bool close();
@@ -91,16 +98,16 @@ class Device {
     // TODO: Uplift usage of friends. Buffer and Program just need access to allocator
     friend class Buffer;
     friend class Program;
-    
+
 #ifdef TT_METAL_VERSIM_DISABLED
     static constexpr TargetDevice target_type_ = TargetDevice::Silicon;
 #else
     static constexpr TargetDevice target_type_ = TargetDevice::Versim;
 #endif
-    static constexpr MemoryAllocator allocator_scheme_ = MemoryAllocator::L1_BANKING;
     tt::ARCH arch_;
     tt_cluster *cluster_ = nullptr;
     int pcie_slot_;
+    MemoryAllocator allocator_scheme_ = MemoryAllocator::L1_BANKING;
     std::unique_ptr<Allocator> allocator_ = nullptr;
     bool initialized_ = false;
 

@@ -3187,7 +3187,7 @@ void DeviceModule(py::module &m_device) {
         | pci_express_slot | PCI Express slot index | int                 |                              | Yes      |
         +------------------+------------------------+---------------------+------------------------------+----------+
     )doc");
-    m_device.def("InitializeDevice", &InitializeDevice, py::arg().noconvert(), R"doc(
+    m_device.def("InitializeDevice", [](Device *device) { InitializeDevice(device); }, R"doc(
         Initialize instance of TT accelerator device.
 
         +-------------------+--------------------------------------------------------+----------------------------------+-------------------------------------------+----------+

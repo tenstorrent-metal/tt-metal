@@ -120,11 +120,11 @@ std::optional<uint32_t> get_semaphore_address(const Program &program, const Core
 
 Device *CreateDevice(tt::ARCH arch, int pcie_slot) { return new Device(arch, pcie_slot); }
 
-bool InitializeDevice(Device *device) {
+bool InitializeDevice(Device *device, const MemoryAllocator &memory_allocator) {
     TT_ASSERT(not HACK_CQ, "HACK_CQ should not be initialized prior to InitializeDevice!");
 
     bool init;
-    if (device->initialize()) {
+    if (device->initialize(memory_allocator)) {
         static std::mutex build_mutex;
         static bool global_init_complete = false;
 
@@ -848,12 +848,15 @@ bool ConfigureDeviceWithProgram(Device *device, const Program &program) {
         program.init_semaphores(*device, logical_core);
     }
 
-    // Skip loading of blank kernels to storage cores
-    for (const auto &core : device->cluster()->get_soc_desc(device->pcie_slot()).storage_cores) {
-        const auto logical_coord = get_core_coord_from_relative(core, device->logical_grid_size());
-        worker_cores.push_back(device->worker_core_from_logical_core(logical_coord));
+    // Skip loading of blank kernels to storage only cores because blank kernels will override L1 buffers
+    // This is because all of L1 is used for L1 buffers (no reserved space on these cores)
+    if (device->allocator_scheme() == MemoryAllocator::L1_BANKING) {
+        for (const auto &core : device->cluster()->get_soc_desc(device->pcie_slot()).storage_cores) {
+            const auto logical_coord = get_core_coord_from_relative(core, device->logical_grid_size());
+            worker_cores.push_back(device->worker_core_from_logical_core(logical_coord));
+        }
+        std::sort(worker_cores.begin(), worker_cores.end());
     }
-    std::sort(worker_cores.begin(), worker_cores.end());
 
     // Load blank kernel to all riscs of all cores excluding those in worker_cores
     const llrt::TensixRiscsOptions riscs_options = llrt::TensixRiscsOptions::ALL_RISCS;  // PROF_BEGIN("LOAD_BLANK")

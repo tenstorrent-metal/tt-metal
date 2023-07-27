@@ -39,11 +39,6 @@ struct AllocatorConfig {
     BankMapping l1_bank_remap = {}; // for remapping which l1 bank points to which bank if we assume normal row-major assignment
 };
 
-enum class MemoryAllocator {
-    BASIC = 0,
-    L1_BANKING = 1,
-};
-
 namespace allocator {
 
 struct InitAndAllocFuncs {

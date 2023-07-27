@@ -505,6 +505,9 @@ struct InterleavedAddrGen {
             noc_y = dram_bank_to_noc_y[bank_id];
 #endif
         } else {
+#ifdef IS_NOT_POW2_NUM_L1_BANKS
+    #error "Expected number of L1 banks to be a power of 2"
+#endif
             uint32_t bank_id = id & (NUM_L1_BANKS - 1);
             addr = mulsi3(id >> LOG_BASE_2_OF_NUM_L1_BANKS, nearest_32(this->page_size)) + this->bank_base_address + offset;
             addr += bank_to_l1_offset[bank_id];
@@ -548,6 +551,9 @@ struct InterleavedPow2AddrGen {
             noc_y = dram_bank_to_noc_y[bank_id];
 #endif
         } else {
+#ifdef IS_NOT_POW2_NUM_L1_BANKS
+    #error "Expected number of L1 banks to be a power of 2"
+#endif
             uint32_t bank_id = id & (NUM_L1_BANKS - 1);
             addr = ((id >> LOG_BASE_2_OF_NUM_L1_BANKS) << this->log_base_2_of_page_size) + this->bank_base_address;
             addr += bank_to_l1_offset[bank_id];
@@ -588,6 +594,9 @@ struct InterleavedAddrGenFast {
             noc_y = dram_bank_to_noc_y[bank_id];
 #endif
         } else {
+#ifdef IS_NOT_POW2_NUM_L1_BANKS
+    #error "Expected number of L1 banks to be a power of 2"
+#endif
             uint32_t bank_id = id & (NUM_L1_BANKS - 1);
             addr = MUL_WITH_TILE_SIZE((uint)this->data_format, id >> LOG_BASE_2_OF_NUM_L1_BANKS) +
                    this->bank_base_address + offset;
@@ -620,6 +629,9 @@ struct InterleavedAddrGenFast {
             src_noc_xy = dram_bank_to_noc_xy[bank_id];
 #endif
         } else {
+#ifdef IS_NOT_POW2_NUM_L1_BANKS
+    #error "Expected number of L1 banks to be a power of 2"
+#endif
             uint32_t bank_id = id & (NUM_L1_BANKS - 1);
             src_addr = MUL_WITH_TILE_SIZE((uint)this->data_format, id >> LOG_BASE_2_OF_NUM_L1_BANKS) +
                        this->bank_base_address + offset;
@@ -655,6 +667,9 @@ struct InterleavedAddrGenFast {
 #endif
             dest_noc_xy = dram_bank_to_noc_xy[bank_id];
         } else {
+#ifdef IS_NOT_POW2_NUM_L1_BANKS
+    #error "Expected number of L1 banks to be a power of 2"
+#endif
             uint32_t bank_id = id & (NUM_L1_BANKS - 1);
             dest_addr =
                 MUL_WITH_TILE_SIZE((uint)this->data_format, id >> LOG_BASE_2_OF_NUM_L1_BANKS) + this->bank_base_address;
