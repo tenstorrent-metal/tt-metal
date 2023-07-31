@@ -710,7 +710,7 @@ void AddBlankKernels(Device *device, Program &program) {
 }
 
 bool CompileProgram(Device *device, Program &program) {
-    log_assert(
+    TT_ASSERT(
         device->is_initialized(),
         "Device needs to be initialized before program {} compilation! Generating headers for banking information is "
         "dependent on information that is set during device initialization.",
@@ -794,6 +794,7 @@ void ConfigureKernelGroup(const KernelGroup &kernel_group, Device *device, const
 }
 
 bool ConfigureDeviceWithProgram(Device *device, const Program &program) {
+    TT_ASSERT(device->is_initialized(), "Device needs to be initialized before program {} can be loaded onto device!", program.get_id());
     bool pass = true;
 
     detail::ProfileTTMetalScope profile_this = detail::ProfileTTMetalScope("ConfigureDeviceWithProgram");
@@ -940,6 +941,7 @@ llrt::TensixRiscsOptions GetRiscOptionFromCoreConfig(bool core_runs_ncrisc, bool
 }
 
 bool LaunchKernels(Device *device, const Program &program, bool stagger_start) {
+    TT_ASSERT(device->is_initialized(), "Device needs to be initialized before program {} can be launched!", program.get_id());
     bool pass = true;
     {//Profiler scope start
     detail::ProfileTTMetalScope profile_this = detail::ProfileTTMetalScope("LaunchKernels");
@@ -975,10 +977,10 @@ bool LaunchKernels(Device *device, const Program &program, bool stagger_start) {
         auto risc_option = GetRiscOptionFromCoreConfig(ncrisc_runs, triscs_run);
         auto worker_core = device->worker_core_from_logical_core(logical_core);
         llrt::internal_::setup_riscs_on_specified_core(cluster, pcie_slot, risc_option, worker_core);
+        // Reset the device that was running
+        auto valid = TENSIX_ASSERT_SOFT_RESET & ALL_TENSIX_SOFT_RESET;
+        cluster->set_remote_tensix_risc_reset(tt_cxy_pair(pcie_slot, worker_core), valid);
     }
-
-    // Reset the device that was running
-    cluster->broadcast_remote_tensix_risc_reset(pcie_slot, TENSIX_ASSERT_SOFT_RESET);
 
     }//Profiler scope end
     detail::DumpDeviceProfileResults(device,program);
