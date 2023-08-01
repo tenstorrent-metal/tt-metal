@@ -803,6 +803,8 @@ bool ConfigureDeviceWithProgram(Device *device, const Program &program) {
     auto cluster = device->cluster();
     auto pcie_slot = device->pcie_slot();
 
+    log_debug(tt::LogMetal, "Configuring device with program {}", program.get_id());
+
     for (auto &[logical_core, kernel_group] : program.core_to_kernel_group()) {
         ValidateKernelGroup(kernel_group, logical_core);
         auto worker_core = device->worker_core_from_logical_core(logical_core);
@@ -849,12 +851,13 @@ bool ConfigureDeviceWithProgram(Device *device, const Program &program) {
         program.init_semaphores(*device, logical_core);
     }
 
+    log_debug(tt::LogMetal, "Done loading kernels onto device for program {}", program.get_id());
+
     // Skip loading of blank kernels to storage only cores because blank kernels will override L1 buffers
     // This is because all of L1 is used for L1 buffers (no reserved space on these cores)
     if (device->allocator_scheme() == MemoryAllocator::L1_BANKING) {
-        for (const auto &core : device->cluster()->get_soc_desc(device->pcie_slot()).storage_cores) {
-            const auto logical_coord = get_core_coord_from_relative(core, device->logical_grid_size());
-            worker_cores.push_back(device->worker_core_from_logical_core(logical_coord));
+        for (const CoreCoord &storage_only_core : device->storage_only_cores()) {
+            worker_cores.push_back(device->worker_core_from_logical_core(storage_only_core));
         }
         std::sort(worker_cores.begin(), worker_cores.end());
     }
@@ -863,6 +866,8 @@ bool ConfigureDeviceWithProgram(Device *device, const Program &program) {
     const llrt::TensixRiscsOptions riscs_options = llrt::TensixRiscsOptions::ALL_RISCS;  // PROF_BEGIN("LOAD_BLANK")
     llrt::internal_::load_blank_kernel_to_all_worker_cores_with_exceptions(
         cluster, pcie_slot, riscs_options, worker_cores);                                // PROF_END("LOAD_BLANK")
+
+    log_debug(tt::LogMetal, "Done loading blanks onto cores that are not used in program {}", program.get_id());
 
     return pass;
 }
@@ -953,9 +958,11 @@ bool LaunchKernels(Device *device, const Program &program, bool stagger_start) {
     auto logical_cores_used_in_program = program.logical_cores();
     auto worker_cores = device->worker_cores_from_logical_cores(logical_cores_used_in_program);
 
+    // There is no API to deassert BRISC reset for a set of cores
     llrt::deassert_brisc_reset_for_all_chips_all_cores(cluster, stagger_start);
 
     bool riscs_are_done = false;
+    log_debug(tt::LogMetal, "Deasserted reset for cores and waiting for cores to complete running program {}", program.get_id());
     while (not riscs_are_done) {
         riscs_are_done = true;
         for (const auto &logical_core : logical_cores_used_in_program) {
@@ -968,6 +975,7 @@ bool LaunchKernels(Device *device, const Program &program, bool stagger_start) {
                 llrt::internal_::check_if_riscs_on_specified_core_done(cluster, pcie_slot, risc_option, worker_core);
         }
     }
+    log_debug(tt::LogMetal, "Cores have completed running program {}", program.get_id());
 
     // Reset the mailboxes on each core to enable multiple launches of the same program
     // without needing to re-configure the device
@@ -977,10 +985,27 @@ bool LaunchKernels(Device *device, const Program &program, bool stagger_start) {
         auto risc_option = GetRiscOptionFromCoreConfig(ncrisc_runs, triscs_run);
         auto worker_core = device->worker_core_from_logical_core(logical_core);
         llrt::internal_::setup_riscs_on_specified_core(cluster, pcie_slot, risc_option, worker_core);
-        // Reset the device that was running
-        auto valid = TENSIX_ASSERT_SOFT_RESET & ALL_TENSIX_SOFT_RESET;
-        cluster->set_remote_tensix_risc_reset(tt_cxy_pair(pcie_slot, worker_core), valid);
     }
+
+    // We need to assert reset for all cores* because BRISC gets deasserted for all cores before launching rather than only the ones that are programmed with kernels
+    // *Note: We cannot reset storage only cores when running L1 banking scheme because L1 buffers could be allocated in space holding FW.
+    //        This corrupts FW, so we cannot issue commands to it.
+    CoreCoord logical_grid_size = device->logical_grid_size();
+    const std::unordered_set<CoreCoord> &storage_cores = device->storage_only_cores();
+    for (uint32_t x = 0; x < logical_grid_size.x; x++) {
+        for (uint32_t y = 0; y < logical_grid_size.y; y++) {
+            CoreCoord logical_core(x, y);
+            bool not_storage_core = storage_cores.find(logical_core) == storage_cores.end();
+            if ((device->allocator_scheme() == MemoryAllocator::L1_BANKING and not_storage_core) or device->allocator_scheme() == MemoryAllocator::BASIC) {
+                CoreCoord phys_core = device->worker_core_from_logical_core(logical_core);
+                cluster->set_remote_tensix_risc_reset(tt_cxy_pair(pcie_slot, phys_core), ALL_TENSIX_SOFT_RESET);
+            } else {
+                log_debug(tt::LogMetal, "Logical core {} is not being reset", logical_core.str());
+            }
+        }
+    }
+
+    log_debug(tt::LogMetal, "Done putting cores into reset after launching program {}", program.get_id());
 
     }//Profiler scope end
     detail::DumpDeviceProfileResults(device,program);

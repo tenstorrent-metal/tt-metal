@@ -81,6 +81,12 @@ class Device {
 
     void dump_memory_blocks(const BufferType &buffer_type, std::ofstream &out) const;
 
+    const std::unordered_set<CoreCoord> &compute_with_storage_cores() const;
+
+    const std::unordered_set<CoreCoord> &storage_only_cores() const;
+
+    const std::unordered_set<CoreCoord> &dispatch_cores() const;
+
    private:
     void check_allocator_is_initialized() const;
 
@@ -115,6 +121,10 @@ class Device {
     CoreCoord post_harvested_worker_grid_size_ = {};
     std::unordered_map<CoreCoord, CoreCoord> logical_to_routing_coord_lookup_table_ = {};
     unsigned int num_harvested_rows_ = 0;
+
+    std::unordered_set<CoreCoord> compute_with_storage_cores_;
+    std::unordered_set<CoreCoord> storage_only_cores_;
+    std::unordered_set<CoreCoord> dispatch_cores_;
 };
 
 }  // namespace tt_metal

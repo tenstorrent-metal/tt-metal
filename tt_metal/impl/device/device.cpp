@@ -57,16 +57,19 @@ void Device::initialize_allocator(const MemoryAllocator &memory_allocator, const
     }
     for (const auto& core : soc_desc.compute_with_storage_cores) {
         const auto logical_coord = get_core_coord_from_relative(core, this->post_harvested_worker_grid_size_);
+        this->compute_with_storage_cores_.insert(logical_coord);
         const auto noc_coord = this->logical_to_routing_coord_lookup_table_[logical_coord];
         config.core_type_from_noc_coord_table[noc_coord] = AllocCoreType::ComputeAndStore;
     }
     for (const auto& core : soc_desc.storage_cores) {
         const auto logical_coord = get_core_coord_from_relative(core, this->post_harvested_worker_grid_size_);
+        this->storage_only_cores_.insert(logical_coord);
         const auto noc_coord = this->logical_to_routing_coord_lookup_table_[logical_coord];
         config.core_type_from_noc_coord_table[noc_coord] = AllocCoreType::StorageOnly;
     }
     for (const auto& core : soc_desc.dispatch_cores) {
         const auto logical_coord = get_core_coord_from_relative(core, this->post_harvested_worker_grid_size_);
+        this->dispatch_cores_.insert(logical_coord);
         const auto noc_coord = this->logical_to_routing_coord_lookup_table_[logical_coord];
         config.core_type_from_noc_coord_table[noc_coord] = AllocCoreType::Dispatch;
     }
@@ -245,6 +248,27 @@ std::vector<CoreCoord> Device::worker_cores_from_logical_cores(const std::vector
         worker_cores.push_back(worker_core_from_logical_core(logical_core));
     }
     return worker_cores;
+}
+
+const std::unordered_set<CoreCoord> &Device::compute_with_storage_cores() const {
+    if (not this->initialized_) {
+        TT_THROW("Device needs to be initialized to be populated with core categories, call InitializeDevice!");
+    }
+    return this->compute_with_storage_cores_;
+}
+
+const std::unordered_set<CoreCoord> &Device::storage_only_cores() const {
+    if (not this->initialized_) {
+        TT_THROW("Device needs to be initialized to be populated with core categories, call InitializeDevice!");
+    }
+    return this->storage_only_cores_;
+}
+
+const std::unordered_set<CoreCoord> &Device::dispatch_cores() const {
+    if (not this->initialized_) {
+        TT_THROW("Device needs to be initialized to be populated with core categories, call InitializeDevice!");
+    }
+    return this->dispatch_cores_;
 }
 
 void Device::check_allocator_is_initialized() const {
