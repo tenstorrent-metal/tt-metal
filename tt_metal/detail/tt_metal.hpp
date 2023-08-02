@@ -15,9 +15,10 @@ using std::mutex;
 namespace tt::tt_metal{
 
     namespace detail {
-        // To be removed at a later time, but need a global
-        // command queue for the time being.
-        inline unique_ptr<CommandQueue> HACK_CQ;
+        inline CommandQueue& get_command_queue(Device* device) {
+            static CommandQueue cq(device);
+            return cq;
+        }
 
         /**
          * Read device side profiler data and dump results into device side CSV log
@@ -168,7 +169,7 @@ namespace tt::tt_metal{
                 Finish(*detail::HACK_CQ);
             }
         }
-        
+
         inline void GenerateBankToNocCoordHeaders(  Device *device,
                                              build_kernel_for_riscv_options_t *build_options,
                                              const std::string &op_path_suffix)
