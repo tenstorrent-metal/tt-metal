@@ -26,8 +26,8 @@ inline void llk_setup_cb_read_interface() {
         // NOTE: fifo_addr, fifo_size and fifo_limit in 16B words!
         std::uint32_t fifo_addr = buffer_config_addr[0];
         std::uint32_t fifo_size = buffer_config_addr[1];
-        std::uint32_t fifo_size_tiles = buffer_config_addr[2]; // not used atm
-        write_to_local_mem_barrier(fifo_size_tiles);
+        std::uint32_t fifo_num_pages = buffer_config_addr[2]; // not used atm
+        write_to_local_mem_barrier(fifo_num_pages);
 
         cb_read_interface[cb_id].fifo_rd_ptr = fifo_addr;
         cb_read_interface[cb_id].fifo_size = fifo_size;

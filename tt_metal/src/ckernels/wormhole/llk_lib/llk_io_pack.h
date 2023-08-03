@@ -18,7 +18,7 @@ inline void llk_setup_outputs() {
         std::uint32_t stream_id = l1_read_barrier(&EPOCH_INFO_PTR->outputs[n]->stream_id);
         std::uint32_t fifo_addr = l1_read_barrier(&EPOCH_INFO_PTR->outputs[n]->buf_base_addr)/MEM_WORD_BYTES;
         std::uint32_t fifo_size = l1_read_barrier(&EPOCH_INFO_PTR->outputs[n]->buf_full_size_bytes)/MEM_WORD_BYTES;
-        std::uint32_t fifo_size_tiles = l1_read_barrier(&EPOCH_INFO_PTR->outputs[n]->buf_size_tiles);
+        std::uint32_t fifo_num_pages = l1_read_barrier(&EPOCH_INFO_PTR->outputs[n]->buf_size_tiles);
         mem_barrier(fifo_size);
         std::int32_t operand = stream_id_to_operand(stream_id);
         bool is_intermediate_operand = operand >= OPERAND_INTERMEDIATES_START_INDEX && operand < OPERAND_RELAY_START_INDEX;
@@ -29,7 +29,7 @@ inline void llk_setup_outputs() {
         outputs[output].f.fifo_limit = fifo_addr + fifo_size - 1;  // Check if there is overflow
         outputs[output].f.fifo_size = fifo_size;
         outputs[output].f.fifo_wr_tile_ptr = 0;
-        outputs[output].f.fifo_size_tiles = fifo_size_tiles;
+        outputs[output].f.fifo_num_pages = fifo_num_pages;
         outputs[output].f.tiles_received = is_intermediate_operand ? reg_read_barrier((uint32_t)&tiles_received_ptr[0]) : 0;
         outputs[output].f.legacy_pack = legacy_pack;
         outputs[output].f.fifo_wr_base_ptr = fifo_addr;
@@ -98,7 +98,7 @@ inline void llk_wait_for_free_tiles(const std::int32_t operand, const std::int32
         //std::int32_t free_tiles;
         //do {
         //    std::uint16_t tiles_acked = (std::uint16_t) reg_read_barrier((std::uint32_t)tiles_acked_ptr);
-        //    std::uint16_t free_tiles_wrap = outputs[output].f.fifo_size_tiles - (tiles_acked - outputs[output].f.tiles_received);
+        //    std::uint16_t free_tiles_wrap = outputs[output].f.fifo_num_pages - (tiles_acked - outputs[output].f.tiles_received);
         //    free_tiles = (std::int32_t) free_tiles_wrap;
         //} while (free_tiles < num_tiles);
         //mem_barrier(free_tiles);
@@ -125,7 +125,7 @@ inline void llk_wait_for_free_tiles(const std::int32_t operand, const std::int32
         std::int32_t free_tiles;
 #if defined(PERF_DUMP) && PERF_DUMP_LEVEL > 0
         std::uint16_t tiles_acked = (std::uint16_t) reg_read_barrier((std::uint32_t)tiles_acked_ptr);
-        std::uint32_t free_tiles_wrap = outputs[output].f.fifo_size_tiles - (outputs[output].f.tiles_received - tiles_acked);
+        std::uint32_t free_tiles_wrap = outputs[output].f.fifo_num_pages - (outputs[output].f.tiles_received - tiles_acked);
         free_tiles = (std::int32_t) free_tiles_wrap;
         if (free_tiles < num_tiles) {
             uint32_t event_id = perf::get_event_id(
@@ -133,7 +133,7 @@ inline void llk_wait_for_free_tiles(const std::int32_t operand, const std::int32
             record_timestamp_64b(event_id, 6);  // Leave space for last-pack end-time, its possible upper 32b, and num_tiles
             do {
                 tiles_acked = (std::uint16_t) reg_read_barrier((std::uint32_t)tiles_acked_ptr);
-                free_tiles_wrap = outputs[output].f.fifo_size_tiles - (outputs[output].f.tiles_received - tiles_acked);
+                free_tiles_wrap = outputs[output].f.fifo_num_pages - (outputs[output].f.tiles_received - tiles_acked);
                 free_tiles = (std::int32_t) free_tiles_wrap;
             } while (free_tiles < num_tiles);
             record_timestamp_64b(event_id, 6);  // Leave space for last-pack end-time, its possible upper 32b, and num_tiles
@@ -141,7 +141,7 @@ inline void llk_wait_for_free_tiles(const std::int32_t operand, const std::int32
 #else
         do {
             std::uint16_t tiles_acked = (std::uint16_t) reg_read_barrier((std::uint32_t)tiles_acked_ptr);
-            std::uint32_t free_tiles_wrap = outputs[output].f.fifo_size_tiles - (outputs[output].f.tiles_received - tiles_acked);
+            std::uint32_t free_tiles_wrap = outputs[output].f.fifo_num_pages - (outputs[output].f.tiles_received - tiles_acked);
             free_tiles = (std::int32_t) free_tiles_wrap;
         } while (free_tiles < num_tiles);
 #endif
