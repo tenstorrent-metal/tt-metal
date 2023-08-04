@@ -8,6 +8,7 @@
 #include <vector>
 #include "common/assert.hpp"
 #include "tile_math.hpp"
+#include "constants.hpp"
 
 using namespace std;
 enum TensorLayout {
@@ -17,68 +18,59 @@ enum TensorLayout {
 };
 
 template <class T, template<typename> typename BufferType>
-std::vector<T> convert_to_tile_layout(const BufferType<T>& data) {
-    std::vector<T> result;
-    TT_ASSERT(data.size() % (32 * 32) == 0);
-    int num_tiles = data.size() / (32 * 32);
-    for(int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
-        std::vector<T> top_left;
-        std::vector<T> top_right;
-        std::vector<T> bottom_left;
-        std::vector<T> bottom_right;
+std::vector<T> convert_to_tile_layout(const BufferType<T>& input_buffer) {
+    using tt::constants::TILE_HW;
 
-        int index = tile_idx * (32 * 32);
-        for(int row = 0; row < 32; row++) {
-            for(int col = 0; col < 32; col++) {
-                if(row < 16 and col < 16) {
-                    top_left.push_back(data[index]);
-                } else if(row < 16 and col >= 16) {
-                    top_right.push_back(data[index]);
-                } else if(row >= 16 and col < 16) {
-                    bottom_left.push_back(data[index]);
-                } else if(row >= 16 and col >= 16) {
-                    bottom_right.push_back(data[index]);
-                } else {
-                    TT_ASSERT(false);
-                }
-                index++;
-            }
-        }
-        TT_ASSERT(top_left.size() == 16 * 16);
-        TT_ASSERT(top_right.size() == 16 * 16);
-        TT_ASSERT(bottom_left.size() == 16 * 16);
-        TT_ASSERT(bottom_right.size() == 16 * 16);
+    TT_ASSERT(input_buffer.size() % TILE_HW == 0);
+    const auto num_tiles = input_buffer.size() / TILE_HW;
 
-        result.insert(result.end(), top_left.begin(), top_left.end());
-        result.insert(result.end(), top_right.begin(), top_right.end());
-        result.insert(result.end(), bottom_left.begin(), bottom_left.end());
-        result.insert(result.end(), bottom_right.begin(), bottom_right.end());
-    }
+    std::vector<T> output_buffer(input_buffer.size());
 
-    return result;
-}
-
-template <class T, template<typename> typename BufferTyp>
-std::vector<T> convert_to_flat_layout(const BufferTyp<T>& data) {
-    std::vector<T> result;
-    TT_ASSERT(data.size() % (32 * 32) == 0);
-    int num_tiles = data.size() / (32 * 32);
-    for(int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
-        int tile_start = tile_idx * (32 * 32);
-        for(int face_y = 0; face_y < 2; face_y++) {
-            for(int row = 0; row < 16; row++) {
-                int start = tile_start + face_y * (16 * 32) + row * 16;
-                for(int face_x = 0; face_x < 2; face_x++) {
-                    int offset = face_x * (16 * 16);
-                    for(int col = offset; col < offset + 16; col++) {
-                        result.push_back(data[start + col]);
+    auto input_index = 0;
+    for(auto tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
+        auto output_offset = tile_idx * TILE_HW;
+        for (auto face_y = 0; face_y < 2; face_y++) {
+            for (auto face_x = 0; face_x < 2; face_x++) {
+                for (auto row_index = 0; row_index < 16; row_index++) {
+                    for (auto column_index = 0; column_index < 16; column_index++) {
+                        auto output_index = output_offset + (face_y * 2 + face_x) * 256 + row_index * 16 + column_index;
+                        output_buffer[output_index] = input_buffer[input_index++];
                     }
                 }
             }
         }
     }
 
-    return result;
+    return output_buffer;
+}
+
+
+template <class T, template<typename> typename BufferType>
+std::vector<T> convert_to_flat_layout(const BufferTyp<T>& input_buffer) {
+    using tt::constants::TILE_HW;
+
+    TT_ASSERT(input_buffer.size() % (TILE_HW) == 0);
+    auto num_tiles = input_buffer.size() / (TILE_HW);
+
+    std::vector<T> output_buffer(input_vector.size());
+
+    auto output_index = 0;
+    for(auto tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
+        auto tile_start = tile_idx * TILE_HW;
+        for(auto face_y = 0; face_y < 2; face_y++) {
+            for(auto row = 0; row < 16; row++) {
+                auto start = tile_start + face_y * (16 * 32) + row * 16;
+                for(auto face_x = 0; face_x < 2; face_x++) {
+                    auto offset = face_x * (16 * 16);
+                    for(auto col = offset; col < offset + 16; col++) {
+                        output_buffer[output_index++] = input_buffer[start + col];
+                    }
+                }
+            }
+        }
+    }
+
+    return output_buffer;
 }
 
 
