@@ -210,7 +210,7 @@ If you are using a machine with bare metal machine specs, please use
     for such tests. However, it is the collective responsibility of all
     developers to ensure that we do not regress this pipeline.
 - The following situations are considered showstoppers where we will freeze main
-and will not unfreeze until the issue is resolveD:
+and will not unfreeze until the issue is resolved:
   - A test non-deterministically hangs in any pipeline.
   - A model regresses in any of kind of performance by more than 5%.
 
