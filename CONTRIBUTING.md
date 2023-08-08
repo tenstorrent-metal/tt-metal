@@ -209,6 +209,10 @@ If you are using a machine with bare metal machine specs, please use
   - In the case of the model performance test pipeline, there are codeowners
     for such tests. However, it is the collective responsibility of all
     developers to ensure that we do not regress this pipeline.
+- The following situations are considered showstoppers where we will freeze main
+and will not unfreeze until the issue is resolveD:
+  - A test non-deterministically hangs in any pipeline.
+  - A model regresses in any of kind of performance by more than 5%.
 
 ### Documentation
 
@@ -241,6 +245,11 @@ If you are using a machine with bare metal machine specs, please use
   - Pass any acceptance criteria mandated in the original issue.
   - Pass any testing criteria mandated by codeowners whose modules are relevant
     for the PR.
+  - For far-reaching changes at the Eager or Metal base runtime:
+    - Passes BERT Large good PCC mixed prec variant in a loop for 24 hours on
+      a VM.
+    - Runs BERT Large good PCC mixed prec variant on your branch on CI multiple
+      times a day without hangs or errors. (Let's say at least 2x per day)
 
 ### New feature and design specifications
 
