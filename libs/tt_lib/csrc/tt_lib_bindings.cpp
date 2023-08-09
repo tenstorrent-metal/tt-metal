@@ -25,6 +25,7 @@
 #include "tt_dnn/op_library/composite/composite_ops.hpp"
 #include "tt_dnn/op_library/split/split_last_dim_two_chunks_tiled.hpp"
 #include "tt_dnn/op_library/move/move_op.hpp"
+#include "tt_dnn/op_library/embeddings/embeddings_op.hpp"
 #include "tt_dnn/op_library/program_cache.hpp"
 #include "tt_metal/tools/profiler/op_profiler.hpp"
 #include "tt_metal/detail/tt_metal.hpp"
@@ -2426,6 +2427,22 @@ void TensorModule(py::module &m_tensor) {
         py::arg("input").noconvert(), py::arg("eps").noconvert(), py::arg("gamma").noconvert() = std::nullopt, py::arg("beta").noconvert() = std::nullopt, py::arg("mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
         "Performs a rmsnorm operation on the last tensor dimension with optional fused with post-multiplication and addition via W-bcast.
     )doc");
+
+    // input embeddings
+    m_tensor.def("embeddings", &embeddings,
+        py::arg("num_embeddings"), py::arg("embedding_dim"), py::arg("input").noconvert(), py::arg("weights").noconvert(),
+        py::arg("mem_config") = MemoryConfig{.interleaved = true}, R"doc(
+        Returns specific indices of the embedding table specified by the input tensor
+        +----------------+-------------------------------------+------------+-------------------------------+----------+
+        | Argument       | Description                         | Data type  | Valid range                   | Required |
+        +================+=====================================+============+===============================+==========+
+        | num_embeddings | Number of rows in embedding table   | uint32     |                               | Yes      |
+        | embedding_dim  | Number of cols in embedding table   | uint32     |                               | Yes      |
+        | input          | Tensor containing rows we want      | Tensor     |                               | Yes      |
+        | weights        | Entire Embeddign Table              | Tensor     |                               | Yes      |
+        +----------------+-------------------------------------+------------+-------------------------------+----------+
+    )doc");
+
 
     // FC
     m_tensor.def("fully_connected", &fully_connected,

@@ -1,5 +1,7 @@
 #include <stdint.h>
 #include "dataflow_api.h"
+#include "debug_print.h"
+
 
 inline __attribute__((always_inline))
 void read_and_push_to_cb(const uint32_t cb_id, uint32_t num_tiles_per_cb, uint32_t ublock_size_tiles, uint32_t ublock_size_bytes,
@@ -16,6 +18,10 @@ void read_and_push_to_cb(const uint32_t cb_id, uint32_t num_tiles_per_cb, uint32
 
         cb_push_back(cb_id, ublock_size_tiles);
         dram_buffer_src_addr += ublock_size_bytes;
+
+
+        auto row_ptr = (uint32_t *)dram_buffer_src_addr;
+        DPRINT << row_ptr[0] << ENDL();
     }
 }
 
