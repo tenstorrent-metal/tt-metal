@@ -46,7 +46,7 @@ class DeviceCommand {
     static constexpr u32 data_size_in_bytes_idx = 4;
     static constexpr u32 num_relay_buffer_reads_idx = 5;
     static constexpr u32 num_relay_buffer_writes_idx = 6;
-    static constexpr u32 num_relay_program_writes_idx = 7;
+    static constexpr u32 num_program_srcs_idx = 7;
 
     static_assert(CONTROL_SECTION_NUM_ENTRIES == 16);
     u32 worker_launch_idx = CONTROL_SECTION_NUM_ENTRIES;  // So far, we unicast the de-assert until Almeet provides
@@ -87,7 +87,7 @@ class DeviceCommand {
     void set_num_workers(const u32 num_workers);
     void set_num_multicast_messages(const u32 num_multicast_messages);  // Specifies how many core ranges to deassert
 
-    void set_worker_noc_coord(const u32 noc_coord);
+    void set_num_program_srcs(const u32 num_srcs);
 
     void add_read_buffer_instruction(
         const u32 dst,

@@ -186,11 +186,16 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
 
 FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr, Buffer& buffer) {
 
-    for (u32 program_src = 0; program_src < program_src; program_src++) {
+    DPRINT << "NPS: " << num_program_srcs << ENDL();
+    for (u32 program_src = 0; program_src < num_program_srcs; program_src++) {
         init_program_cb();
         u32 buffer_type = command_ptr[0];
         u32 num_pages = command_ptr[1];
         u32 bank_base_address = command_ptr[2];
+    DPRINT << "BT: " << buffer_type << ENDL();
+    DPRINT << "NP: " << num_pages << ENDL();
+    DPRINT << "BB: " << bank_base_address << ENDL();
+    // return;
         command_ptr += 3;
         switch (buffer_type) {
             case 0:

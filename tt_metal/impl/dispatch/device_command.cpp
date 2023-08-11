@@ -14,7 +14,7 @@ DeviceCommand::DeviceCommand() {
     this->desc.at(this->data_size_in_bytes_idx) = 0;
     this->desc.at(this->num_relay_buffer_reads_idx) = 0;
     this->desc.at(this->num_relay_buffer_writes_idx) = 0;
-    this->desc.at(this->num_relay_program_writes_idx) = 0;
+    this->desc.at(this->num_program_srcs_idx) = 0;
 }
 
 void DeviceCommand::finish() { this->desc.at(this->finish_idx) = 1; }
@@ -27,6 +27,10 @@ void DeviceCommand::set_multicast_message_noc_coord(const u32 noc_coord, const u
     this->desc.at(this->worker_launch_idx) = noc_coord;
     this->desc.at(this->worker_launch_idx + 1) = num_messages;
     this->worker_launch_idx += 2;
+}
+
+void DeviceCommand::set_num_program_srcs(const u32 num_srcs) {
+    this->desc.at(this->num_program_srcs_idx) = num_srcs;
 }
 
 void DeviceCommand::add_buffer_instruction(

@@ -38,14 +38,18 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     auto update_program_pages = [&program_pages, &idx](
         u32 num_bytes, const vector<u32>::const_iterator& data) {
         u32 num_u32s = num_bytes / sizeof(u32);
+
         if (idx + num_u32s > program_pages.size()) {
             u32 num_bytes_to_reserve = align(num_bytes, PROGRAM_PAGE_SIZE);
+            u32 old_size = program_pages.size();
             program_pages.resize(program_pages.size() + num_bytes_to_reserve / sizeof(u32));
+            // tt::log_info("Resizing program pages from {} to {}", old_size, program_pages.size());
         }
 
         // Need to ensure that the binaries are 16B aligned
-        const vector<u32> padding(align(num_u32s, 16 / sizeof(u32)) - num_u32s, 0);
         std::copy(data, data + num_u32s, program_pages.begin() + idx);
+        const vector<u32> padding(align(num_u32s, 16 / sizeof(u32)) - num_u32s, 0);
+        tt::log_info("WRITING TO IDX {}, NUM U32s {}, PADDING {}", idx, num_u32s, padding.size());
         std::copy(padding.begin(), padding.end(), program_pages.begin() + idx + num_u32s);
     };
 
@@ -73,7 +77,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     };
 
     auto advance_idx = [&idx](u32 num_bytes) {
-        idx += num_bytes / sizeof(u32);
+        idx = align(idx + num_bytes / sizeof(u32), 16 / sizeof(u32));
     };
 
     auto extract_dst_noc_multicast_info = [&device](const set<CoreRange>& ranges) -> vector<pair<u32, u32>> {
@@ -367,7 +371,7 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(u32 runtime_a
                  transfer instruction
     */
     const u32 num_program_srcs = 2; // One src noc for program binaries, one for runtime args in system memory
-    command.write_program_entry(num_program_srcs);
+    command.set_num_program_srcs(num_program_srcs);
     populate_program_data_transfer_instructions(u32(BufferType::DRAM), this->buffer.address(), this->program_to_dev_map.num_transfers_in_program_page, this->program_to_dev_map.program_page_transfers);
     populate_program_data_transfer_instructions(u32(BufferType::SYSTEM_MEMORY), runtime_args_src, this->program_to_dev_map.num_transfers_in_runtime_arg_page, this->program_to_dev_map.runtime_arg_transfers);
 
@@ -487,6 +491,7 @@ CommandQueue::CommandQueue(Device* device) {
 
     device->cluster()->write_sysmem_vec(pointers, 0, 0);
 
+    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}}, DPRINT_HART_BR);
     send_dispatch_kernel_to_device(device);
     this->device = device;
 }
@@ -594,6 +599,8 @@ void CommandQueue::enqueue_program(Program& program, bool blocking) {
             program_id,
             std::make_unique<Buffer>(
                 this->device, program_data_size_in_bytes, PROGRAM_PAGE_SIZE, BufferType::DRAM));
+
+        tt::log_info("PROGRAM DATA SIZE BYTES {}", program_data_size_in_bytes);
 
         this->enqueue_write_buffer(*this->program_to_buffer.at(program_id), program_pages, blocking);
 
