@@ -1026,6 +1026,8 @@ std::string generate_bank_to_noc_coord_descriptor_string(
     } else {
         ss << "#define IS_NOT_POW2_NUM_L1_BANKS 1" << endl;
     }
+    ss << "#define PCIE_NOC_X 0" << endl;
+    ss << "#define PCIE_NOC_Y 4" << endl;
     ss << endl;
     ss << "// This is to store offsets for any banks that share a noc node (dram on wh) or core (storage core), so we can view all banks similarly using banks" << endl;
     ss << "// for cores with only 1 bank, this is set to 0 and ignored" << endl;

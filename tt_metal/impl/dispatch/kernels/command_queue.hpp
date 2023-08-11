@@ -10,15 +10,16 @@
 #include "debug_print.h"
 #include "debug_status.h"
 #include "tt_metal/impl/dispatch/device_command.hpp"
+#include "tt_metal/src/firmware/riscv/grayskull/dev_mem_map.h"
 
-template <typename T>
-inline T min(T a, T b) {
+static constexpr u32 PROGRAM_CB_ID = 0;
+
+inline u32 min(u32 a, u32 b) {
     return (a < b) ? a: b;
 }
 
-template <typename T>
 void write_buffer(
-    T& addr_gen,
+    Buffer& buffer,
     u32 src_addr,
     u32 src_noc,
     u32 dst_addr,
@@ -28,8 +29,8 @@ void write_buffer(
     u32 page_size,
     u32 padded_page_size) {
     // Base address of where we are writing to
-    addr_gen.bank_base_address = dst_addr;
-    addr_gen.page_size = padded_page_size;
+    buffer.bank_base_address = dst_addr;
+    buffer.page_size = padded_page_size;
 
     u32 bank_id = 0;
     while (padded_buf_size > 0) {
@@ -45,7 +46,7 @@ void write_buffer(
 
         // Send pages within the chunk to their destination
         for (u32 i = 0; i < read_size; i += padded_page_size) {
-            u64 dst_addr = addr_gen.get_noc_addr(bank_id++);
+            u64 dst_addr = buffer.get_noc_addr(bank_id++);
             noc_async_write(local_addr, dst_addr, page_size);
             local_addr += padded_page_size;
         }
@@ -56,8 +57,7 @@ void write_buffer(
 FORCE_INLINE void write_buffers(
     u32 num_buffer_writes,
     volatile tt_l1_ptr u32*& command_ptr,
-    InterleavedAddrGen<true>& dram_addr_gen,
-    InterleavedAddrGen<false>& l1_addr_gen) {
+    Buffer& buffer) {
     for (u32 i = 0; i < num_buffer_writes; i++) {
         u32 src_addr = command_ptr[0];
         u32 src_noc = command_ptr[1];
@@ -75,20 +75,20 @@ FORCE_INLINE void write_buffers(
         u64 src_noc_addr = (u64(src_noc) << 32) | src_addr;
         switch (buf_type) {
             case 0:  // DRAM
-                write_buffer(dram_addr_gen, write_buffer_args);
+                buffer.set_type(BufferType::DRAM);
                 break;
             case 1:  // L1
-                write_buffer(l1_addr_gen, write_buffer_args);
+                buffer.set_type(BufferType::L1);
                 break;
         }
+        write_buffer(buffer, write_buffer_args);
 
         command_ptr += 8;
     }
 }
 
-template <typename T>
 FORCE_INLINE void read_buffer(
-    T& addr_gen,
+    Buffer& buffer,
     u32 dst_addr,
     u32 dst_noc,
     u32 src_addr,
@@ -98,8 +98,8 @@ FORCE_INLINE void read_buffer(
     u32 page_size,
     u32 padded_page_size) {
     // Base address of where we are reading from
-    addr_gen.bank_base_address = src_addr;
-    addr_gen.page_size = padded_page_size;
+    buffer.bank_base_address = src_addr;
+    buffer.page_size = padded_page_size;
 
     u32 bank_id = 0;
     while (padded_buf_size > 0) {
@@ -112,7 +112,7 @@ FORCE_INLINE void read_buffer(
         padded_buf_size -= write_size;
 
         for (u32 i = 0; i < write_size; i += padded_page_size) {
-            u64 src_addr = addr_gen.get_noc_addr(bank_id++);
+            u64 src_addr = buffer.get_noc_addr(bank_id++);
             noc_async_read(src_addr, local_addr, page_size);
             local_addr += padded_page_size;
         }
@@ -125,8 +125,7 @@ FORCE_INLINE void read_buffer(
 FORCE_INLINE void read_buffers(
     u32 num_buffer_reads,
     volatile tt_l1_ptr u32*& command_ptr,
-    InterleavedAddrGen<true>& dram_addr_gen,
-    InterleavedAddrGen<false>& l1_addr_gen) {
+    Buffer& buffer) {
     for (u32 i = 0; i < num_buffer_reads; i++) {
         u32 dst_addr = command_ptr[0];
         u32 dst_noc = command_ptr[1];
@@ -143,72 +142,79 @@ FORCE_INLINE void read_buffers(
 
         switch (buf_type) {
             case 0:  // DRAM
-                read_buffer(dram_addr_gen, read_buffer_args);
+                buffer.set_type(BufferType::DRAM);
                 break;
             case 1:  // L1
-                read_buffer(l1_addr_gen, read_buffer_args);
+                buffer.set_type(BufferType::L1);
                 break;
         }
+
+        read_buffer(buffer, read_buffer_args);
 
         command_ptr += 8;
     }
 }
 
-FORCE_INLINE void write_program_section(
-    u32 src, u32 src_noc, u32 transfer_size, u32 num_writes, volatile tt_l1_ptr u32*& command_ptr) {
-    // Bring in a program section into L1
-
-    noc_async_read(((u64(src_noc) << 32) | src), DEVICE_COMMAND_DATA_ADDR, transfer_size);
-    noc_async_read_barrier();
-
-    // Write different parts of that program section to different worker cores
-    for (u32 write = 0; write < num_writes; write++) {
-        u32 src = command_ptr[0];
-
-        u32 dst = command_ptr[1];
-        u32 dst_noc = command_ptr[2];
-        u32 transfer_size = command_ptr[3];
-        u32 num_receivers = command_ptr[4];
-
-        command_ptr += 5;
-
-#ifdef TT_METAL_DISPATCH_MAP_DUMP
-        DPRINT << "CHUNK" << ENDL();
-        for (u32 i = 0; i < transfer_size; i += sizeof(u32)) {
-            DPRINT << *reinterpret_cast<volatile tt_l1_ptr u32*>(src + i) << ENDL();
-        }
-        #else
-        noc_async_write_multicast(src, u64(dst_noc) << 32 | dst, transfer_size, num_receivers);
-        #endif
-    }
-    #ifndef TT_METAL_DISPATCH_MAP_DUMP
-    noc_async_write_barrier();
-    #endif
+FORCE_INLINE void init_program_cb() {
+    constexpr u32 program_cb_size = (MEM_L1_SIZE - DEVICE_COMMAND_DATA_ADDR);
+    constexpr u32 program_cb_num_pages = program_cb_size / PROGRAM_PAGE_SIZE;
+    cb_interface[PROGRAM_CB_ID].fifo_limit = DEVICE_COMMAND_DATA_ADDR + program_cb_size - 1;
+    cb_interface[PROGRAM_CB_ID].fifo_wr_ptr = DEVICE_COMMAND_DATA_ADDR;
+    cb_interface[PROGRAM_CB_ID].fifo_rd_ptr = DEVICE_COMMAND_DATA_ADDR;
+    cb_interface[PROGRAM_CB_ID].fifo_size = program_cb_size;
+    cb_interface[PROGRAM_CB_ID].fifo_num_pages = program_cb_num_pages;
+    cb_interface[PROGRAM_CB_ID].fifo_page_size = PROGRAM_PAGE_SIZE;
 }
 
-FORCE_INLINE void write_program(u32 num_program_relays, volatile tt_l1_ptr u32*& command_ptr) {
-    for (u32 relay = 0; relay < num_program_relays; relay++) {
-        u32 src = command_ptr[0];
-        u32 src_noc = command_ptr[1];
-        u32 transfer_size = command_ptr[2];
-        u32 num_writes = command_ptr[3];
-
+FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) {
+    u32 num_transfers = command_ptr[0];
+    command_ptr++;
+    u32 src = page_addr;
+    for (u32 i = 0; i < num_transfers; i++) {
+        u32 num_bytes = command_ptr[0];
+        u32 dst = command_ptr[1];
+        u32 dst_noc = command_ptr[2];
+        u32 num_recv = command_ptr[3];
+        noc_async_write_multicast(src, (u64(dst_noc) << 32) | dst, num_bytes, num_recv);
         command_ptr += 4;
-        write_program_section(src, src_noc, transfer_size, num_writes, command_ptr);
+        src = align(src + num_bytes, 16);
     }
 
-#ifdef TT_METAL_DISPATCH_MAP_DUMP
-    if (num_program_relays != 0) {
-        DPRINT << "EXIT_CONDITION" << ENDL();
+    // Future optimization: Don't barrier here, only barrier after all pages are written.
+    noc_async_write_barrier();
+}
+
+FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr, Buffer& buffer) {
+
+    for (u32 program_src = 0; program_src < program_src; program_src++) {
+        init_program_cb();
+        u32 buffer_type = command_ptr[0];
+        u32 num_pages = command_ptr[1];
+        u32 bank_base_address = command_ptr[2];
+        command_ptr += 3;
+        switch (buffer_type) {
+            case 0:
+                buffer.set_type(BufferType::DRAM);
+                break;
+            case 2:
+                buffer.set_type(BufferType::SYSTEM_MEMORY);
+                break;
+        }
+        for (u32 page_idx = 0; page_idx < num_pages; page_idx++) {
+            cb_reserve_back(PROGRAM_CB_ID, 1);
+            u32 page_read_ptr = get_read_ptr(PROGRAM_CB_ID);
+            noc_async_read(buffer.get_noc_addr(page_idx), page_read_ptr, PROGRAM_PAGE_SIZE);
+            noc_async_read_barrier();
+            cb_push_back(PROGRAM_CB_ID, 1);
+            cb_wait_front(PROGRAM_CB_ID, 1);
+            u32 page_write_ptr = get_write_ptr(PROGRAM_CB_ID);
+            write_program_page(page_write_ptr, command_ptr);
+            cb_pop_front(PROGRAM_CB_ID, 1);
+        }
     }
-#endif
 }
 
 FORCE_INLINE void launch_program(u32 num_workers, u32 num_multicast_messages, volatile tt_l1_ptr u32*& command_ptr) {
-// Never launch a program when this tool is used.
-#ifdef TT_METAL_DISPATCH_MAP_DUMP
-    return;
-#endif
 
     if (not num_workers)
         return;
