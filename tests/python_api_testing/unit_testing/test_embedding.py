@@ -31,31 +31,28 @@ def run_embeddings_tests(
     dev = device.CreateDevice(device.Arch.GRAYSKULL, 0)
     device.InitializeDevice(dev)
 
-    input_rows_torch = torch.IntTensor((num_rows)).uniform_(0, num_embeddings - 1)
-    weights_shape = [num_embeddings, embedding_dim]
+    input_rows_shape = [1, 1, num_rows, 1]
+    print("Input_rows_shape ")
+    print(input_rows_shape)
+    input_rows_torch = torch.as_tensor([0, 2]).reshape((1,1,num_rows,1))
+
+    #input_rows_torch = torch.randint(1, num_embeddings-1, input_rows_shape, dtype=torch.int32)
+    print("Input_rows")
+    print(input_rows_torch)
+    weights_shape = [1,1,num_embeddings, embedding_dim]
     weights_torch = torch.randn(weights_shape)
-    input_tensor = tensor.Tensor(
-        input_rows_torch.tolist(),
-        [num_rows],
-        dtype,
-        tensor.Layout.ROW_MAJOR,
-        dev,
-        in0_mem_config,
-    )
-    weight_tensor = tensor.Tensor(
-        weights_torch.flatten().tolist(),
-        weights_shape,
-        dtype,
-        tensor.Layout.ROW_MAJOR,
-        dev,
-        in0_mem_config,
-    )
+    input_tensor = tensor.Tensor(input_rows_torch, ttl.tensor.DataType.UINT32).to(dev,in0_mem_config)
+    weights_tensor = tensor.Tensor(weights_torch, dtype).to(dev, in0_mem_config)
+    print("weights")
+    print(weights_torch)
+
     ttz = tensor.embeddings(
-        num_embeddings, embedding_dim, input_tensor, weight_tensor, out_mem_config
+        num_embeddings, embedding_dim, input_tensor, weights_tensor, out_mem_config
     )
-    tt_data = ttz.cpu().to(tensor.Layout.ROW_MAJOR)
-    pyt_got_back_rm_buff = torch.Tensor(tt_data.data()).reshape(tt_data.shape())
-    print(pyt_got_back_rm_buff)
+    tt_data = ttz.cpu().to_torch()
+    tt_got_back = torch.Tensor(tt_data).reshape((1, 1, num_rows, embedding_dim))
+    print("output")
+    print(tt_got_back)
     device.CloseDevice(dev)
 
 
@@ -65,12 +62,12 @@ import pytest
 @pytest.mark.parametrize(
     "out_mem_config",
     (ttl.tensor.MemoryConfig(True, ttl.tensor.BufferType.DRAM),),
-    ids=["out_DRAM", "out_L1"],
+    ids=["out_DRAM"],
 )
 @pytest.mark.parametrize(
     "in0_mem_config",
     (ttl.tensor.MemoryConfig(True, ttl.tensor.BufferType.DRAM),),
-    ids=["in0_DRAM", "in0_L1"],
+    ids=["in0_DRAM"],
 )
 @pytest.mark.parametrize(
     "dtype",
@@ -79,22 +76,30 @@ import pytest
 )
 @pytest.mark.parametrize(
     "num_embeddings",
-    (4),
+    (4,),
     ids=["Num_Input_Rows_4"],
 )
 @pytest.mark.parametrize(
     "embedding_dim",
-    (2),
+    (2,),
     ids=["Num_Cols_2"],
 )
 @pytest.mark.parametrize(
     "num_rows",
-    (1),
-    ids=["Num_Output_Rows_1"],
+    (2,),
+    ids=["Num_Output_Rows_2"],
 )
-def test_layernorm_test(
+def test_embeddings(
     num_embeddings, embedding_dim, num_rows, dtype, in0_mem_config, out_mem_config
 ):
     run_embeddings_tests(
         num_embeddings, embedding_dim, num_rows, dtype, in0_mem_config, out_mem_config
+    )
+
+
+if __name__ == '__main__':
+    run_embeddings_tests(
+        4, 2, 2, ttl.tensor.DataType.BFLOAT16,
+                ttl.tensor.MemoryConfig(True, ttl.tensor.BufferType.DRAM),
+                ttl.tensor.MemoryConfig(True, ttl.tensor.BufferType.DRAM)
     )
