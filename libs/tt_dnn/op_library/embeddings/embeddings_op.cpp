@@ -45,7 +45,6 @@ operation::ProgramWithCallbacks embeddings_(
 
 
     uint32_t cb_id = 0;
-    //uint32_t temp_cb_id = 1;
     uint32_t num_tiles_per_cb = 1;
     bool in0_is_dram = a.buffer()->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
     bool weights_is_dram = weights.buffer()->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
@@ -53,13 +52,23 @@ operation::ProgramWithCallbacks embeddings_(
     bool out_is_dram = output.buffer()->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
 
     uint32_t last_dim = 3;
-    uint32_t element_size_in_bytes = 2;
+    uint32_t element_size_in_bytes = 2; // size of float
+    if(!weights_dtype_is_bfloat16)
+        element_size_in_bytes = 1; //bfp8_b
+
+    // row major, page size is last dim
     uint32_t single_page_size = weights.shape()[last_dim]*element_size_in_bytes;
+
+    // weights shape is [1, 1, num_embeddings, num_dim]
+    // num_pages same as num_embeddings
     uint32_t num_pages = weights.shape()[last_dim-1];
+
+    // shape is [1,1, num_output_rows, 1] of input
     uint32_t num_output_rows = a.shape()[last_dim - 1];
     std::vector<uint32_t> reader_compile_time_args = { (std::uint32_t) weights_is_dram, (std::uint32_t)weights_dtype_is_bfloat16,
                                                 (std::uint32_t) cb_id, (std::uint32_t) single_page_size, (std::uint32_t)num_pages};
-    std::vector<uint32_t> writer_compile_time_args = {  (std::uint32_t) in0_is_dram, (std::uint32_t) out_is_dram, (std::uint32_t)weights_dtype_is_bfloat16, (std::uint32_t) cb_id, (std::uint32_t) single_page_size, (std::uint32_t) num_output_rows, (std::uint32_t) num_pages};
+    std::vector<uint32_t> writer_compile_time_args = {  (std::uint32_t) in0_is_dram, (std::uint32_t) out_is_dram, (std::uint32_t)weights_dtype_is_bfloat16,
+                                                (std::uint32_t) cb_id, (std::uint32_t) single_page_size, (std::uint32_t) num_output_rows, (std::uint32_t) num_pages};
 
 
     uint32_t start_core_x = 0;
@@ -97,7 +106,6 @@ operation::ProgramWithCallbacks embeddings_(
 
     std::vector<uint32_t> reader_runtime_args = {
         (std::uint32_t) weights.buffer()->address(),
-        (std::uint32_t) single_page_size
     };
     tt_metal::SetRuntimeArgs(program, reader_kernel_id, all_cores, reader_runtime_args);
 
@@ -149,15 +157,14 @@ void Embeddings::validate(const std::vector<Tensor> &input_tensors) const  {
 
 std::vector<Shape> Embeddings::compute_output_shapes(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor = input_tensors.at(0);
-    auto num_batches = input_tensor.shape()[0];
-    auto num_indices = input_tensor.shape()[1];
-    Shape output_shape({num_batches, num_indices, 1,this->num_embeddings});
+    // shape is [1,1, num_output_rows, 1] of input
+    Shape output_shape({1, 1, input_tensor.shape()[2],this->embedding_dim});
     return {output_shape};
 }
 
 std::vector<Tensor> Embeddings::create_output_tensors(const std::vector<Tensor> &input_tensors) const {
-    const auto& input_tensor = input_tensors.at(0);
-    return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.dtype(), Layout::ROW_MAJOR, this->output_mem_config);
+    const auto& weight_tensor = input_tensors.at(1);
+    return operation::generic_create_output_tensors(*this, input_tensors, weight_tensor.dtype(), Layout::ROW_MAJOR, this->output_mem_config);
 }
 
 operation::ProgramWithCallbacks Embeddings::create_program(

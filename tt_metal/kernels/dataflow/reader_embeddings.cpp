@@ -26,13 +26,10 @@ void read_and_push_to_cb(const uint32_t cb_id, uint32_t num_pages, uint32_t page
 
 void kernel_main() {
     std::uint32_t dram_buffer_src_addr  = get_arg_val<uint32_t>(0);
-    std::uint32_t dram_src_noc_x        = get_arg_val<uint32_t>(1);
-    std::uint32_t dram_src_noc_y        = get_arg_val<uint32_t>(2);
 
     constexpr uint32_t cb_id = get_compile_time_arg_val(2);
     constexpr uint32_t page_size = get_compile_time_arg_val(3);
-    constexpr uint32_t num_pages = get_compile_time_arg_val(3);
-    uint32_t ublock_size_bytes = get_tile_size(cb_id);
+    constexpr uint32_t num_pages = get_compile_time_arg_val(4);
 
     #define in_is_dram get_compile_time_arg_val(0) == 1
     #define tile_dtype_is_bfloat16 get_compile_time_arg_val(1) == 1
