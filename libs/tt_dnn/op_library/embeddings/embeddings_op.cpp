@@ -65,10 +65,9 @@ operation::ProgramWithCallbacks embeddings_(
 
     // shape is [1,1, num_output_rows, 1] of input
     uint32_t num_output_rows = a.shape()[last_dim - 1];
-    std::vector<uint32_t> reader_compile_time_args = { (std::uint32_t) weights_is_dram, (std::uint32_t)weights_dtype_is_bfloat16,
-                                                (std::uint32_t) cb_id, (std::uint32_t) single_page_size, (std::uint32_t)num_pages};
-    std::vector<uint32_t> writer_compile_time_args = {  (std::uint32_t) in0_is_dram, (std::uint32_t) out_is_dram, (std::uint32_t)weights_dtype_is_bfloat16,
-                                                (std::uint32_t) cb_id, (std::uint32_t) single_page_size, (std::uint32_t) num_output_rows, (std::uint32_t) num_pages};
+    std::vector<uint32_t> compile_time_args = {  (std::uint32_t) in0_is_dram, (std::uint32_t) weights_is_dram, (std::uint32_t) out_is_dram,
+                                                 (std::uint32_t)weights_dtype_is_bfloat16, (std::uint32_t) single_page_size,
+                                                 (std::uint32_t) num_output_rows, (std::uint32_t) num_pages};
 
 
     uint32_t start_core_x = 0;
@@ -81,58 +80,48 @@ operation::ProgramWithCallbacks embeddings_(
     };
 
     // Create Kernels
-    auto reader_kernel_id = tt_metal::CreateDataMovementKernel(
-        program,
-        "tt_metal/kernels/dataflow/reader_embeddings.cpp",
-        all_cores,
-        tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_1, .noc = tt_metal::NOC::RISCV_1_default, .compile_args = reader_compile_time_args});
 
-    auto writer_kernel_id = tt_metal::CreateDataMovementKernel(
+    auto kernel_id = tt_metal::CreateDataMovementKernel(
         program,
-        "tt_metal/kernels/dataflow/writer_embeddings.cpp",
+        "tt_metal/kernels/dataflow/embeddings.cpp",
         all_cores,
-        tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_0_default, .compile_args = writer_compile_time_args});
+        tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_0_default, .compile_args = compile_time_args});
 
     tt::DataFormat cb_data_format = tt_metal::datatype_to_dataformat_converter(weights.dtype());
 
 
     uint32_t src0_cb_index = cb_id;
     uint32_t num_input_tiles = 2;
-    auto cb_src0 = tt_metal::CreateCircularBuffers(
-        program, src0_cb_index, all_cores, num_input_tiles, num_input_tiles * single_page_size, cb_data_format);
 
 
-    auto dst_buffer_l1 = tt_metal::Buffer(device, sizeof(uint32_t)*512, sizeof(uint32_t)*512, tt_metal::BufferType::L1);
 
-    std::vector<uint32_t> reader_runtime_args = {
-        (std::uint32_t) weights.buffer()->address(),
-    };
-    tt_metal::SetRuntimeArgs(program, reader_kernel_id, all_cores, reader_runtime_args);
+    auto dst_buffer_l1 = tt_metal::Buffer(device, sizeof(uint32_t)*2, sizeof(uint32_t)*2, tt_metal::BufferType::L1);
+    auto weights_buffer_l1 = tt_metal::Buffer(device, sizeof(bfloat16)*2, sizeof(bfloat16)*2, tt_metal::BufferType::L1);
 
-    std::vector<uint32_t> writer_runtime_args = {
+
+
+    std::vector<uint32_t>runtime_args = {
         (std::uint32_t) a.buffer()->address(),
+        (std::uint32_t) weights.buffer()->address(),
         (std::uint32_t) dst_buffer_l1.address(),
+        (std::uint32_t) weights_buffer_l1.address(),
         (std::uint32_t) output.buffer()->address()
     };
-    tt_metal::SetRuntimeArgs(program, writer_kernel_id, all_cores, writer_runtime_args);
+    tt_metal::SetRuntimeArgs(program, kernel_id, all_cores,runtime_args);
 
     auto override_runtime_args_callback =
-        [reader_kernel_id, writer_kernel_id, all_cores, start_core_x, start_core_y](
+        [kernel_id, all_cores, start_core_x, start_core_y](
             const Program &program, const std::vector<Buffer *> &input_buffers, const std::vector<Buffer *> &output_buffers) {
                 CoreCoord core = {(std::size_t)start_core_x, (std::size_t)start_core_y};
                 auto weights_dram_buffer = input_buffers.at(1);
-                {
-                    auto runtime_args = GetRuntimeArgs(program, reader_kernel_id, core);
-                    runtime_args[0] = weights_dram_buffer->address();
-                    SetRuntimeArgs(program, reader_kernel_id, core, runtime_args);
-                }
                 auto input_dram_buffer = input_buffers.at(0);
                 auto output_dram_buffer = output_buffers.at(0);
                 {
-                    auto runtime_args = GetRuntimeArgs(program, writer_kernel_id, core);
+                    auto runtime_args = GetRuntimeArgs(program, kernel_id, core);
                     runtime_args[0] = input_dram_buffer->address();
-                    runtime_args[2] = output_dram_buffer->address();
-                    SetRuntimeArgs(program, writer_kernel_id, core, runtime_args);
+                    runtime_args[1] = weights_dram_buffer->address();
+                    runtime_args[4] = output_dram_buffer->address();
+                    SetRuntimeArgs(program, kernel_id, core, runtime_args);
                 }
     };
 

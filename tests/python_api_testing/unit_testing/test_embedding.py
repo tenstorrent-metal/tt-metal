@@ -34,15 +34,16 @@ def run_embeddings_tests(
     input_rows_shape = [1, 1, num_rows, 1]
     print("Input_rows_shape ")
     print(input_rows_shape)
-    input_rows_torch = torch.as_tensor([0, 2]).reshape((1,1,num_rows,1))
 
-    #input_rows_torch = torch.randint(1, num_embeddings-1, input_rows_shape, dtype=torch.int32)
+    input_rows_torch = torch.randperm(num_rows).reshape(tuple(input_rows_shape))
     print("Input_rows")
     print(input_rows_torch)
     weights_shape = [1,1,num_embeddings, embedding_dim]
     weights_torch = torch.randn(weights_shape)
     input_tensor = tensor.Tensor(input_rows_torch, ttl.tensor.DataType.UINT32).to(dev,in0_mem_config)
     weights_tensor = tensor.Tensor(weights_torch, dtype).to(dev, in0_mem_config)
+    print("weights_shape ")
+    print(weights_shape)
     print("weights")
     print(weights_torch)
 
@@ -76,8 +77,8 @@ import pytest
 )
 @pytest.mark.parametrize(
     "num_embeddings",
-    (4,),
-    ids=["Num_Input_Rows_4"],
+    (10,512),
+    ids=["Num_Input_Rows_10", "Num_Input_Rows_512"],
 )
 @pytest.mark.parametrize(
     "embedding_dim",
@@ -86,7 +87,7 @@ import pytest
 )
 @pytest.mark.parametrize(
     "num_rows",
-    (2,),
+    (4,),
     ids=["Num_Output_Rows_2"],
 )
 def test_embeddings(
