@@ -446,6 +446,10 @@ def squared_difference(x, y, *args, **kwargs):
     return torch.square(t_diff)
 
 
+def logaddexp(x, y, *args, **kwargs):
+    return torch.logaddexp(x, y)
+
+
 def add(x, y, *args, **kwargs):
     return torch.add(x, y)
 

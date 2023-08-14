@@ -202,6 +202,8 @@ Tensor atanh(const Tensor& input_a, const MemoryConfig& output_mem_config = oper
  */
 Tensor outer(Tensor& a, Tensor& b, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
+//logaddexp(a,b)
+Tensor logaddexp(const Tensor &input_a, const Tensor &input_b, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 } //namespace tt_metal
 
 } //namespace tt

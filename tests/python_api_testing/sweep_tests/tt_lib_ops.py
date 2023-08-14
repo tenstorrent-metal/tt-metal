@@ -1806,6 +1806,7 @@ eltwise_lt = make_eltwise_binary_op(ttl.tensor.lt)
 eltwise_gte = make_eltwise_binary_op(ttl.tensor.gte)
 eltwise_lte = make_eltwise_binary_op(ttl.tensor.lte)
 eltwise_ldexp = make_eltwise_binary_op(ttl.tensor.ldexp)
+eltwise_logaddexp = make_eltwise_binary_op(ttl.tensor.logaddexp)
 
 
 ################################################

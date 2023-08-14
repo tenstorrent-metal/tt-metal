@@ -401,6 +401,10 @@ op_map = {
         "tt_lib_op": tt_lib_ops.eltwise_ldexp,
         "pytorch_op": pytorch_ops.ldexp,
     },
+    "eltwise-logaddexp": {
+        "tt_lib_op": tt_lib_ops.eltwise_logaddexp,
+        "pytorch_op": pytorch_ops.logaddexp,
+    },
     # Eltwise ternary
     "eltwise-arange": {
         "tt_lib_op": tt_lib_ops.arange,
