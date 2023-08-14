@@ -43,25 +43,35 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             u32 num_bytes_to_reserve = align(num_bytes, PROGRAM_PAGE_SIZE);
             u32 old_size = program_pages.size();
             program_pages.resize(program_pages.size() + num_bytes_to_reserve / sizeof(u32));
-            // tt::log_info("Resizing program pages from {} to {}", old_size, program_pages.size());
         }
 
         // Need to ensure that the binaries are 16B aligned
         std::copy(data, data + num_u32s, program_pages.begin() + idx);
         const vector<u32> padding(align(num_u32s, 16 / sizeof(u32)) - num_u32s, 0);
-        tt::log_info("WRITING TO IDX {}, NUM U32s {}, PADDING {}", idx, num_u32s, padding.size());
+        tt::log_info("WRITING TO IDX {}, NUM BYTES {}, PADDING {}", idx, num_bytes, padding.size());
         std::copy(padding.begin(), padding.end(), program_pages.begin() + idx + num_u32s);
     };
 
-    auto update_program_page_transfers = [&num_transfers_in_page_counter, &idx](
-        u32 num_bytes, u32 dst, vector<transfer_info>& transfers, vector<u32>& num_transfers, const vector<pair<u32, u32>>& dst_noc_multicast_info) {
+    auto advance_idx = [&idx](u32 num_bytes) {
+        idx = align(idx + num_bytes / sizeof(u32), 16 / sizeof(u32));
+    };
 
+    auto update_program_page_transfers = [&num_transfers_in_page_counter, &idx, &advance_idx](
+        u32 num_bytes, u32 dst, vector<transfer_info>& transfers, vector<u32>& num_transfers, const vector<pair<u32, u32>>& dst_noc_multicast_info, bool advance) {
+
+        tt::log_info("Num bytes in page transfers {}, idx {}", num_bytes, idx);
         u32 transfer_info_dst = dst;
         while (num_bytes) {
             u32 cur_space_in_page = PROGRAM_PAGE_SIZE - ((idx * sizeof(u32)) % PROGRAM_PAGE_SIZE);
+            tt::log_info("CUR SPACE IN PAGE {}", cur_space_in_page);
             u32 transfer_info_num_bytes = std::min(cur_space_in_page, num_bytes);
 
+            if (advance) {
+                advance_idx(transfer_info_num_bytes);
+            }
+
             for (const auto& [dst_noc_multicast_encoding, num_receivers]: dst_noc_multicast_info) {
+                tt::log_info("TRANSFER INFO: nb: {}, dst: {}, noc: {}, recv: {}", transfer_info_num_bytes, transfer_info_dst, dst_noc_multicast_encoding, num_receivers);
                 transfers.push_back(std::make_tuple(transfer_info_num_bytes, transfer_info_dst, dst_noc_multicast_encoding, num_receivers));
                 num_transfers_in_page_counter++;
             }
@@ -76,9 +86,6 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
         }
     };
 
-    auto advance_idx = [&idx](u32 num_bytes) {
-        idx = align(idx + num_bytes / sizeof(u32), 16 / sizeof(u32));
-    };
 
     auto extract_dst_noc_multicast_info = [&device](const set<CoreRange>& ranges) -> vector<pair<u32, u32>> {
         vector<pair<u32, u32>> dst_noc_multicast_info;
@@ -100,6 +107,14 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             std::make_pair(get_noc_multicast_encoding(physical_start, physical_end), core_range.size()));
     }
 
+    static map<RISCV, u32> processor_to_local_mem_addr = {
+        {RISCV::BRISC, MEM_BRISC_INIT_LOCAL_L1_BASE},
+        {RISCV::NCRISC, MEM_NCRISC_INIT_LOCAL_L1_BASE},
+        {RISCV::TRISC0, MEM_TRISC0_INIT_LOCAL_L1_BASE},
+        {RISCV::TRISC1, MEM_TRISC1_INIT_LOCAL_L1_BASE},
+        {RISCV::TRISC2, MEM_TRISC2_INIT_LOCAL_L1_BASE}
+    };
+
     // Step 2: Construct pages for kernel binaries
     for (KernelID kernel_id: program.kernel_ids()) {
         const Kernel* kernel = detail::GetKernel(program, kernel_id);
@@ -109,12 +124,13 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
                 u32 num_bytes = len * sizeof(u32);
                 update_program_pages(num_bytes, mem_ptr);
 
-                if (kernel->processor() == RISCV::NCRISC) {
+                if ((dst & MEM_LOCAL_BASE) == MEM_LOCAL_BASE) {
+                    dst = (dst & ~MEM_LOCAL_BASE) + processor_to_local_mem_addr.at(kernel->processor());
+                } else if ((dst & MEM_NCRISC_IRAM_BASE) == MEM_NCRISC_IRAM_BASE) {
                     dst = (dst & ~MEM_NCRISC_IRAM_BASE) + MEM_NCRISC_INIT_IRAM_L1_BASE;
                 }
 
-                update_program_page_transfers(num_bytes, dst, program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info);
-                advance_idx(num_bytes);
+                update_program_page_transfers(num_bytes, dst, program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, true);
             });
         }
     }
@@ -127,7 +143,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
         update_program_pages(num_bytes, cb_vector.begin());
         for (const auto buffer_index: cb.buffer_indices()) {
             update_program_page_transfers(
-                num_bytes, CIRCULAR_BUFFER_CONFIG_BASE + buffer_index * UINT32_WORDS_PER_CIRCULAR_BUFFER_CONFIG * sizeof(u32), program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info);
+                num_bytes, CIRCULAR_BUFFER_CONFIG_BASE + buffer_index * UINT32_WORDS_PER_CIRCULAR_BUFFER_CONFIG * sizeof(u32), program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, false);
         }
         advance_idx(num_bytes);
     }
@@ -138,7 +154,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
         vector<pair<u32, u32>> dst_noc_multicast_info = extract_dst_noc_multicast_info(semaphore.core_range_set().ranges());
         u32 num_bytes = UINT32_WORDS_PER_CIRCULAR_BUFFER_CONFIG * sizeof(u32);
         update_program_pages(num_bytes, semaphore_vector.begin());
-        update_program_page_transfers(num_bytes, semaphore.address(), program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info);
+        update_program_page_transfers(num_bytes, semaphore.address(), program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, false);
         advance_idx(num_bytes);
     }
 
@@ -167,8 +183,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             u32 dst_noc = noc_coord_to_u32(core_coord);
 
             // Only one receiver per set of runtime arguments
-            update_program_page_transfers(num_bytes, dst, runtime_arg_transfers, num_transfers_in_runtime_arg_page, {{dst_noc, 1}});
-            advance_idx(num_bytes);
+            update_program_page_transfers(num_bytes, dst, runtime_arg_transfers, num_transfers_in_runtime_arg_page, {{dst_noc, 1}}, true);
         }
     }
 
@@ -491,7 +506,7 @@ CommandQueue::CommandQueue(Device* device) {
 
     device->cluster()->write_sysmem_vec(pointers, 0, 0);
 
-    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}}, DPRINT_HART_BR);
+    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}, {1, 1}}, DPRINT_HART_BR);
     send_dispatch_kernel_to_device(device);
     this->device = device;
 }

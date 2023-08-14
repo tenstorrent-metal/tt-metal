@@ -158,12 +158,12 @@ FORCE_INLINE void read_buffers(
 FORCE_INLINE void init_program_cb() {
     constexpr u32 program_cb_size = (MEM_L1_SIZE - DEVICE_COMMAND_DATA_ADDR);
     constexpr u32 program_cb_num_pages = program_cb_size / PROGRAM_PAGE_SIZE;
-    cb_interface[PROGRAM_CB_ID].fifo_limit = DEVICE_COMMAND_DATA_ADDR + program_cb_size - 1;
-    cb_interface[PROGRAM_CB_ID].fifo_wr_ptr = DEVICE_COMMAND_DATA_ADDR;
-    cb_interface[PROGRAM_CB_ID].fifo_rd_ptr = DEVICE_COMMAND_DATA_ADDR;
-    cb_interface[PROGRAM_CB_ID].fifo_size = program_cb_size;
+    cb_interface[PROGRAM_CB_ID].fifo_limit = ((DEVICE_COMMAND_DATA_ADDR + program_cb_size) >> 4) - 1;
+    cb_interface[PROGRAM_CB_ID].fifo_wr_ptr = (DEVICE_COMMAND_DATA_ADDR >> 4);
+    cb_interface[PROGRAM_CB_ID].fifo_rd_ptr = (DEVICE_COMMAND_DATA_ADDR >> 4);
+    cb_interface[PROGRAM_CB_ID].fifo_size = (program_cb_size >> 4);
     cb_interface[PROGRAM_CB_ID].fifo_num_pages = program_cb_num_pages;
-    cb_interface[PROGRAM_CB_ID].fifo_page_size = PROGRAM_PAGE_SIZE;
+    cb_interface[PROGRAM_CB_ID].fifo_page_size = (PROGRAM_PAGE_SIZE >> 4);
 }
 
 FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) {
@@ -175,6 +175,13 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
         u32 dst = command_ptr[1];
         u32 dst_noc = command_ptr[2];
         u32 num_recv = command_ptr[3];
+
+
+        DPRINT << "NB: " << num_bytes;
+        DPRINT << ", DST: " << dst;
+        DPRINT << ", DST NOC: " << dst_noc;
+        DPRINT << ", NREC: " << num_recv << ENDL();
+
         noc_async_write_multicast(src, (u64(dst_noc) << 32) | dst, num_bytes, num_recv);
         command_ptr += 4;
         src = align(src + num_bytes, 16);
@@ -186,17 +193,13 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
 
 FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr, Buffer& buffer) {
 
-    DPRINT << "NPS: " << num_program_srcs << ENDL();
     for (u32 program_src = 0; program_src < num_program_srcs; program_src++) {
         init_program_cb();
         u32 buffer_type = command_ptr[0];
         u32 num_pages = command_ptr[1];
         u32 bank_base_address = command_ptr[2];
-    DPRINT << "BT: " << buffer_type << ENDL();
-    DPRINT << "NP: " << num_pages << ENDL();
-    DPRINT << "BB: " << bank_base_address << ENDL();
-    // return;
         command_ptr += 3;
+
         switch (buffer_type) {
             case 0:
                 buffer.set_type(BufferType::DRAM);
@@ -210,6 +213,12 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
             u32 page_read_ptr = get_read_ptr(PROGRAM_CB_ID);
             noc_async_read(buffer.get_noc_addr(page_idx), page_read_ptr, PROGRAM_PAGE_SIZE);
             noc_async_read_barrier();
+
+            // DPRINT << "PAGE READ PTR: " << page_read_ptr << ENDL();
+            // for (uint i = 0; i < PROGRAM_PAGE_SIZE; i += sizeof(u32)) {
+            //     DPRINT << *reinterpret_cast<volatile u32*>(page_read_ptr + i) << ENDL();
+            // }
+
             cb_push_back(PROGRAM_CB_ID, 1);
             cb_wait_front(PROGRAM_CB_ID, 1);
             u32 page_write_ptr = get_write_ptr(PROGRAM_CB_ID);
@@ -220,7 +229,6 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
 }
 
 FORCE_INLINE void launch_program(u32 num_workers, u32 num_multicast_messages, volatile tt_l1_ptr u32*& command_ptr) {
-
     if (not num_workers)
         return;
 
