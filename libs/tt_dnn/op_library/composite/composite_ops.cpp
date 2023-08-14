@@ -346,6 +346,30 @@ Tensor cosh(const Tensor &input_a, const MemoryConfig& output_mem_config)
     return operation::decorate_as_composite(__func__, _cosh)(input_a, output_mem_config);
 }
 
+//atanh[x] = 0.5 * ln((1 + x) / (1 - x))
+Tensor _atanh(const Tensor& input_a, const MemoryConfig& output_mem_config) {
+    Tensor comp_result(input_a);
+    {
+        Tensor nr_term(input_a);
+        {
+        Tensor pos_x = add_unary(input_a, 1.0f, output_mem_config);
+        Tensor neg_x = sub_unary(input_a, 1.0f, output_mem_config);
+        nr_term  = log(mul(pos_x,recip(neg(neg_x, output_mem_config), output_mem_config), std::nullopt, output_mem_config), output_mem_config);
+        }
+        comp_result = mul_unary(nr_term, 0.5f, output_mem_config);
+     }
+    // Input is -1 > value > 1, output is nan
+    // Input is -1 < value < 1, output is atanh(input)
+    Tensor t_nan = mul_unary(comp_result, std::nanf(""), output_mem_config);
+    Tensor abs_temp = sub_unary(abs(input_a, output_mem_config), 1.0f, output_mem_config);
+    Tensor result = where(ltz(abs_temp, output_mem_config), comp_result, t_nan, output_mem_config);
+    return result;
+}
+Tensor atanh(const Tensor &input_a, const MemoryConfig& output_mem_config)
+{
+    return operation::decorate_as_composite(__func__, _atanh)(input_a, output_mem_config);
+}
+
 // lerp(input, end, weight) = start + weight * (end - start)
 Tensor _lerp(const Tensor& input_a, const Tensor& input_b, float value, const MemoryConfig& output_mem_config) {
     Tensor t_value = mk_tiled_scalar(value);
