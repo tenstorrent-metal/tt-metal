@@ -67,7 +67,7 @@ operation::ProgramWithCallbacks embeddings_(
     uint32_t num_output_rows = a.shape()[last_dim - 1];
     std::vector<uint32_t> compile_time_args = {  (std::uint32_t) in0_is_dram, (std::uint32_t) weights_is_dram, (std::uint32_t) out_is_dram,
                                                  (std::uint32_t)weights_dtype_is_bfloat16, (std::uint32_t) single_page_size,
-                                                 (std::uint32_t) num_output_rows, (std::uint32_t) num_pages};
+                                                 (std::uint32_t) num_output_rows};
 
 
     uint32_t start_core_x = 0;

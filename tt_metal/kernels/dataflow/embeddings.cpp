@@ -3,35 +3,17 @@
 #include "debug_print.h"
 #define MAX_SEQ_LENGTH 512
 
-template <bool DRAM>
+
+
+
+template <bool input_DRAM, bool weights_DRAM, bool out_DRAM>
 inline __attribute__((always_inline))
-void read_input_rows(const uint32_t num_rows,
-                    bool * embeddings_boolean_mask,
-                    uint32_t dst_l1_addr,
-                    const InterleavedAddrGenFast<DRAM>& s
-
-) {
-
-
-    for (uint32_t i = 0; i < num_rows; i++) {
-        auto noc_addr = get_noc_addr(i, s);
-        noc_async_read(noc_addr, dst_l1_addr, sizeof(uint32_t));
-        noc_async_read_barrier();
-        uint32_t row = ((uint32_t *)dst_l1_addr)[0];
-        embeddings_boolean_mask[row] = true;
-    }
-
-}
-
-
-
-template <bool weights_DRAM, bool out_DRAM>
-inline __attribute__((always_inline))
-void write_output(
-                    const uint32_t num_input_rows,
+void embeddings_(
+                    const uint32_t num_output_rows,
                     const uint32_t page_size,
-                    bool * embeddings_boolean_mask,
-                    uint32_t l1_addr,
+                    uint32_t input_l1_addr,
+                    uint32_t weight_l1_addr,
+                    const InterleavedAddrGenFast<input_DRAM>& input,
                     const InterleavedAddrGenFast<weights_DRAM>& weights,
                     const InterleavedAddrGenFast<out_DRAM>& out
 
@@ -39,17 +21,20 @@ void write_output(
 
 
     uint32_t output_index=0;
-    for (uint32_t i = 0; i < num_input_rows; i++) {
-        if(embeddings_boolean_mask[i]){
-            DPRINT << "SELECTING ROW " << i <<  ENDL();
-            auto noc_src_addr = get_noc_addr(i, weights);
-            auto noc_dst_addr = get_noc_addr(output_index, out);
-            noc_async_read(noc_src_addr, l1_addr, page_size);
-            noc_async_read_barrier();
-            noc_async_write(l1_addr, noc_dst_addr, page_size);
-            noc_async_write_barrier();
-            output_index++;
-        }
+
+
+    for (uint32_t i = 0; i < num_output_rows; i++) {
+        auto noc_input_src_addr = get_noc_addr(i, input);
+        noc_async_read(noc_input_src_addr, input_l1_addr, sizeof(uint32_t));
+        noc_async_read_barrier();
+        uint32_t row = ((uint32_t *)input_l1_addr)[0];
+        auto noc_src_addr = get_noc_addr(row, weights);
+        auto noc_dst_addr = get_noc_addr(output_index, out);
+        noc_async_read(noc_src_addr, weight_l1_addr, page_size);
+        noc_async_read_barrier();
+        noc_async_write(weight_l1_addr, noc_dst_addr, page_size);
+        noc_async_write_barrier();
+        output_index++;
     }
 
 }
@@ -68,12 +53,9 @@ void kernel_main() {
     #define tile_dtype_is_bfloat16 get_compile_time_arg_val(3) == 1
     constexpr uint32_t page_size = get_compile_time_arg_val(4);
     constexpr uint32_t num_output_rows      = get_compile_time_arg_val(5);
-    constexpr uint32_t num_input_rows      = get_compile_time_arg_val(6);
 
     //DPRINT << "NUM ROWS ARE " << num_output_rows <<  ENDL();
 
-    //initialize no rows to be selected
-    bool embeddings_boolean_mask[MAX_SEQ_LENGTH] = {false};
 
     const InterleavedAddrGenFast<in_is_dram> s0 = {
         .bank_base_address = input_dram_buffer_src_addr, .page_size = sizeof(uint32_t), .data_format = DataFormat::UInt32};
@@ -91,22 +73,17 @@ void kernel_main() {
             .bank_base_address = output_dram_buffer_dst_addr , .page_size = page_size, .data_format = DataFormat::Bfp8_b};
     #endif
 
-    read_input_rows<in_is_dram>(num_output_rows,
-                    embeddings_boolean_mask,
-                    dst_l1_input_addr,
-                    s0
-    );
 
-    write_output<weights_is_dram, out_is_dram>(
-                            num_input_rows,
+    embeddings_<in_is_dram, weights_is_dram, out_is_dram>(
+                            num_output_rows,
                             page_size,
-                            embeddings_boolean_mask,
+                            dst_l1_input_addr,
                             dst_l1_weights_addr,
+                            s0,
                             weights_0,
                             out_0
     );
 
 
-    //DPRINT << "AFTER READING" <<  ENDL();
 
 }

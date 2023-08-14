@@ -20,6 +20,20 @@ from tt_lib.utils import (
 )
 
 
+
+def baseline_embeddings_list(
+        num_rows, num_embeddings, embedding_dim, input, weights
+):
+    input_list = input.reshape((num_rows,)).tolist()
+    weight_list = weights.reshape((num_embeddings,embedding_dim)).tolist()
+
+    selected_weights = []
+    for inp_row in input_list:
+        selected_weights.append(weight_list[inp_row])
+
+    return selected_weights
+
+
 def run_embeddings_tests(
     num_embeddings, embedding_dim, num_rows, dtype, in0_mem_config, out_mem_config
 ):
@@ -32,28 +46,25 @@ def run_embeddings_tests(
     device.InitializeDevice(dev)
 
     input_rows_shape = [1, 1, num_rows, 1]
-    print("Input_rows_shape ")
-    print(input_rows_shape)
+
 
     input_rows_torch = torch.randperm(num_rows).reshape(tuple(input_rows_shape))
-    print("Input_rows")
-    print(input_rows_torch)
     weights_shape = [1,1,num_embeddings, embedding_dim]
     weights_torch = torch.randn(weights_shape)
     input_tensor = tensor.Tensor(input_rows_torch, ttl.tensor.DataType.UINT32).to(dev,in0_mem_config)
     weights_tensor = tensor.Tensor(weights_torch, dtype).to(dev, in0_mem_config)
-    print("weights_shape ")
-    print(weights_shape)
-    print("weights")
-    print(weights_torch)
+
 
     ttz = tensor.embeddings(
         num_embeddings, embedding_dim, input_tensor, weights_tensor, out_mem_config
     )
     tt_data = ttz.cpu().to_torch()
     tt_got_back = torch.Tensor(tt_data).reshape((1, 1, num_rows, embedding_dim))
-    print("output")
-    print(tt_got_back)
+    reference_list = baseline_embeddings_list(
+        num_rows, num_embeddings, embedding_dim, input_rows_torch, weights_torch)
+    reference_torch = torch.Tensor(reference_list).reshape((1,1,num_rows,embedding_dim))
+    assert is_close(tt_got_back, reference_torch)
+
     device.CloseDevice(dev)
 
 
