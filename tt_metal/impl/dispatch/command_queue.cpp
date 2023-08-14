@@ -48,11 +48,6 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
 
         // Need to ensure that the binaries are 16B aligned
         std::copy(data, data + num_u32s, program_pages.begin() + idx);
-
-        // std::cout << "Span" << std::endl;
-        // for (u32 i = idx; i < idx + num_u32s; i++) {
-        //     std::cout << program_pages[i] << std::endl;
-        // }
         const vector<u32> padding(align(num_u32s, 16 / sizeof(u32)) - num_u32s, 0);
         std::copy(padding.begin(), padding.end(), program_pages.begin() + idx + num_u32s);
     };
@@ -82,6 +77,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             num_bytes -= transfer_info_num_bytes;
 
             if (((idx * sizeof(u32)) % PROGRAM_PAGE_SIZE) == 0) {
+                // TODO(agrebenisan): num_transfers -> num_transfers_per_page
                 num_transfers.push_back(num_transfers_in_page_counter);
                 num_transfers_in_page_counter = 0;
             }
@@ -110,7 +106,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     }
 
     static map<RISCV, u32> processor_to_local_mem_addr = {
-        {RISCV::BRISC, MEM_BRISC_INIT_LOCAL_L1_BASE},
+        {RISCV::BRISC,  MEM_BRISC_INIT_LOCAL_L1_BASE},
         {RISCV::NCRISC, MEM_NCRISC_INIT_LOCAL_L1_BASE},
         {RISCV::TRISC0, MEM_TRISC0_INIT_LOCAL_L1_BASE},
         {RISCV::TRISC1, MEM_TRISC1_INIT_LOCAL_L1_BASE},
@@ -188,20 +184,6 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             update_program_page_transfers(num_bytes, dst, runtime_arg_transfers, num_transfers_in_runtime_arg_page, {{dst_noc, 1}}, true);
         }
     }
-
-    // for (u32 el: program_pages) {
-    //     std::cout << el << std::endl;
-    // }
-
-    // u32 debug_idx = 0;
-    // for (const auto& [num_bytes, dst, dst_noc, num_recv]: program_page_transfers) {
-    //     u32 num_u32s = num_bytes / sizeof(u32);
-    //     std::cout << "Transfer" << std::endl;
-    //     for (u32 i = debug_idx; i < debug_idx + num_u32s; i++) {
-    //         std::cout << program_pages[i] << std::endl;
-    //     }
-    //     debug_idx = align(debug_idx + num_u32s, 4);
-    // }
 
     return {
         .num_workers = u32(program.logical_cores().size()),

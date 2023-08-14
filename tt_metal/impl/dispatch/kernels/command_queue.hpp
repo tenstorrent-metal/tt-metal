@@ -177,15 +177,6 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
         u32 dst_noc = command_ptr[2];
         u32 num_recv = command_ptr[3];
 
-        // DPRINT << "NB: " << num_bytes;
-        // DPRINT << ", DST: " << dst;
-        // DPRINT << ", DST NOC: " << dst_noc;
-        // DPRINT << ", NREC: " << num_recv << ENDL();
-        // DPRINT << "SENDING" << ENDL();
-        // for (u32 i = src; i < src + num_bytes; i += sizeof(u32)) {
-        //     DPRINT << *reinterpret_cast<volatile u32*>(i) << ENDL();
-        // }
-
         noc_async_write_multicast(src, (u64(dst_noc) << 32) | dst, num_bytes, num_recv);
         command_ptr += 4;
         src = align(src + num_bytes, 16);
@@ -212,6 +203,9 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
                 buffer.set_type(BufferType::SYSTEM_MEMORY);
                 break;
         }
+        buffer.bank_base_address = bank_base_address;
+        buffer.page_size = PROGRAM_PAGE_SIZE;
+
         for (u32 page_idx = 0; page_idx < num_pages; page_idx++) {
             cb_reserve_back(PROGRAM_CB_ID, 1);
             u32 page_write_ptr = get_write_ptr(PROGRAM_CB_ID);
