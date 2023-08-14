@@ -37,6 +37,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
 
     auto update_program_pages = [&program_pages, &idx](
         u32 num_bytes, const vector<u32>::const_iterator& data) {
+
         u32 num_u32s = num_bytes / sizeof(u32);
 
         if (idx + num_u32s > program_pages.size()) {
@@ -47,8 +48,12 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
 
         // Need to ensure that the binaries are 16B aligned
         std::copy(data, data + num_u32s, program_pages.begin() + idx);
+
+        // std::cout << "Span" << std::endl;
+        // for (u32 i = idx; i < idx + num_u32s; i++) {
+        //     std::cout << program_pages[i] << std::endl;
+        // }
         const vector<u32> padding(align(num_u32s, 16 / sizeof(u32)) - num_u32s, 0);
-        tt::log_info("WRITING TO IDX {}, NUM BYTES {}, PADDING {}", idx, num_bytes, padding.size());
         std::copy(padding.begin(), padding.end(), program_pages.begin() + idx + num_u32s);
     };
 
@@ -59,11 +64,9 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     auto update_program_page_transfers = [&num_transfers_in_page_counter, &idx, &advance_idx](
         u32 num_bytes, u32 dst, vector<transfer_info>& transfers, vector<u32>& num_transfers, const vector<pair<u32, u32>>& dst_noc_multicast_info, bool advance) {
 
-        tt::log_info("Num bytes in page transfers {}, idx {}", num_bytes, idx);
         u32 transfer_info_dst = dst;
         while (num_bytes) {
             u32 cur_space_in_page = PROGRAM_PAGE_SIZE - ((idx * sizeof(u32)) % PROGRAM_PAGE_SIZE);
-            tt::log_info("CUR SPACE IN PAGE {}", cur_space_in_page);
             u32 transfer_info_num_bytes = std::min(cur_space_in_page, num_bytes);
 
             if (advance) {
@@ -71,7 +74,6 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             }
 
             for (const auto& [dst_noc_multicast_encoding, num_receivers]: dst_noc_multicast_info) {
-                tt::log_info("TRANSFER INFO: nb: {}, dst: {}, noc: {}, recv: {}", transfer_info_num_bytes, transfer_info_dst, dst_noc_multicast_encoding, num_receivers);
                 transfers.push_back(std::make_tuple(transfer_info_num_bytes, transfer_info_dst, dst_noc_multicast_encoding, num_receivers));
                 num_transfers_in_page_counter++;
             }
@@ -79,7 +81,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             transfer_info_dst += transfer_info_num_bytes;
             num_bytes -= transfer_info_num_bytes;
 
-            if ((num_bytes % PROGRAM_PAGE_SIZE) == 0) {
+            if (((idx * sizeof(u32)) % PROGRAM_PAGE_SIZE) == 0) {
                 num_transfers.push_back(num_transfers_in_page_counter);
                 num_transfers_in_page_counter = 0;
             }
@@ -186,6 +188,20 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             update_program_page_transfers(num_bytes, dst, runtime_arg_transfers, num_transfers_in_runtime_arg_page, {{dst_noc, 1}}, true);
         }
     }
+
+    // for (u32 el: program_pages) {
+    //     std::cout << el << std::endl;
+    // }
+
+    // u32 debug_idx = 0;
+    // for (const auto& [num_bytes, dst, dst_noc, num_recv]: program_page_transfers) {
+    //     u32 num_u32s = num_bytes / sizeof(u32);
+    //     std::cout << "Transfer" << std::endl;
+    //     for (u32 i = debug_idx; i < debug_idx + num_u32s; i++) {
+    //         std::cout << program_pages[i] << std::endl;
+    //     }
+    //     debug_idx = align(debug_idx + num_u32s, 4);
+    // }
 
     return {
         .num_workers = u32(program.logical_cores().size()),
@@ -615,7 +631,7 @@ void CommandQueue::enqueue_program(Program& program, bool blocking) {
             std::make_unique<Buffer>(
                 this->device, program_data_size_in_bytes, PROGRAM_PAGE_SIZE, BufferType::DRAM));
 
-        tt::log_info("PROGRAM DATA SIZE BYTES {}", program_data_size_in_bytes);
+        // tt::log_info("PROGRAM DATA SIZE BYTES {}", program_data_size_in_bytes);
 
         this->enqueue_write_buffer(*this->program_to_buffer.at(program_id), program_pages, blocking);
 

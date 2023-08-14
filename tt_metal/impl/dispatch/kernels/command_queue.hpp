@@ -170,17 +170,21 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
     u32 num_transfers = command_ptr[0];
     command_ptr++;
     u32 src = page_addr;
+    // DPRINT << "Num transfers: " << num_transfers << ENDL();
     for (u32 i = 0; i < num_transfers; i++) {
         u32 num_bytes = command_ptr[0];
         u32 dst = command_ptr[1];
         u32 dst_noc = command_ptr[2];
         u32 num_recv = command_ptr[3];
 
-
-        DPRINT << "NB: " << num_bytes;
-        DPRINT << ", DST: " << dst;
-        DPRINT << ", DST NOC: " << dst_noc;
-        DPRINT << ", NREC: " << num_recv << ENDL();
+        // DPRINT << "NB: " << num_bytes;
+        // DPRINT << ", DST: " << dst;
+        // DPRINT << ", DST NOC: " << dst_noc;
+        // DPRINT << ", NREC: " << num_recv << ENDL();
+        // DPRINT << "SENDING" << ENDL();
+        // for (u32 i = src; i < src + num_bytes; i += sizeof(u32)) {
+        //     DPRINT << *reinterpret_cast<volatile u32*>(i) << ENDL();
+        // }
 
         noc_async_write_multicast(src, (u64(dst_noc) << 32) | dst, num_bytes, num_recv);
         command_ptr += 4;
@@ -210,18 +214,21 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
         }
         for (u32 page_idx = 0; page_idx < num_pages; page_idx++) {
             cb_reserve_back(PROGRAM_CB_ID, 1);
+            u32 page_write_ptr = get_write_ptr(PROGRAM_CB_ID);
             u32 page_read_ptr = get_read_ptr(PROGRAM_CB_ID);
-            noc_async_read(buffer.get_noc_addr(page_idx), page_read_ptr, PROGRAM_PAGE_SIZE);
+            noc_async_read(buffer.get_noc_addr(page_idx), page_write_ptr, PROGRAM_PAGE_SIZE);
             noc_async_read_barrier();
 
-            // DPRINT << "PAGE READ PTR: " << page_read_ptr << ENDL();
-            // for (uint i = 0; i < PROGRAM_PAGE_SIZE; i += sizeof(u32)) {
+            // DPRINT << "Transfer" << ENDL();
+            // for (u32 i = 0; i < PROGRAM_PAGE_SIZE; i += sizeof(u32)) {
             //     DPRINT << *reinterpret_cast<volatile u32*>(page_read_ptr + i) << ENDL();
             // }
 
             cb_push_back(PROGRAM_CB_ID, 1);
             cb_wait_front(PROGRAM_CB_ID, 1);
-            u32 page_write_ptr = get_write_ptr(PROGRAM_CB_ID);
+            // DPRINT << "rd ptr: " << page_read_ptr << ENDL();
+            // DPRINT << "wr ptr: " << page_write_ptr << ENDL();
+
             write_program_page(page_write_ptr, command_ptr);
             cb_pop_front(PROGRAM_CB_ID, 1);
         }
