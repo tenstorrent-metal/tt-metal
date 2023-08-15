@@ -336,7 +336,7 @@ TEST_F(CommandQueueHarness, TestAllRuntimeArgsCorrectlySentMultiCore) {
     CoreRangeSet cr_set({cr});
 
     DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
-    local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(this->device, *tt::tt_metal::detail::GLOBAL_CQ, dummy_program_config);
+    EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(this->device, *tt::tt_metal::detail::GLOBAL_CQ, dummy_program_config));
 }
 
 }  // end namespace multicore_tests
