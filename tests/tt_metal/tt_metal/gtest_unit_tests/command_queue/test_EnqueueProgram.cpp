@@ -104,7 +104,7 @@ bool test_dummy_EnqueueProgram_with_sems(Device* device, CommandQueue& cq, const
     Program program;
 
     for (u32 sem_id = 0; sem_id < program_config.num_sems; sem_id++) {
-        auto sem = CreateSemaphore(program, program_config.cr_set, sem_id);
+        CreateSemaphore(program, program_config.cr_set, sem_id);
     }
 
     CompileProgram(device, program);
@@ -126,6 +126,7 @@ bool test_dummy_EnqueueProgram_with_sems(Device* device, CommandQueue& cq, const
 
             u32 sem_id = 0;
             for (u32 i = 0; i < sem_vector.size(); i += sizeof(u32)) {
+
                 bool sem_match = sem_vector.at(i) == sem_id;
                 sem_id++;
 

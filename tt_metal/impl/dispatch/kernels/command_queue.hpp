@@ -177,6 +177,18 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
         u32 dst_noc = command_ptr[2];
         u32 num_recv = command_ptr[3];
 
+        // DPRINT << "num_bytes: " << num_bytes << ENDL();
+        // DPRINT << "dst: " << dst << ENDL();
+        // DPRINT << "dst_noc: " << dst_noc << ENDL();
+        // DPRINT << "num_recv: " << num_recv << ENDL();
+        // DPRINT << "src: " << src << ENDL();
+
+        // DPRINT << "Sending" << ENDL();
+        // for (u32 i = src; i < src + num_bytes; i += sizeof(u32)) {
+        //     DPRINT << *reinterpret_cast<volatile u32*>(i) << ENDL();
+        // }
+        // DPRINT << ENDL();
+
         noc_async_write_multicast(src, (u64(dst_noc) << 32) | dst, num_bytes, num_recv);
         command_ptr += 4;
         src = align(src + num_bytes, 16);

@@ -150,10 +150,9 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     for (const Semaphore& semaphore: program.semaphores()) {
         vector<u32> semaphore_vector = {semaphore.initial_value(), 0, 0, 0};
         vector<pair<u32, u32>> dst_noc_multicast_info = extract_dst_noc_multicast_info(semaphore.core_range_set().ranges());
-        u32 num_bytes = UINT32_WORDS_PER_CIRCULAR_BUFFER_CONFIG * sizeof(u32);
+        u32 num_bytes = SEMAPHORE_ALIGNMENT;
         update_program_pages(num_bytes, semaphore_vector.begin());
-        update_program_page_transfers(num_bytes, semaphore.address(), program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, false);
-        advance_idx(num_bytes);
+        update_program_page_transfers(num_bytes, semaphore.address(), program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, true);
     }
 
     if (num_transfers_in_page_counter) {
