@@ -182,9 +182,10 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
         // DPRINT << "dst_noc: " << dst_noc << ENDL();
         // DPRINT << "num_recv: " << num_recv << ENDL();
         // DPRINT << "src: " << src << ENDL();
+        // DPRINT << ENDL();
 
         // DPRINT << "Sending" << ENDL();
-        // for (u32 i = src; i < src + num_bytes; i += sizeof(u32)) {
+        // for (u32 i = src; i < src + min(48, num_bytes); i += sizeof(u32)) {
         //     DPRINT << *reinterpret_cast<volatile u32*>(i) << ENDL();
         // }
         // DPRINT << ENDL();
@@ -206,6 +207,10 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
         u32 num_pages = command_ptr[1];
         u32 bank_base_address = command_ptr[2];
         command_ptr += 3;
+
+        // DPRINT << "buffer_type: " << buffer_type << ENDL();
+        // DPRINT << "num_pages: " << num_pages << ENDL();
+        // DPRINT << "bank_base_address: " << bank_base_address << ENDL();
 
         switch (buffer_type) {
             case 0:
@@ -229,11 +234,10 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
             // for (u32 i = 0; i < PROGRAM_PAGE_SIZE; i += sizeof(u32)) {
             //     DPRINT << *reinterpret_cast<volatile u32*>(page_read_ptr + i) << ENDL();
             // }
+            // DPRINT << ENDL();
 
             cb_push_back(PROGRAM_CB_ID, 1);
             cb_wait_front(PROGRAM_CB_ID, 1);
-            // DPRINT << "rd ptr: " << page_read_ptr << ENDL();
-            // DPRINT << "wr ptr: " << page_write_ptr << ENDL();
 
             write_program_page(page_write_ptr, command_ptr);
             cb_pop_front(PROGRAM_CB_ID, 1);

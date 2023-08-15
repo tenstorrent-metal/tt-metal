@@ -157,9 +157,8 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
 
     if (num_transfers_in_page_counter) {
         num_transfers_in_program_page.push_back(num_transfers_in_page_counter);
-        u32 cur_space_in_page = PROGRAM_PAGE_SIZE - ((idx * sizeof(u32)) % PROGRAM_PAGE_SIZE);
-        // Runtime arguments begin in a new page
-        advance_idx(cur_space_in_page / sizeof(u32));
+        num_transfers_in_page_counter = 0;
+        idx = align(idx, PROGRAM_PAGE_SIZE / sizeof(u32));
     }
 
     // Step 5: Get transfer info for runtime args
@@ -176,12 +175,17 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             default: continue; // So far, only data movement kernels have runtime args
         }
         for (const auto& [core_coord, runtime_args]: kernel->runtime_args()) {
+            CoreCoord physical_core = device->worker_core_from_logical_core(core_coord);
             u32 num_bytes = runtime_args.size() * sizeof(u32);
-            u32 dst_noc = noc_coord_to_u32(core_coord);
+            u32 dst_noc = get_noc_multicast_encoding(physical_core, physical_core);
 
             // Only one receiver per set of runtime arguments
             update_program_page_transfers(num_bytes, dst, runtime_arg_transfers, num_transfers_in_runtime_arg_page, {{dst_noc, 1}}, true);
         }
+    }
+
+    if (num_transfers_in_page_counter) {
+        num_transfers_in_runtime_arg_page.push_back(num_transfers_in_page_counter);
     }
 
     return {
@@ -347,6 +351,7 @@ EnqueueProgramCommand::EnqueueProgramCommand(
 
 const DeviceCommand EnqueueProgramCommand::assemble_device_command(u32 runtime_args_src) {
     DeviceCommand command;
+    command.set_data_size_in_bytes(this->runtime_args.size() * sizeof(u32));
     command.set_num_workers(this->program_to_dev_map.num_workers);
     command.set_num_multicast_messages(this->program_to_dev_map.multicast_message_noc_coords.size());
 
@@ -378,8 +383,8 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(u32 runtime_a
     /*
     the loop we are programming has the following structure
     for i in range(num_src_nocs):
-        for j in range(num_pages)
-             for k in range(num_transfers_in_page):
+        for j in range(num_pages(i))
+             for k in range(num_transfers_in_page(i, j)):
                  transfer instruction
     */
     const u32 num_program_srcs = 2; // One src noc for program binaries, one for runtime args in system memory
@@ -401,6 +406,7 @@ void EnqueueProgramCommand::process() {
 
     this->writer.cq_reserve_back(this->device, cmd_size);
     this->writer.cq_write(this->device, command_vector, write_ptr);
+
     this->writer.cq_write(this->device, this->runtime_args, system_memory_temporary_storage_address);
     this->writer.cq_push_back(this->device, cmd_size);
 }
@@ -625,7 +631,7 @@ void CommandQueue::enqueue_program(Program& program, bool blocking) {
         const Kernel* kernel = detail::GetKernel(program, kernel_id);
         for (const auto& [_, core_runtime_args]: kernel->runtime_args()) {
             runtime_args.insert(runtime_args.end(), core_runtime_args.begin(), core_runtime_args.end());
-            const vector<u32> padding(align(runtime_args.size(), 16 / sizeof(u32)), 0);
+            const vector<u32> padding(align(runtime_args.size(), 16 / sizeof(u32)) - runtime_args.size(), 0);
             runtime_args.insert(runtime_args.end(), padding.begin(), padding.end());
         }
     }

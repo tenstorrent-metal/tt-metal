@@ -138,6 +138,64 @@ bool test_dummy_EnqueueProgram_with_sems(Device* device, CommandQueue& cq, const
     return pass;
 }
 
+bool test_dummy_EnqueueProgram_with_runtime_args(Device* device, CommandQueue& cq, const DummyProgramConfig& program_config) {
+    Program program;
+    bool pass = true;
+
+    CoreRangeSet cr_set = program_config.cr_set;
+
+    auto dummy_kernel0 = CreateDataMovementKernel(
+        program, "tests/tt_metal/tt_metal/gtest_unit_tests/command_queue/test_kernels/runtime_args_kernel0.cpp", cr_set, DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
+
+    auto dummy_kernel1 = CreateDataMovementKernel(
+        program, "tests/tt_metal/tt_metal/gtest_unit_tests/command_queue/test_kernels/runtime_args_kernel1.cpp", cr_set, DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
+
+    auto dummy_compute_kernel = CreateComputeKernel(program, "tt_metal/kernels/compute/blank.cpp", cr_set);
+
+    vector<u32> dummy_kernel0_args = {0, 1, 2, 3, 4, 5, 6, 7, 8};
+    vector<u32> dummy_kernel1_args = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+
+    for (const CoreRange& core_range : program_config.cr_set.ranges()) {
+        CoresInCoreRangeGenerator core_range_generator(core_range, device->cluster()->get_soc_desc(0).worker_grid_size);
+
+        bool terminate;
+        do {
+            auto [core_coord, terminate_] = core_range_generator();
+
+            SetRuntimeArgs(program, dummy_kernel0, core_coord, dummy_kernel0_args);
+            SetRuntimeArgs(program, dummy_kernel1, core_coord, dummy_kernel1_args);
+
+            terminate = terminate_;
+        } while (not terminate);
+    }
+
+    CompileProgram(device, program);
+    EnqueueProgram(cq, program, false);
+    Finish(cq);
+
+    for (const CoreRange& core_range : program_config.cr_set.ranges()) {
+        CoresInCoreRangeGenerator core_range_generator(core_range, device->cluster()->get_soc_desc(0).worker_grid_size);
+
+        bool terminate;
+        do {
+            auto [core_coord, terminate_] = core_range_generator();
+            terminate = terminate_;
+
+            vector<u32> dummy_kernel0_args_readback;
+            tt::tt_metal::detail::ReadFromDeviceL1(
+                device, core_coord, BRISC_L1_ARG_BASE, dummy_kernel0_args.size() * sizeof(u32), dummy_kernel0_args_readback);
+            pass &= (dummy_kernel0_args == dummy_kernel0_args_readback);
+
+            vector<u32> dummy_kernel1_args_readback;
+            tt::tt_metal::detail::ReadFromDeviceL1(
+                device, core_coord, NCRISC_L1_ARG_BASE, dummy_kernel1_args.size() * sizeof(u32), dummy_kernel1_args_readback);
+            pass &= (dummy_kernel1_args == dummy_kernel1_args_readback);
+        } while (not terminate);
+    }
+
+    return pass;
+}
+
 bool test_EnqueueWrap_on_EnqueueWriteBuffer(Device* device, CommandQueue& cq, const BufferConfig& config) {
     EnqueueWriteBuffer_prior_to_wrap(device, cq, config);
 
@@ -235,6 +293,14 @@ TEST_F(CommandQueueHarness, TestAutoInsertedBlankBriscKernelInDeviceDispatchMode
     Finish(*tt::tt_metal::detail::GLOBAL_CQ);
 }
 
+TEST_F(CommandQueueHarness, TestRuntimeArgsCorrectlySentSingleCore) {
+    CoreRange cr = {.start = {0, 0}, .end = {0, 0}};
+    CoreRangeSet cr_set({cr});
+
+    DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
+    local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(this->device, *tt::tt_metal::detail::GLOBAL_CQ, dummy_program_config);
+}
+
 }  // end namespace single_core_tests
 
 namespace multicore_tests {
@@ -261,6 +327,16 @@ TEST_F(CommandQueueHarness, TestAllSemConfigsCorrectlySentMultiCore) {
     DummyProgramConfig config = {.cr_set = cr_set, .num_sems = NUM_SEMAPHORES};
 
     EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_sems(this->device, *tt::tt_metal::detail::GLOBAL_CQ, config));
+}
+
+TEST_F(CommandQueueHarness, TestAllRuntimeArgsCorrectlySentMultiCore) {
+    CoreCoord worker_grid_size = this->device->cluster()->get_soc_desc(0).worker_grid_size;
+
+    CoreRange cr = {.start = {0, 0}, .end = {worker_grid_size.x - 1, worker_grid_size.y - 2}};
+    CoreRangeSet cr_set({cr});
+
+    DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
+    local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(this->device, *tt::tt_metal::detail::GLOBAL_CQ, dummy_program_config);
 }
 
 }  // end namespace multicore_tests
