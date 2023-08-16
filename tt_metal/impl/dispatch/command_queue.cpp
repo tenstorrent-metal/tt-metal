@@ -117,19 +117,29 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     for (KernelID kernel_id: program.kernel_ids()) {
         const Kernel* kernel = detail::GetKernel(program, kernel_id);
         vector<pair<u32, u32>> dst_noc_multicast_info = extract_dst_noc_multicast_info(kernel->core_range_set().ranges());
+
+        vector<RISCV> sub_kernels;
+        if (kernel->processor() == RISCV::COMPUTE) {
+            sub_kernels = {RISCV::TRISC0, RISCV::TRISC1, RISCV::TRISC2};
+        } else {
+            sub_kernels = {kernel->processor()};
+        }
+
+        u32 sub_kernel_index = 0;
         for (const ll_api::memory& kernel_bin: kernel->binaries()) {
             kernel_bin.process_spans([&](vector<u32>::const_iterator mem_ptr, u64 dst, u32 len) {
                 u32 num_bytes = len * sizeof(u32);
                 update_program_pages(num_bytes, mem_ptr);
 
                 if ((dst & MEM_LOCAL_BASE) == MEM_LOCAL_BASE) {
-                    dst = (dst & ~MEM_LOCAL_BASE) + processor_to_local_mem_addr.at(kernel->processor());
+                    dst = (dst & ~MEM_LOCAL_BASE) + processor_to_local_mem_addr.at(sub_kernels[sub_kernel_index]);
                 } else if ((dst & MEM_NCRISC_IRAM_BASE) == MEM_NCRISC_IRAM_BASE) {
                     dst = (dst & ~MEM_NCRISC_IRAM_BASE) + MEM_NCRISC_INIT_IRAM_L1_BASE;
                 }
 
                 update_program_page_transfers(num_bytes, dst, program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, true);
             });
+            sub_kernel_index++;
         }
     }
 
@@ -509,7 +519,7 @@ CommandQueue::CommandQueue(Device* device) {
 
     device->cluster()->write_sysmem_vec(pointers, 0, 0);
 
-    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}, {1, 1}}, DPRINT_HART_BR);
+    // tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}, {1, 1}}, DPRINT_HART_BR);
     send_dispatch_kernel_to_device(device);
     this->device = device;
 }
@@ -618,14 +628,12 @@ void CommandQueue::enqueue_program(Program& program, bool blocking) {
             std::make_unique<Buffer>(
                 this->device, program_data_size_in_bytes, PROGRAM_PAGE_SIZE, BufferType::DRAM));
 
-        // tt::log_info("PROGRAM DATA SIZE BYTES {}", program_data_size_in_bytes);
-
         this->enqueue_write_buffer(*this->program_to_buffer.at(program_id), program_pages, blocking);
 
         this->program_to_dev_map.emplace(program_id, std::move(program_to_device_map));
     }
-    tt::log_debug(tt::LogDispatch, "EnqueueProgram");
 
+    tt::log_debug(tt::LogDispatch, "EnqueueProgram");
     vector<u32> runtime_args; // TODO(agrebenisan): Should pre-reserve space I need
     for (const auto kernel_id: program.kernel_ids()) {
         const Kernel* kernel = detail::GetKernel(program, kernel_id);
