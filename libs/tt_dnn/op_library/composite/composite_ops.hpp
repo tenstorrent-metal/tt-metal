@@ -202,8 +202,11 @@ Tensor atanh(const Tensor& input_a, const MemoryConfig& output_mem_config = oper
  */
 Tensor outer(Tensor& a, Tensor& b, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
-//logaddexp(a,b)
+//logaddexp(a,b) = log[ e^a + e^b ]
 Tensor logaddexp(const Tensor &input_a, const Tensor &input_b, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
+
+//logaddexp2(a,b) = log2[ 2^a + 2^b ]
+Tensor logaddexp2(const Tensor &input_a, const Tensor &input_b, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 } //namespace tt_metal
 
 } //namespace tt

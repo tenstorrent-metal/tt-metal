@@ -73,6 +73,7 @@ def custom_compare(*args, **kwargs):
                 "ldexp",
                 "subalpha",
                 "logaddexp",
+                "logaddexp2",
             ),
             ([[1, 1, 32, 32]], [[1, 3, 320, 64]]),
             (0,),
@@ -91,6 +92,7 @@ def test_run_eltwise_composite_test(
     options["hypot"] = (1, 100)
     options["atan2"] = (-100, 100)
     options["logaddexp"] = (-90, 90)
+    options["logaddexp2"] = (-100, 100)
     options["cbrt"] = (-1000, 1000)
     options["hardsigmoid"] = (-100, 100)
     options["hardswish"] = (-100, 100)
@@ -116,7 +118,7 @@ def test_run_eltwise_composite_test(
     num_inputs = 1
     if fn in ["mac", "addcmul", "addcdiv", "lerp_ternary"]:
         num_inputs = 3
-    elif fn in ["hypot", "min", "max", "lerp_binary", "atan2", "ldexp", "subalpha", "logaddexp"]:
+    elif fn in ["hypot", "min", "max", "lerp_binary", "atan2", "ldexp", "subalpha", "logaddexp", "logaddexp2"]:
         num_inputs = 2
 
     input_shapes = input_shapes * num_inputs
