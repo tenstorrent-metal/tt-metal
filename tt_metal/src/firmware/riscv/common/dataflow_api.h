@@ -443,12 +443,13 @@ enum class BufferType: u8 {
 };
 
 u64 get_dram_noc_addr(const u32 id, const u32 page_size, const u32 bank_base_address, const u32 offset = 0) {
-    u32 bank_id = umodsi3_const_divisor<NUM_DRAM_BANKS>(id);
-    u32 addr =
-        mulsi3(udivsi3_const_divisor<NUM_DRAM_BANKS>(id), align(page_size, 32)) + bank_base_address + offset;
+    u32 bank_id = id & (NUM_DRAM_BANKS - 1);
+    u32 addr = mulsi3(id >> LOG_BASE_2_OF_NUM_DRAM_BANKS, align(page_size, 32)) + bank_base_address + offset;
+
     addr += bank_to_dram_offset[bank_id];
     u32 noc_x = dram_bank_to_noc_x[bank_id];
     u32 noc_y = dram_bank_to_noc_y[bank_id];
+
     u64 noc_addr = get_noc_addr_helper(noc_x, noc_y, addr);
     return noc_addr;
 }
