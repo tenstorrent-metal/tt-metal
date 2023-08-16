@@ -107,6 +107,20 @@ Tensor addcmul(const Tensor& input_a, const Tensor& input_b, const Tensor& input
 //addcdiv(input,tensor1,tensor2,value)=input+value×tensor1/tensor2
 Tensor addcdiv(const Tensor& input_a, const Tensor& input_b, const Tensor& input_c, float value, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
+/*
+Returns a new tensor with the signed angles in radians between vectors
+
+                x > 0 and y>= 0 atan(y/x)
+                x > 0 and y < 0 -atan(y/x)
+                x < 0 and y > 0 pi - atan(y/x)
+atan2(y, x) =   x < 0 and y < 0 atan(y/x) - pi
+                x < 0 and y = 0 pi
+                x = 0 and y > 0 pi/2
+                x = 0 and y < 0 -pi/2
+                x = 0 and y = 0 0.0
+*/
+Tensor atan2(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
+
 //lerp(input, end, weight) = start + weight * (end - start), weight is float
 Tensor lerp(const Tensor& input_a, const Tensor& input_b, float value, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 

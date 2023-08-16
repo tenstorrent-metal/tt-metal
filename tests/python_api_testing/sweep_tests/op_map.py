@@ -208,6 +208,10 @@ op_map = {
         "tt_lib_op": tt_lib_ops.eltwise_rsqrt,
         "pytorch_op": pytorch_ops.rsqrt,
     },
+    "eltwise-atan2": {
+        "tt_lib_op": tt_lib_ops.eltwise_atan2,
+        "pytorch_op": pytorch_ops.atan2,
+    },
     "eltwise-lerp_binary": {
         "tt_lib_op": tt_lib_ops.eltwise_lerp_binary,
         "pytorch_op": pytorch_ops.lerp_binary,

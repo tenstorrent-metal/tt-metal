@@ -1722,7 +1722,7 @@ eltwise_gez = make_eltwise_unary_op(ttl.tensor.gez)
 eltwise_nez = make_eltwise_unary_op(ttl.tensor.nez)
 eltwise_eqz = make_eltwise_unary_op(ttl.tensor.eqz)
 
-hardtanh = make_eltwise_unary_op(ttl.tensor.hardtanh) # hardtanh can take args
+hardtanh = make_eltwise_unary_op(ttl.tensor.hardtanh)  # hardtanh can take args
 
 
 def make_eltwise_binary_op(ttl_tensor_binop):
@@ -1765,6 +1765,7 @@ eltwise_sub = make_eltwise_binary_op(ttl.tensor.sub)
 eltwise_mul = make_eltwise_binary_op(ttl.tensor.mul)
 eltwise_squared_difference = make_eltwise_binary_op(ttl.tensor.squared_difference)
 eltwise_hypot = make_eltwise_binary_op(ttl.tensor.hypot)
+eltwise_atan2 = make_eltwise_binary_op(ttl.tensor.atan2)
 eltwise_min = make_eltwise_binary_op(ttl.tensor.min)
 eltwise_max = make_eltwise_binary_op(ttl.tensor.max)
 eltwise_ne = make_eltwise_binary_op(ttl.tensor.ne)
