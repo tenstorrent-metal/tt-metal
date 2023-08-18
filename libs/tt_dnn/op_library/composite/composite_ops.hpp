@@ -107,6 +107,9 @@ Tensor addcmul(const Tensor& input_a, const Tensor& input_b, const Tensor& input
 //addcdiv(input,tensor1,tensor2,value)=input+value×tensor1/tensor2
 Tensor addcdiv(const Tensor& input_a, const Tensor& input_b, const Tensor& input_c, float value, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
+//ldexp(input,other)=input * (2^other)
+Tensor ldexp(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
+
 /*
 Returns a new tensor with the signed angles in radians between vectors
 
