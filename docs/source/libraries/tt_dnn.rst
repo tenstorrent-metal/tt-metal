@@ -507,6 +507,8 @@ Other Operations
 
 .. autofunction:: tt_lib.tensor.convert_conv_weight_tensor_to_tiled_layout
 
+.. autofunction:: tt_lib.tensor.subalpha
+
 .. autofunction:: tt_lib.tensor.addcmul
 
 .. autofunction:: tt_lib.tensor.addcdiv
