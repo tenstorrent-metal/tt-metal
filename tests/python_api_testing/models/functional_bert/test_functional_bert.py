@@ -357,7 +357,7 @@ def create_bert_multi_head_attention_config(batch_size):
                 out_subblock_w=2,
                 per_core_M=12,
                 per_core_N=8,
-                fuse_gelu_activation=False,
+                fused_activation=None,
             ),
             output_mem_config=MemoryConfig(True, BufferType.L1),
             output_dtype=DataType.BFLOAT8_B,
@@ -397,7 +397,7 @@ def create_bert_multi_head_attention_config(batch_size):
                     out_subblock_w=1,
                     per_core_M=12,
                     per_core_N=3,
-                    fuse_gelu_activation=False,
+                    fused_activation=None,
                 )
             ),
             output_mem_config=MemoryConfig(True, BufferType.L1),
@@ -421,7 +421,7 @@ def create_bert_feedforward_config(batch_size):
                     out_subblock_w=1,
                     per_core_M=12,
                     per_core_N=11,
-                    fuse_gelu_activation=True,
+                    fused_activation=(ttl.tensor.FusibleActivation.GELU, True),
                 )
             ),
             output_mem_config=MemoryConfig(True, BufferType.L1),
@@ -436,7 +436,7 @@ def create_bert_feedforward_config(batch_size):
                     out_subblock_w=1,
                     per_core_M=12,
                     per_core_N=3,
-                    fuse_gelu_activation=False,
+                    fused_activation=None,
                 )
             ),
             output_mem_config=MemoryConfig(True, BufferType.L1),
