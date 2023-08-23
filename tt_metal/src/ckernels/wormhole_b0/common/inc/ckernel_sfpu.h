@@ -5,6 +5,7 @@
 #include "noc_nonblocking_api.h"
 
 #include "sfpi.h"
+#include "ckernel_sfpu_relu.h"
 
 using namespace sfpi;
 
@@ -895,38 +896,6 @@ inline void calculate_dropout(uint prob, uint scale)
     l_reg[LRegs::LReg3] = rand;
 }
 
-union Converter {
-  float f;
-  uint32_t u;
-  static float to_float(uint32_t _v) {
-    Converter c{};
-    c.u = _v;
-    return c.f;
-  }
-};
-
-template <bool APPROXIMATION_MODE, int ITERATIONS>
-inline void calculate_lrelu(uint slope)
-{
-    // SFPU microcode
-    Converter c_slope;
-    c_slope.u = slope;
-    vFloat s = c_slope.f;
-
-    #pragma GCC unroll 0
-    for (int d = 0; d < ITERATIONS; d++) {
-        vFloat v = dst_reg[0];
-
-        v_if (v < 0.0f) {
-            v *= s;
-        }
-        v_endif;
-
-        dst_reg[0] = v;
-
-        dst_reg++;
-    }
-}
 
 template <bool APPROXIMATION_MODE, int ITERATIONS>
 inline void calculate_elu(uint slope)
@@ -1400,26 +1369,6 @@ inline void calculate_cosine()
 }
 
 template <bool APPROXIMATION_MODE, int ITERATIONS>
-inline void relu_max(uint uint_threshold)
-{
-    vFloat threshold = Converter::to_float(uint_threshold);
-    for (int d = 0; d < ITERATIONS; d++)
-    {
-        vFloat a = dst_reg[0];
-        v_if(a > threshold) {
-            a = threshold;
-        }
-        v_endif;
-        v_if(a < 0.0f) {
-            a = 0.0f;
-        }
-        v_endif;
-        dst_reg[0] = a;
-        dst_reg++;
-    }
-}
-
-template <bool APPROXIMATION_MODE, int ITERATIONS>
 inline void calculate_expm1()
 {
     // SFPU microcode
@@ -1544,23 +1493,6 @@ inline void calculate_acos()
     }
 }
 
-
-template <bool APPROXIMATION_MODE, int ITERATIONS>
-inline void relu_min(uint uint_threshold)
-{
-    vFloat threshold = Converter::to_float(uint_threshold);
-    for (int d = 0; d < ITERATIONS; d++)
-    {
-        vFloat a = dst_reg[0];
-        v_if(a < threshold) {
-            a = threshold;
-        }
-        v_endif;
-        dst_reg[0] = a;
-        dst_reg++;
-    }
-
-}
 
 template <bool APPROXIMATION_MODE, int ITERATIONS>
 inline void cast_fp32_to_fp16a()

@@ -47,6 +47,10 @@
 #define UNPACK(x)
 #endif
 
+
+#include "compute_kernel_api/pack.h"
+#include "compute_kernel_api/eltwise_unary/relu.h"
+
 namespace ckernel {
 
 /**
@@ -58,17 +62,6 @@ ALWI void unpack_reconfig_data_format(const uint32_t srca_new_operand, const uin
     #endif
     // NOTE: For wormhole_b0, updated unpacker functions don't yet exist, so skip.
 }
-
-/**
- * Helper function to reconfigure packer output data format.
- */
-ALWI void pack_reconfig_data_format(const uint32_t new_operand) {
-    #ifdef ARCH_GRAYSKULL
-        PACK(( llk_pack_reconfig_data_format(new_operand) ));
-    #endif
-    // NOTE: For wormhole_b0, packer data format reconfig functions don;t yet exist. So skip.
-}
-
 
 ALWI void mm_init(uint32_t in0_cb_id = 0, uint32_t in1_cb_id = 1, uint32_t out_cb_id = 16) {
     UNPACK(( llk_setup_operands() ));
@@ -277,10 +270,6 @@ ALWI void cb_reserve_back(uint32_t cbid, uint32_t ntiles)
  * | icb            | The identifier of the output circular buffer (CB) | uint32_t | 0 to 31                                             | True     |
  * | icb_tile       | The index of the tile in the output CB to copy to | uint32_t | Must be less than the size of the CB                | True     |
  */
-ALWI void pack_tile(uint32_t ifrom_dst, uint32_t icb)
-{
-    PACK((  llk_pack<false, SYNC, false >(ifrom_dst, icb)  ));
-}
 
 // documented in dataflow_api.h
 ALWI void cb_push_back(uint32_t cbid, uint32_t ntiles)
@@ -627,14 +616,6 @@ ALWI void cos_tile(uint32_t idst) {
     MATH(( llk_math_eltwise_unary_sfpu_cos<APPROX, SyncHalf>(idst) ));
 }
 
-// relu is implemented via unpack with llk_pack_relu_config(0) enabled
-ALWI void pack_relu_tile_to_stream(uint32_t idst, uint32_t cbid) {
-    PACK(( llk_pack<false, SYNC, false >(idst, cbid) ));
-}
-
-ALWI void pack_relu_config(uint32_t enable) {
-    PACK(( llk_pack_relu_config(enable) ));
-}
 
 
 //abs
@@ -715,31 +696,6 @@ ALWI void gez_tile_init() {
     MATH(( llk_math_eltwise_unary_sfpu_gez_init<APPROX>() ));
 }
 
-
-//RELU MAX-MIN ops
-ALWI void relu_max_tile(uint32_t idst,uint32_t param0) {
-    #ifdef ARCH_GRAYSKULL
-    MATH(( llk_math_eltwise_unary_sfpu_relu_max<APPROX, SyncHalf>(idst,param0) ));
-    #else
-    MATH(( llk_math_eltwise_unary_sfpu_relu_max<APPROX, SyncHalf>(idst, Dim::RC, param0) ));
-    #endif
-}
-
-ALWI void relu_max_tile_init() {
-    MATH(( llk_math_eltwise_unary_sfpu_relu_max_init<APPROX>() ));
-}
-
-ALWI void relu_min_tile(uint32_t idst,uint32_t param0) {
-    #ifdef ARCH_GRAYSKULL
-    MATH(( llk_math_eltwise_unary_sfpu_relu_min<APPROX, SyncHalf>(idst,param0) ));
-    #else
-    MATH(( llk_math_eltwise_unary_sfpu_relu_min<APPROX, SyncHalf>(idst, Dim::RC, param0) ));
-    #endif
-}
-
-ALWI void relu_min_tile_init() {
-    MATH(( llk_math_eltwise_unary_sfpu_relu_min_init<APPROX>() ));
-}
 
 //POWER : y = x^(const param0)
 ALWI void power_tile(uint32_t idst,uint32_t param0) {
@@ -1304,14 +1260,7 @@ ALWI void graph_interpreter_init() // TODO(AP): probably duplicated, remove
     UNPACK(( llk_unpack_AB_hw_configure_disaggregated(0,0) ));
 }
 
-//Leaky Relu : y = relu(x) + slope*-relu(-x)
-ALWI void leaky_relu_tile(uint32_t idst,uint32_t param0) {
-    MATH(( llk_math_eltwise_unary_sfpu_leaky_relu<APPROX, SyncHalf>(idst,param0) ));
-}
 
-ALWI void leaky_relu_tile_init() {
-    MATH(( llk_math_eltwise_unary_sfpu_leaky_relu_init<APPROX>() ));
-}
 
 //elu : y = relu(x) + slope*(exp(x) - 1)*(x <= 0 );
 ALWI void elu_tile(uint32_t idst,uint32_t param0) {
