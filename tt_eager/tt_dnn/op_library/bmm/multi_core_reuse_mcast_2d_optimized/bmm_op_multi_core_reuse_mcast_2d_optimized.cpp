@@ -98,14 +98,22 @@ operation::ProgramWithCallbacks create_program_mcast_in0_in1(
 
     // Not exactly half-half; this seems to get slightly better perf for fused qkv and selfout
     // TODO: Experiment with different splits?
+    uint32_t half_core = (num_cores_c) / 2;
+    bool split_half = num_cores_c > 2;
+
     CoreRange in0_receiver_in1_receiver_left_half{
         .start={(std::size_t) start_core_x + 1, (std::size_t) start_core_y + 1},
-        .end={(std::size_t) start_core_x + 4, (std::size_t) start_core_y + num_cores_r - 1}};
+        .end={(std::size_t) start_core_x + half_core, (std::size_t) start_core_y + num_cores_r - 1}};
 
     CoreRange in0_receiver_in1_receiver_right_half{
-        .start={(std::size_t) start_core_x + 5, (std::size_t) start_core_y + 1},
-        .end={(std::size_t) start_core_x + num_cores_c - 1, (std::size_t) start_core_y + num_cores_r - 1}};
+        .start={0, 0},
+        .end={0, 0}};
 
+    if (split_half) {
+        in0_receiver_in1_receiver_right_half = {
+            .start={(std::size_t) start_core_x + 1 + half_core, (std::size_t) start_core_y + 1},
+            .end={(std::size_t) start_core_x + num_cores_c - 1, (std::size_t) start_core_y + num_cores_r - 1}};
+    }
     /* Uncomment if we don't checkerboard
     CoreRange in0_receiver_in1_receiver{
         .start={(std::size_t) start_core_x + 1, (std::size_t) start_core_y + 1},
@@ -324,18 +332,22 @@ operation::ProgramWithCallbacks create_program_mcast_in0_in1(
         (CoreRangeSet) (std::set<CoreRange>) {in0_receiver_in1_sender, in0_receiver_in1_receiver_left_half},
         tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_1, .noc = tt_metal::NOC::RISCV_0_default, .compile_args = in0_receiver_compile_time_args});
 
-    auto mm_kernel_in1_receiver_writer_other_noc_setup_id = tt_metal::CreateDataMovementKernel(
-        program,
-        "tt_metal/kernels/dataflow/reader_bmm_tile_layout_in1_receiver_writer_padding.cpp",
-        in0_receiver_in1_receiver_right_half,
-        tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_0_default, .compile_args = in1_receiver_writer_compile_time_args, .defines = mm_kernel_in1_receiver_writer_other_noc_setup_defines});
+    KernelID mm_kernel_in1_receiver_writer_other_noc_setup_id = 0;
+    KernelID mm_kernel_in0_receiver_other_noc_setup_id = 0;
 
-    auto mm_kernel_in0_receiver_other_noc_setup_id = tt_metal::CreateDataMovementKernel(
-        program,
-        "tt_metal/kernels/dataflow/reader_bmm_tile_layout_in0_receiver.cpp",
-        in0_receiver_in1_receiver_right_half,
-        tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_1, .noc = tt_metal::NOC::RISCV_1_default, .compile_args = in0_receiver_compile_time_args});
+    if (split_half) {
+        mm_kernel_in1_receiver_writer_other_noc_setup_id = tt_metal::CreateDataMovementKernel(
+            program,
+            "tt_metal/kernels/dataflow/reader_bmm_tile_layout_in1_receiver_writer_padding.cpp",
+            in0_receiver_in1_receiver_right_half,
+            tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_0_default, .compile_args = in1_receiver_writer_compile_time_args, .defines = mm_kernel_in1_receiver_writer_other_noc_setup_defines});
 
+        mm_kernel_in0_receiver_other_noc_setup_id = tt_metal::CreateDataMovementKernel(
+            program,
+            "tt_metal/kernels/dataflow/reader_bmm_tile_layout_in0_receiver.cpp",
+            in0_receiver_in1_receiver_right_half,
+            tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_1, .noc = tt_metal::NOC::RISCV_1_default, .compile_args = in0_receiver_compile_time_args});
+    }
     /* Checkerboard logic
     auto mm_kernel_in0_receiver_ckb_white = tt_metal::CreateDataMovementKernel(
         program,
@@ -771,7 +783,7 @@ operation::ProgramWithCallbacks create_program_mcast_in0_in1(
                 }
 
                 // left half
-                if (core_idx_x <= 4) {
+                if (core_idx_x <= half_core) {
                     tt_metal::SetRuntimeArgs(program, mm_kernel_in0_receiver_id, core, mm_in0_receiver_args);
                     tt_metal::SetRuntimeArgs(program, mm_kernel_in1_receiver_writer_id, core, mm_in1_receiver_writer_args);
                     reader_kernel_ids.push_back(mm_kernel_in0_receiver_id);
