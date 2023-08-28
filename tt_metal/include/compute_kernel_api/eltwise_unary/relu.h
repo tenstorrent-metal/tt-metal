@@ -42,11 +42,19 @@ ALWI void relu_min_tile_init() {
 
 //Leaky Relu : y = relu(x) + slope*-relu(-x)
 ALWI void leaky_relu_tile(uint32_t idst,uint32_t param0) {
+    #ifdef ARCH_GRAYSKULL
     MATH(( llk_math_eltwise_unary_sfpu_leaky_relu<APPROX, SyncHalf>(idst,param0) ));
+    #else
+    MATH(( llk_math_eltwise_unary_sfpu_lrelu<APPROX, SyncHalf>(idst, Dim::RC, param0) ));
+    #endif
 }
 
 ALWI void leaky_relu_tile_init() {
+    #ifdef ARCH_GRAYSKULL
     MATH(( llk_math_eltwise_unary_sfpu_leaky_relu_init<APPROX>() ));
+    #else
+    MATH(( llk_math_eltwise_unary_sfpu_lrelu_init<APPROX>() ));
+    #endif
 }
 
 // relu is implemented via unpack with llk_pack_relu_config(0) enabled
