@@ -13,7 +13,7 @@ namespace sfpu
 {
 
 
-template <bool APPROXIMATION_MODE, int ITERATIONS=8>
+template <bool APPROXIMATION_MODE, int ITERATIONS=4>
 inline void relu_max(uint uint_threshold)
 {
     vFloat threshold = Converter::to_float(uint_threshold);
@@ -33,7 +33,7 @@ inline void relu_max(uint uint_threshold)
     }
 }
 
-template <bool APPROXIMATION_MODE, int ITERATIONS=8>
+template <bool APPROXIMATION_MODE, int ITERATIONS=4>
 inline void relu_min(uint uint_threshold)
 {
     vFloat threshold = Converter::to_float(uint_threshold);
@@ -50,7 +50,7 @@ inline void relu_min(uint uint_threshold)
 
 }
 
-template <bool APPROXIMATION_MODE, int ITERATIONS=8>
+template <bool APPROXIMATION_MODE, int ITERATIONS=4>
 inline void calculate_lrelu(uint slope)
 {
     // SFPU microcode
