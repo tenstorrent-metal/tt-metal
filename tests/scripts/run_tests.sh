@@ -121,6 +121,22 @@ run_models_performance_virtual_machine_pipeline_tests() {
     run_models_performance "$tt_arch" "$pipeline_type"
 }
 
+
+run_models_accuracy_bare_metal_pipeline_tests() {
+    local tt_arch=$1
+    local pipeline_type=$2
+
+    ./tests/scripts/run_accuracy.sh --pipeline-type $pipeline_type
+}
+
+run_models_accuracy_virtual_machine_pipeline_tests() {
+    local tt_arch=$1
+    local pipeline_type=$2
+
+    ./tests/scripts/run_accuracy.sh --pipeline-type $pipeline_type
+}
+
+
 run_pipeline_tests() {
     local tt_arch=$1
     local pipeline_type=$2
@@ -141,6 +157,10 @@ run_pipeline_tests() {
         run_models_performance_bare_metal_pipeline_tests "$tt_arch" "$pipeline_type"
     elif [[ $pipeline_type == "models_performance_virtual_machine" ]]; then
         run_models_performance_virtual_machine_pipeline_tests "$tt_arch" "$pipeline_type"
+    elif [[ $pipeline_type == "models_accuracy_bare_metal" ]]; then
+        run_models_accuracy_bare_metal_pipeline_tests "$tt_arch" "$pipeline_type"
+    elif [[ $pipeline_type == "models_accuracy_virtual_machine" ]]; then
+        run_models_accuracy_virtual_machine_pipeline_tests "$tt_arch" "$pipeline_type"
     else
         echo "Unknown pipeline: $pipeline_type"
         exit 1
