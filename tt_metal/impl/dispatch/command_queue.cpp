@@ -41,6 +41,8 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
         u32 num_u32s = num_bytes / sizeof(u32);
 
         if (idx + num_u32s > program_pages.size()) {
+            // Inefficient to keep resizing the program pages when we can just size the vector
+            // correctly AOT
             u32 num_bytes_to_reserve = align(num_bytes, PROGRAM_PAGE_SIZE);
             u32 old_size = program_pages.size();
             program_pages.resize(program_pages.size() + num_bytes_to_reserve / sizeof(u32));
@@ -105,7 +107,7 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
             std::make_pair(get_noc_multicast_encoding(physical_start, physical_end), core_range.size()));
     }
 
-    static map<RISCV, u32> processor_to_local_mem_addr = {
+    static const map<RISCV, u32> processor_to_local_mem_addr = {
         {RISCV::BRISC,  MEM_BRISC_INIT_LOCAL_L1_BASE},
         {RISCV::NCRISC, MEM_NCRISC_INIT_LOCAL_L1_BASE},
         {RISCV::TRISC0, MEM_TRISC0_INIT_LOCAL_L1_BASE},
@@ -136,6 +138,13 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
                 } else if ((dst & MEM_NCRISC_IRAM_BASE) == MEM_NCRISC_IRAM_BASE) {
                     dst = (dst & ~MEM_NCRISC_IRAM_BASE) + MEM_NCRISC_INIT_IRAM_L1_BASE;
                 }
+
+                // std::cout << "SPAN" << std::endl;
+                // u32 debug_val = 0;
+                // while (debug_val != len) {
+                //     std::cout << *(mem_ptr + debug_val++) << std::endl;
+                // }
+                // std::cout << std::endl;
 
                 update_program_page_transfers(num_bytes, dst, program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, true);
             });
@@ -197,6 +206,18 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     if (num_transfers_in_page_counter) {
         num_transfers_in_runtime_arg_page.push_back(num_transfers_in_page_counter);
     }
+
+    u32 i = 0;
+    u32 j = 0;
+    do {
+        std::cout << "PAGE " << j++ << " : " << std::endl;
+        for (u32 q = 0; q < PROGRAM_PAGE_SIZE; q++) {
+            std::cout << program_pages[i + q] << std::endl;
+        }
+        i += PROGRAM_PAGE_SIZE;
+        std::cout << std::endl;
+    } while (i < program_pages.size());
+    exit(0);
 
     return {
         .num_workers = u32(program.logical_cores().size()),
@@ -519,7 +540,7 @@ CommandQueue::CommandQueue(Device* device) {
 
     device->cluster()->write_sysmem_vec(pointers, 0, 0);
 
-    // tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}, {1, 1}}, DPRINT_HART_BR);
+    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}, {1, 1}}, DPRINT_HART_BR);
     send_dispatch_kernel_to_device(device);
     this->device = device;
 }

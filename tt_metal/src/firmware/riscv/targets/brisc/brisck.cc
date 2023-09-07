@@ -65,6 +65,7 @@ void kernel_launch() {
 
     noc_init(loading_noc);
 
+    // DPRINT << 'S' << 'T' << ENDL();
     kernel_main();
 
     // FW needs to notify device dispatcher when we are done

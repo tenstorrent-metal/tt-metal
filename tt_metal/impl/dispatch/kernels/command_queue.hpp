@@ -262,8 +262,11 @@ FORCE_INLINE void launch_program(u32 num_workers, u32 num_multicast_messages, vo
 
     // Wait on worker cores to notify me that they have completed
     DEBUG_STATUS('Q', 'W');
-    while (reinterpret_cast<volatile tt_l1_ptr u32*>(DISPATCH_MESSAGE_ADDR)[0] != num_workers)
-        ;
+    while (reinterpret_cast<volatile tt_l1_ptr u32*>(DISPATCH_MESSAGE_ADDR)[0] != num_workers) {
+        // DPRINT << "DONE: " << reinterpret_cast<volatile tt_l1_ptr u32*>(DISPATCH_MESSAGE_ADDR)[0] << ENDL();
+        // for (volatile int i = 0; i < 1000000; i++);
+    }
+
     DEBUG_STATUS('Q', 'D');
     for (u32 i = 0; i < num_multicast_messages * 2; i += 2) {
         u64 worker_core_noc_coord = u64(command_ptr[i]) << 32;

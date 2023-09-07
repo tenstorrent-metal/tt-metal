@@ -395,6 +395,16 @@ int main(int argc, char **argv) {
         pass &= tt_metal::InitializeDevice(device);
         ;
 
+
+        // vector<u32> debug_buf;
+        // tt_metal::detail::ReadFromDeviceL1(device, {0, 0}, 0, 1024 * 1024, debug_buf);
+        // std::cout << "DEBUG BUFFER" << std::endl;
+        // for (u32 el: debug_buf) {
+        //     std::cout << el << std::endl;
+        // }
+        // exit(0);
+
+
         ////////////////////////////////////////////////////////////////////////////
         //                      Application Setup
         ////////////////////////////////////////////////////////////////////////////
