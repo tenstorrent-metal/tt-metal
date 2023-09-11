@@ -395,14 +395,47 @@ int main(int argc, char **argv) {
         pass &= tt_metal::InitializeDevice(device);
         ;
 
+        // vector<u32> debug_data(2clear376 / sizeof(u32), 5);
+        // tt_metal::detail::WriteToDeviceL1(device, {0, 0}, 72864, debug_data);
+        // sleep(1);
 
-        // vector<u32> debug_buf;
-        // tt_metal::detail::ReadFromDeviceL1(device, {0, 0}, 0, 1024 * 1024, debug_buf);
-        // std::cout << "DEBUG BUFFER" << std::endl;
-        // for (u32 el: debug_buf) {
-        //     std::cout << el << std::endl;
-        // }
-        // exit(0);
+        auto check = [&device](u32 addr, u32 num_bytes) {
+
+            vector<u32> data;
+            tt_metal::detail::ReadFromDeviceL1(device, {0, 0}, addr, num_bytes, data);
+            for (u32 el: data) {
+                std::cout << el << std::endl;
+            }
+        };
+
+        if (0) {
+
+            std::cout << "Span dst=61984, processor=NCRISC, num_bytes=784" << std::endl;
+            check(61984, 784);
+
+            std::cout << "Span dst=72864, processor=NCRISC, num_bytes=2376" << std::endl;
+            check(72864, 2376);
+
+            std::cout << "Span dst=4416, processor=BRISC, num_bytes=2064" << std::endl;
+            check(4416, 2064);
+
+            std::cout << "Span dst=57984, processor=BRISC, num_bytes=784" << std::endl;
+            check(57984, 784);
+
+            std::cout << "Span dst=14064, processor=COMPUTE, num_bytes=1212" << std::endl;
+            check(14064, 1212);
+
+            std::cout << "Span dst=30448, processor=COMPUTE, num_bytes=1080" << std::endl;
+            check(30448, 1080);
+
+            std::cout << "Span dst=42736, processor=COMPUTE, num_bytes=1668" << std::endl;
+            check(42736, 1668);
+
+            std::cout << "Span dst=70176, processor=COMPUTE, num_bytes=4" << std::endl;
+            check(70176, 4);
+
+            exit(0);
+        }
 
 
         ////////////////////////////////////////////////////////////////////////////

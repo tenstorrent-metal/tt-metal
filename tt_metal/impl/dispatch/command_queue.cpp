@@ -49,12 +49,30 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
         }
 
         // Need to ensure that the binaries are 16B aligned
+
+        // for (u32 i = 0; i < num_u32s; i++) {
+        //     program_pages.push_back(i);
+        // }
+        /*
+            // Arange debug code
+            vector<u32> arange(num_u32s, 0);
+            static int i = 0;
+            u32 j = 0;
+            for (; i < num_u32s; i++) {
+                arange[j++] = i;
+                std::cout << i << std::endl;
+            }
+            std::copy(arange.begin(), arange.begin() + num_u32s, program_pages.begin() + idx);
+        */
         std::copy(data, data + num_u32s, program_pages.begin() + idx);
+
+        // const vector<u32> padding(align(num_u32s, 32 / sizeof(u32)) - num_u32s, 0);
         const vector<u32> padding(align(num_u32s, 16 / sizeof(u32)) - num_u32s, 0);
         std::copy(padding.begin(), padding.end(), program_pages.begin() + idx + num_u32s);
     };
 
     auto advance_idx = [&idx](u32 num_bytes) {
+        // idx = align(idx + num_bytes / sizeof(u32), 32 / sizeof(u32));
         idx = align(idx + num_bytes / sizeof(u32), 16 / sizeof(u32));
     };
 
@@ -92,7 +110,11 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
         for (const CoreRange& core_range: ranges) {
             CoreCoord physical_start = device->worker_core_from_logical_core(core_range.start);
             CoreCoord physical_end = device->worker_core_from_logical_core(core_range.end);
+
+
             u32 dst_noc_multicast_encoding = get_noc_multicast_encoding(physical_start, physical_end);
+            tt::log_info("PHYS START {}, PHYS END {}, ENCODING {}", physical_start.str(), physical_end.str(), dst_noc_multicast_encoding);
+
             u32 num_receivers = core_range.size();
             dst_noc_multicast_info.push_back(std::make_pair(dst_noc_multicast_encoding, num_receivers));
         }
@@ -139,12 +161,13 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
                     dst = (dst & ~MEM_NCRISC_IRAM_BASE) + MEM_NCRISC_INIT_IRAM_L1_BASE;
                 }
 
-                // std::cout << "SPAN" << std::endl;
-                // u32 debug_val = 0;
-                // while (debug_val != len) {
-                //     std::cout << *(mem_ptr + debug_val++) << std::endl;
+                tt::log_info("Span dst={}, processor={}, num_bytes={}", dst, kernel->processor(), num_bytes);
+
+                // u32 z = 0;
+                // while (z != len) {
+                //     std::cout << *(mem_ptr + z) << std::endl;
+                //     z++;
                 // }
-                // std::cout << std::endl;
 
                 update_program_page_transfers(num_bytes, dst, program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, true);
             });
@@ -156,20 +179,21 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     for (const CircularBuffer& cb: program.circular_buffers()) {
         vector<u32> cb_vector = {cb.address() >> 4, cb.size() >> 4, cb.num_tiles(), (cb.size() / cb.num_tiles()) >> 4};
         vector<pair<u32, u32>> dst_noc_multicast_info = extract_dst_noc_multicast_info(cb.core_range_set().ranges());
-        u32 num_bytes = UINT32_WORDS_PER_CIRCULAR_BUFFER_CONFIG * sizeof(u32);
-        update_program_pages(num_bytes, cb_vector.begin());
+        constexpr static u32 num_bytes = UINT32_WORDS_PER_CIRCULAR_BUFFER_CONFIG * sizeof(u32);
         for (const auto buffer_index: cb.buffer_indices()) {
+            update_program_pages(num_bytes, cb_vector.begin());
             update_program_page_transfers(
                 num_bytes, CIRCULAR_BUFFER_CONFIG_BASE + buffer_index * UINT32_WORDS_PER_CIRCULAR_BUFFER_CONFIG * sizeof(u32), program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, false);
+            advance_idx(num_bytes);
         }
-        advance_idx(num_bytes);
     }
+    // exit(0);
 
     // Step 4: Continue constructing pages for semaphore configs
     for (const Semaphore& semaphore: program.semaphores()) {
         vector<u32> semaphore_vector = {semaphore.initial_value(), 0, 0, 0};
         vector<pair<u32, u32>> dst_noc_multicast_info = extract_dst_noc_multicast_info(semaphore.core_range_set().ranges());
-        u32 num_bytes = SEMAPHORE_ALIGNMENT;
+        constexpr static u32 num_bytes = SEMAPHORE_ALIGNMENT;
         update_program_pages(num_bytes, semaphore_vector.begin());
         update_program_page_transfers(num_bytes, semaphore.address(), program_page_transfers, num_transfers_in_program_page, dst_noc_multicast_info, true);
     }
@@ -207,17 +231,29 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
         num_transfers_in_runtime_arg_page.push_back(num_transfers_in_page_counter);
     }
 
-    u32 i = 0;
-    u32 j = 0;
-    do {
-        std::cout << "PAGE " << j++ << " : " << std::endl;
-        for (u32 q = 0; q < PROGRAM_PAGE_SIZE; q++) {
-            std::cout << program_pages[i + q] << std::endl;
-        }
-        i += PROGRAM_PAGE_SIZE;
-        std::cout << std::endl;
-    } while (i < program_pages.size());
-    exit(0);
+    // u32 i = 0;
+    // u32 j = 0;
+    // do {
+    //     std::cout << "PAGE " << j++ << " : " << std::endl;
+    //     for (u32 q = 0; q < PROGRAM_PAGE_SIZE; q++) {
+    //         std::cout << program_pages[i + q] << std::endl;
+    //     }
+    //     i += PROGRAM_PAGE_SIZE;
+    //     std::cout << std::endl;
+    // } while (i < program_pages.size());
+    // exit(0);
+
+    // u32 debug_idx = 0;
+    // for (const auto &[bytes, dst, dst_noc, nrecv]: program_page_transfers) {
+    //     u32 numel = bytes/sizeof(u32);
+    //     std::cout << "TRANSFER" << std::endl;
+    //     for (u32 j = 0; j < numel; j++) {
+    //         std::cout << program_pages[debug_idx + j] << std::endl;
+    //     }
+    //     debug_idx = align(debug_idx + numel, 4);
+    //     std::cout << std::endl;
+    // }
+    // exit(0);
 
     return {
         .num_workers = u32(program.logical_cores().size()),
@@ -540,7 +576,7 @@ CommandQueue::CommandQueue(Device* device) {
 
     device->cluster()->write_sysmem_vec(pointers, 0, 0);
 
-    tt_start_debug_print_server(device->cluster(), {0}, {{1, 11}, {1, 1}}, DPRINT_HART_BR);
+    tt_start_debug_print_server(device->cluster(), {0}, {{1, 1}});
     send_dispatch_kernel_to_device(device);
     this->device = device;
 }
@@ -660,7 +696,9 @@ void CommandQueue::enqueue_program(Program& program, bool blocking) {
         const Kernel* kernel = detail::GetKernel(program, kernel_id);
         for (const auto& [_, core_runtime_args]: kernel->runtime_args()) {
             runtime_args.insert(runtime_args.end(), core_runtime_args.begin(), core_runtime_args.end());
+            // const vector<u32> padding(align(runtime_args.size(), 32 / sizeof(u32)) - runtime_args.size(), 0);
             const vector<u32> padding(align(runtime_args.size(), 16 / sizeof(u32)) - runtime_args.size(), 0);
+
             runtime_args.insert(runtime_args.end(), padding.begin(), padding.end());
         }
     }

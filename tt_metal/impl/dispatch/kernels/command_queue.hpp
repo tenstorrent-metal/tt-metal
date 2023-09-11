@@ -170,29 +170,33 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
     u32 num_transfers = command_ptr[0];
     command_ptr++;
     u32 src = page_addr;
-    // DPRINT << "Num transfers: " << num_transfers << ENDL();
+
+    // DPRINT << "SRC IS " << src << ENDL();
+
     for (u32 i = 0; i < num_transfers; i++) {
         u32 num_bytes = command_ptr[0];
         u32 dst = command_ptr[1];
         u32 dst_noc = command_ptr[2];
         u32 num_recv = command_ptr[3];
 
-        // DPRINT << "num_bytes: " << num_bytes << ENDL();
-        // DPRINT << "dst: " << dst << ENDL();
-        // DPRINT << "dst_noc: " << dst_noc << ENDL();
-        // DPRINT << "num_recv: " << num_recv << ENDL();
-        // DPRINT << "src: " << src << ENDL();
-        // DPRINT << ENDL();
-
-        // DPRINT << "Sending" << ENDL();
-        // for (u32 i = src; i < src + min(48, num_bytes); i += sizeof(u32)) {
+        // DPRINT << "Sending: src=" << src << ", dst_noc=" << dst_noc << ", dst=" << dst << ", num_recv=" << num_recv << ", num_bytes=" << num_bytes << ENDL();
+        // for (u32 i = src; i < src + num_bytes; i += sizeof(u32)) {
         //     DPRINT << *reinterpret_cast<volatile u32*>(i) << ENDL();
         // }
         // DPRINT << ENDL();
 
+        // if (num_bytes >= 16) {
         noc_async_write_multicast(src, (u64(dst_noc) << 32) | dst, num_bytes, num_recv);
+        // noc_async_write_barrier();
+        // }
+
         command_ptr += 4;
         src = align(src + num_bytes, 16);
+
+        // if (dst == 72864) {
+        //     while(true);
+        // }
+
     }
 
     // Future optimization: Don't barrier here, only barrier after all pages are written.
@@ -201,8 +205,9 @@ FORCE_INLINE void write_program_page(u32 page_addr, volatile u32*& command_ptr) 
 
 FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr, Buffer& buffer) {
 
+    u32 page_write_ptr = DEVICE_COMMAND_DATA_ADDR;
     for (u32 program_src = 0; program_src < num_program_srcs; program_src++) {
-        init_program_cb();
+        // init_program_cb();
         u32 buffer_type = command_ptr[0];
         u32 num_pages = command_ptr[1];
         u32 bank_base_address = command_ptr[2];
@@ -224,9 +229,9 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
         buffer.page_size = PROGRAM_PAGE_SIZE;
 
         for (u32 page_idx = 0; page_idx < num_pages; page_idx++) {
-            cb_reserve_back(PROGRAM_CB_ID, 1);
-            u32 page_write_ptr = get_write_ptr(PROGRAM_CB_ID);
-            u32 page_read_ptr = get_read_ptr(PROGRAM_CB_ID);
+            // cb_reserve_back(PROGRAM_CB_ID, 1);
+            // u32 page_write_ptr = get_write_ptr(PROGRAM_CB_ID);
+            // u32 page_read_ptr = get_read_ptr(PROGRAM_CB_ID);
             noc_async_read(buffer.get_noc_addr(page_idx), page_write_ptr, PROGRAM_PAGE_SIZE);
             noc_async_read_barrier();
 
@@ -236,11 +241,12 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
             // }
             // DPRINT << ENDL();
 
-            cb_push_back(PROGRAM_CB_ID, 1);
-            cb_wait_front(PROGRAM_CB_ID, 1);
+            // cb_push_back(PROGRAM_CB_ID, 1);
+            // cb_wait_front(PROGRAM_CB_ID, 1);
 
             write_program_page(page_write_ptr, command_ptr);
-            cb_pop_front(PROGRAM_CB_ID, 1);
+            page_write_ptr += PROGRAM_PAGE_SIZE;
+            // cb_pop_front(PROGRAM_CB_ID, 1);
         }
     }
 }
@@ -248,6 +254,8 @@ FORCE_INLINE void write_program(u32 num_program_srcs, volatile u32*& command_ptr
 FORCE_INLINE void launch_program(u32 num_workers, u32 num_multicast_messages, volatile tt_l1_ptr u32*& command_ptr) {
     if (not num_workers)
         return;
+
+    // while(true);
 
     volatile uint32_t* message_addr_ptr = reinterpret_cast<volatile uint32_t*>(DISPATCH_MESSAGE_ADDR);
     *message_addr_ptr = 0;
