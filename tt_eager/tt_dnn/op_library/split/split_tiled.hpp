@@ -33,6 +33,8 @@ struct SplitTiled {
     tt::stl::reflection::Attributes attributes() const;
 };
 
+std::vector<Tensor> split_last_dim(const Tensor &a, const uint32_t num_chunks, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
+
 }  // namespace tt_metal
 
 }  // namespace tt

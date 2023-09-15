@@ -29,7 +29,7 @@
 #include "tt_dnn/op_library/auto_format.hpp"
 #include "tt_dnn/op_library/nlp_tms/nlp_tms.hpp"
 #include "tt_dnn/op_library/composite/composite_ops.hpp"
-#include "tt_dnn/op_library/split/split_last_dim_two_chunks_tiled.hpp"
+#include "tt_dnn/op_library/split/split_tiled.hpp"
 #include "tt_dnn/op_library/move/move_op.hpp"
 #include "tt_dnn/op_library/rotate_half/rotate_half_op.hpp"
 #include "tt_dnn/op_library/rotary_embedding/rotary_embedding_op.hpp"
@@ -2720,13 +2720,14 @@ void TensorModule(py::module &m_tensor) {
     )doc");
 
     // TMs
-    m_tensor.def("split_last_dim_two_chunks_tiled", &split_last_dim_two_chunks_tiled, py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+    m_tensor.def("split_last_dim", &split_last_dim, py::arg("input").noconvert(), py::arg("num_chunks"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
         Splits a tensor's last dimension in two equal sized chunks. This assumes the last dim is tile sized.
 
         .. csv-table::
             :header: "Argument", "Description", "Data type", "Valid range", "Required"
 
             "input", "Input tensor", "Tensor", "Tensor of shape [W0, Z0, Y0, X0]", "Yes"
+            "num_chunks", "Number of Chunks", "int", "int > 0", "Yes"
             "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
 
     )doc");
