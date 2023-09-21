@@ -4,24 +4,25 @@
 
 #include <stdint.h>
 #include "dataflow_api.h"
+#include "debug_print.h"
 
 void kernel_main() {
 
-    const uint32_t src_addr                 = get_arg_val<uint32_t>(0);
-    const uint32_t num_dims                 = get_arg_val<uint32_t>(1);
-    const uint32_t start_id                 = get_arg_val<uint32_t>(2);
-    const uint32_t num_tiles                = get_arg_val<uint32_t>(3);
+    const uint32_t src_addr                 = get_arg_val<uint32_t>(1);
+    const uint32_t num_dims                 = get_arg_val<uint32_t>(2);
+    const uint32_t start_id                 = get_arg_val<uint32_t>(3);
+    const uint32_t num_tiles                = get_arg_val<uint32_t>(4);
 
-    volatile tt_l1_ptr uint32_t * num_unpadded_tiles = (volatile tt_l1_ptr uint32_t*)(get_arg_addr(4));
+    volatile tt_l1_ptr uint32_t * num_unpadded_tiles = (volatile tt_l1_ptr uint32_t*)(get_arg_addr(5));
     volatile tt_l1_ptr uint32_t * num_padded_tiles = num_unpadded_tiles + num_dims;
     volatile tt_l1_ptr uint32_t * id_per_dim = num_padded_tiles + num_dims;
 
-    constexpr uint32_t cb_id_in0 = 0;
 
+    constexpr uint32_t cb_id_in0 = 0;
     const uint32_t tile_size = get_tile_size(cb_id_in0);
     const DataFormat data_format = get_dataformat(cb_id_in0);
-
     constexpr bool src0_is_dram                           = get_compile_time_arg_val(0) == 1;
+
     // In and out are assumed to be same dataformat
     const InterleavedAddrGenFast<src0_is_dram> s0 = {
         .bank_base_address = src_addr,

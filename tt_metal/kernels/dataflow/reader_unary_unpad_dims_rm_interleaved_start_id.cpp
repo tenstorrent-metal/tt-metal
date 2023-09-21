@@ -7,16 +7,17 @@
 
 void kernel_main() {
 
-    const uint32_t src_addr                 = get_arg_val<uint32_t>(0);
-    const uint32_t padded_stick_size        = get_arg_val<uint32_t>(1);
-    const uint32_t unpadded_stick_size      = get_arg_val<uint32_t>(2);
-    const uint32_t num_dims                 = get_arg_val<uint32_t>(3);
-    const uint32_t start_id                 = get_arg_val<uint32_t>(4);
-    const uint32_t num_sticks               = get_arg_val<uint32_t>(5);
+    const uint32_t src_addr                 = get_arg_val<uint32_t>(1);
+    const uint32_t padded_stick_size        = get_arg_val<uint32_t>(2);
+    const uint32_t unpadded_stick_size      = get_arg_val<uint32_t>(3);
+    const uint32_t num_dims                 = get_arg_val<uint32_t>(4);
+    const uint32_t start_id                 = get_arg_val<uint32_t>(5);
+    const uint32_t num_sticks               = get_arg_val<uint32_t>(6);
 
-    volatile tt_l1_ptr uint32_t * num_unpadded_sticks = (volatile tt_l1_ptr uint32_t*)(get_arg_addr(6));
+    volatile tt_l1_ptr uint32_t * num_unpadded_sticks = (volatile tt_l1_ptr uint32_t*)(get_arg_addr(7));
     volatile tt_l1_ptr uint32_t * num_padded_sticks = num_unpadded_sticks + num_dims;
     volatile tt_l1_ptr uint32_t * id_per_dim = num_padded_sticks + num_dims;
+
 
     constexpr bool src0_is_dram          = get_compile_time_arg_val(0) == 1;
     #define src_stick_size_is_pow2 get_compile_time_arg_val(1) == 1

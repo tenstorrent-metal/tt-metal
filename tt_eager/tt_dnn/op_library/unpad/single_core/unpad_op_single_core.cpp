@@ -15,6 +15,64 @@ namespace tt {
 
 namespace tt_metal {
 
+
+std::pair<std::vector<uint32_t>, std::vector<uint32_t> >   get_unpad_runtime_args_rm(const Tensor &input_tensor,
+                                                                                Tensor& output_tensor
+                                                                                ){
+
+    auto input_shape = input_tensor.shape();
+    auto output_shape = output_tensor.shape();
+    uint32_t num_dims = input_shape.rank();
+    uint32_t padded_row_size_bytes = input_shape[-1] * input_tensor.element_size();
+    uint32_t unpadded_row_size_bytes = output_shape[-1] * output_tensor.element_size();
+
+    std::vector<uint32_t> num_unpadded_sticks_per_dim(num_dims);
+    std::vector<uint32_t> num_padded_sticks_per_dim(num_dims);
+    std::vector<uint32_t> id_per_dim(num_dims, 0);
+
+    std::vector<uint32_t> accumulated_total_per_dim(num_dims);
+
+    // TODO: Remove first element of these arrays and update kernel accordingly
+    // This currently just matches tile version where we iterate over the row as well
+    num_unpadded_sticks_per_dim[0] = 1;
+    num_padded_sticks_per_dim[0] = 0;
+    accumulated_total_per_dim[0] = 1;
+
+    for(int32_t i = 1; i < num_dims; i++) {
+        uint32_t num_unpadded_dim = output_shape[-(i + 1)];
+        uint32_t num_total_dim = input_shape[-(i + 1)];
+        uint32_t num_padded_dim = (num_total_dim - num_unpadded_dim) * accumulated_total_per_dim[i - 1];
+        num_unpadded_sticks_per_dim[i] = num_unpadded_dim;
+        num_padded_sticks_per_dim[i] = num_padded_dim;
+        accumulated_total_per_dim[i] = num_total_dim * accumulated_total_per_dim[i - 1];
+    }
+
+    uint32_t num_unpadded_sticks = output_tensor.volume() / output_shape[-1];
+
+    vector<uint32_t> reader_kernel_args = {
+        0, //Noop
+        input_tensor.buffer()->address(),
+        padded_row_size_bytes,
+        unpadded_row_size_bytes,
+        num_dims,
+        0,
+        num_unpadded_sticks
+    };
+    reader_kernel_args.insert(reader_kernel_args.end(), num_unpadded_sticks_per_dim.begin(), num_unpadded_sticks_per_dim.end());
+    reader_kernel_args.insert(reader_kernel_args.end(), num_padded_sticks_per_dim.begin(), num_padded_sticks_per_dim.end());
+    reader_kernel_args.insert(reader_kernel_args.end(), id_per_dim.begin(), id_per_dim.end());
+
+    vector<uint32_t> writer_kernel_args = {
+        output_tensor.buffer()->address(),
+        unpadded_row_size_bytes,
+        num_unpadded_sticks, 0,
+        0 // Noop
+    };
+
+    return {reader_kernel_args, writer_kernel_args};
+
+}
+
 operation::ProgramWithCallbacks unpad_rm_single_core(const Tensor &a, Tensor& output, const Shape &output_tensor_start, const Shape &output_tensor_end) {
 
     const Shape output_shape = output.shape();
@@ -53,49 +111,7 @@ operation::ProgramWithCallbacks unpad_rm_single_core(const Tensor &a, Tensor& ou
         cb_data_format
     );
 
-    uint32_t num_dims = a.shape().rank();
-
-    std::vector<uint32_t> num_unpadded_sticks_per_dim(num_dims);
-    std::vector<uint32_t> num_padded_sticks_per_dim(num_dims);
-    std::vector<uint32_t> id_per_dim(num_dims, 0);
-
-    std::vector<uint32_t> accumulated_total_per_dim(num_dims);
-
-    // TODO: Remove first element of these arrays and update kernel accordingly
-    // This currently just matches tile version where we iterate over the row as well
-    num_unpadded_sticks_per_dim[0] = 1;
-    num_padded_sticks_per_dim[0] = 0;
-    accumulated_total_per_dim[0] = 1;
-
-    for(int32_t i = 1; i < num_dims; i++) {
-        uint32_t num_unpadded_dim = output_shape[-(i + 1)];
-        uint32_t num_total_dim = a.shape()[-(i + 1)];
-        uint32_t num_padded_dim = (num_total_dim - num_unpadded_dim) * accumulated_total_per_dim[i - 1];
-        num_unpadded_sticks_per_dim[i] = num_unpadded_dim;
-        num_padded_sticks_per_dim[i] = num_padded_dim;
-        accumulated_total_per_dim[i] = num_total_dim * accumulated_total_per_dim[i - 1];
-    }
-
-    uint32_t num_unpadded_sticks = output.volume() / output.shape()[-1];
-
-    vector<uint32_t> reader_kernel_args = {
-        src0_buffer->address(),
-        padded_row_size_bytes,
-        unpadded_row_size_bytes,
-        num_dims,
-        0,
-        num_unpadded_sticks
-    };
-    reader_kernel_args.insert(reader_kernel_args.end(), num_unpadded_sticks_per_dim.begin(), num_unpadded_sticks_per_dim.end());
-    reader_kernel_args.insert(reader_kernel_args.end(), num_padded_sticks_per_dim.begin(), num_padded_sticks_per_dim.end());
-    reader_kernel_args.insert(reader_kernel_args.end(), id_per_dim.begin(), id_per_dim.end());
-
-    vector<uint32_t> writer_kernel_args = {
-        dst_buffer->address(),
-        unpadded_row_size_bytes,
-        num_unpadded_sticks, 0
-    };
-
+    auto all_runtime_args = get_unpad_runtime_args_rm(a, output);
     bool src0_is_dram = src0_buffer->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
     bool src_stick_size_is_power_of_two = is_power_of_two_at_least_32(src_stick_size);
     uint32_t src_log2_stick_size = src_stick_size_is_power_of_two ? (std::uint32_t)log2(src_stick_size) : 0;
@@ -134,41 +150,101 @@ operation::ProgramWithCallbacks unpad_rm_single_core(const Tensor &a, Tensor& ou
         program,
         unary_reader_kernel_id,
         core,
-        reader_kernel_args
+        all_runtime_args.first
     );
 
     tt_metal::SetRuntimeArgs(
         program,
         unary_writer_kernel_id,
         core,
-        writer_kernel_args
+        all_runtime_args.second
     );
 
     auto override_runtime_args_callback = [unary_reader_kernel_id, unary_writer_kernel_id](
-        const Program &program,
-        const std::vector<Buffer*>& input_buffers,
-        const std::vector<Buffer*>& output_buffers
+        const void* operation,
+        const Program& program,
+        const std::vector<Tensor>& input_tensors,
+        const std::vector<std::optional<const Tensor>>&,
+        const std::vector<Tensor>& output_tensors
     ) {
 
-        auto src_buffer = input_buffers.at(0);
-        auto dst_buffer = output_buffers.at(0);
+        auto src_tensor = input_tensors.at(0);
+        auto dst_tensor = output_tensors.at(0);
 
         CoreCoord core = {0, 0};
+        auto all_runtime_args = get_unpad_runtime_args_rm(src_tensor, dst_tensor);
 
         {
-            auto runtime_args = GetRuntimeArgs(program, unary_reader_kernel_id, core);
-            runtime_args[0] = src_buffer->address();
-            SetRuntimeArgs(program, unary_reader_kernel_id, core, runtime_args);
+            SetRuntimeArgs(program, unary_reader_kernel_id, core, all_runtime_args.first);
         }
 
         {
-            auto runtime_args = GetRuntimeArgs(program, unary_writer_kernel_id, core);
-            runtime_args[0] = dst_buffer->address();
-            SetRuntimeArgs(program, unary_writer_kernel_id, core, runtime_args);
+            SetRuntimeArgs(program, unary_writer_kernel_id, core, all_runtime_args.second);
         }
     };
 
-    return {std::move(program), override_runtime_args_callback};
+    return {.program=std::move(program), .override_runtime_arguments_callback=override_runtime_args_callback};
+}
+
+std::pair<std::vector<uint32_t>, std::vector<uint32_t> >   get_unpad_runtime_args_tile(const Tensor &input_tensor,
+                                                                                Tensor& output_tensor
+                                                                                ){
+
+    auto input_shape = input_tensor.shape();
+    auto output_shape = output_tensor.shape();
+    uint32_t num_dims = input_shape.rank();
+
+    std::vector<uint32_t> num_unpadded_tiles_per_dim(num_dims);
+    std::vector<uint32_t> num_padded_tiles_per_dim(num_dims);
+    std::vector<uint32_t> id_per_dim(num_dims, 0);
+
+    std::vector<uint32_t> accumulated_total_per_dim(num_dims);
+
+    uint32_t num_unpadded_Xt = output_shape[-1] / TILE_WIDTH;
+    uint32_t num_total_Xt = input_shape[-1] / TILE_WIDTH;
+    uint32_t num_padded_Xt = num_total_Xt - num_unpadded_Xt;
+    uint32_t num_unpadded_Yt = output_shape[-2] / TILE_HEIGHT;
+    uint32_t num_total_Yt = input_shape[-2] / TILE_HEIGHT;
+    uint32_t num_padded_Yt = (num_total_Yt - num_unpadded_Yt) * num_total_Xt;
+
+    num_unpadded_tiles_per_dim[0] = num_unpadded_Xt;
+    num_unpadded_tiles_per_dim[1] = num_unpadded_Yt;
+    num_padded_tiles_per_dim[0] = num_padded_Xt;
+    num_padded_tiles_per_dim[1] = num_padded_Yt;
+    accumulated_total_per_dim[0] = num_total_Xt;
+    accumulated_total_per_dim[1] = num_total_Yt * num_total_Xt;
+
+    for(int32_t i = 2; i < num_dims; i++) {
+        uint32_t num_unpadded_dim = output_shape[-(i + 1)];
+        uint32_t num_total_dim = input_shape[-(i + 1)];
+        uint32_t num_padded_dim = (num_total_dim - num_unpadded_dim) * accumulated_total_per_dim[i - 1];
+        num_unpadded_tiles_per_dim[i] = num_unpadded_dim;
+        num_padded_tiles_per_dim[i] = num_padded_dim;
+        accumulated_total_per_dim[i] = num_total_dim * accumulated_total_per_dim[i - 1];
+    }
+
+    uint32_t num_unpadded_tiles = output_tensor.volume() / TILE_HW;
+
+    vector<uint32_t> reader_kernel_args = {
+        0, //noop
+        input_tensor.buffer()->address(),
+        num_dims,
+        0,
+        num_unpadded_tiles
+    };
+    reader_kernel_args.insert(reader_kernel_args.end(), num_unpadded_tiles_per_dim.begin(), num_unpadded_tiles_per_dim.end());
+    reader_kernel_args.insert(reader_kernel_args.end(), num_padded_tiles_per_dim.begin(), num_padded_tiles_per_dim.end());
+    reader_kernel_args.insert(reader_kernel_args.end(), id_per_dim.begin(), id_per_dim.end());
+
+    vector<uint32_t> writer_kernel_args = {
+        output_tensor.buffer()->address(),
+        num_unpadded_tiles, 0,
+        0 //noop
+    };
+
+    return {reader_kernel_args, writer_kernel_args};
+
+
 }
 
 operation::ProgramWithCallbacks unpad_tile_single_core(const Tensor &a, Tensor& output, const Shape &output_tensor_start, const Shape &output_tensor_end) {
@@ -203,53 +279,7 @@ operation::ProgramWithCallbacks unpad_tile_single_core(const Tensor &a, Tensor& 
         cb_data_format
     );
 
-    uint32_t num_dims = a.shape().rank();
 
-    std::vector<uint32_t> num_unpadded_tiles_per_dim(num_dims);
-    std::vector<uint32_t> num_padded_tiles_per_dim(num_dims);
-    std::vector<uint32_t> id_per_dim(num_dims, 0);
-
-    std::vector<uint32_t> accumulated_total_per_dim(num_dims);
-
-    uint32_t num_unpadded_Xt = output_shape[-1] / TILE_WIDTH;
-    uint32_t num_total_Xt = a.shape()[-1] / TILE_WIDTH;
-    uint32_t num_padded_Xt = num_total_Xt - num_unpadded_Xt;
-    uint32_t num_unpadded_Yt = output_shape[-2] / TILE_HEIGHT;
-    uint32_t num_total_Yt = a.shape()[-2] / TILE_HEIGHT;
-    uint32_t num_padded_Yt = (num_total_Yt - num_unpadded_Yt) * num_total_Xt;
-
-    num_unpadded_tiles_per_dim[0] = num_unpadded_Xt;
-    num_unpadded_tiles_per_dim[1] = num_unpadded_Yt;
-    num_padded_tiles_per_dim[0] = num_padded_Xt;
-    num_padded_tiles_per_dim[1] = num_padded_Yt;
-    accumulated_total_per_dim[0] = num_total_Xt;
-    accumulated_total_per_dim[1] = num_total_Yt * num_total_Xt;
-
-    for(int32_t i = 2; i < num_dims; i++) {
-        uint32_t num_unpadded_dim = output_shape[-(i + 1)];
-        uint32_t num_total_dim = a.shape()[-(i + 1)];
-        uint32_t num_padded_dim = (num_total_dim - num_unpadded_dim) * accumulated_total_per_dim[i - 1];
-        num_unpadded_tiles_per_dim[i] = num_unpadded_dim;
-        num_padded_tiles_per_dim[i] = num_padded_dim;
-        accumulated_total_per_dim[i] = num_total_dim * accumulated_total_per_dim[i - 1];
-    }
-
-    uint32_t num_unpadded_tiles = output.volume() / TILE_HW;
-
-    vector<uint32_t> reader_kernel_args = {
-        src0_buffer->address(),
-        num_dims,
-        0,
-        num_unpadded_tiles
-    };
-    reader_kernel_args.insert(reader_kernel_args.end(), num_unpadded_tiles_per_dim.begin(), num_unpadded_tiles_per_dim.end());
-    reader_kernel_args.insert(reader_kernel_args.end(), num_padded_tiles_per_dim.begin(), num_padded_tiles_per_dim.end());
-    reader_kernel_args.insert(reader_kernel_args.end(), id_per_dim.begin(), id_per_dim.end());
-
-    vector<uint32_t> writer_kernel_args = {
-        dst_buffer->address(),
-        num_unpadded_tiles, 0
-    };
 
     // Reader compile-time args
     // Data is 32 byte aligned
@@ -278,46 +308,49 @@ operation::ProgramWithCallbacks unpad_tile_single_core(const Tensor &a, Tensor& 
         core,
         tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_0_default, .compile_args = writer_compile_time_args});
 
+
+
+    auto all_runtime_args = get_unpad_runtime_args_tile(a, output);
+
     tt_metal::SetRuntimeArgs(
         program,
         unary_reader_kernel_id,
         core,
-        reader_kernel_args
+        all_runtime_args.first
     );
 
     tt_metal::SetRuntimeArgs(
         program,
         unary_writer_kernel_id,
         core,
-        writer_kernel_args
+        all_runtime_args.second
     );
 
     auto override_runtime_args_callback = [unary_reader_kernel_id, unary_writer_kernel_id](
-        const Program &program,
-        const std::vector<Buffer*>& input_buffers,
-        const std::vector<Buffer*>& output_buffers
+        const void* operation,
+        const Program& program,
+        const std::vector<Tensor>& input_tensors,
+        const std::vector<std::optional<const Tensor>>&,
+        const std::vector<Tensor>& output_tensors
     ) {
 
-        auto src_buffer = input_buffers.at(0);
+        auto src_tensor = input_tensors.at(0);
 
-        auto dst_buffer = output_buffers.at(0);
+        auto dst_tensor = output_tensors.at(0);
 
         CoreCoord core = {0, 0};
+        auto all_runtime_args = get_unpad_runtime_args_tile(src_tensor, dst_tensor);
 
         {
-            auto runtime_args = GetRuntimeArgs(program, unary_reader_kernel_id, core);
-            runtime_args[0] = src_buffer->address();
-            SetRuntimeArgs(program, unary_reader_kernel_id, core, runtime_args);
+            SetRuntimeArgs(program, unary_reader_kernel_id, core, all_runtime_args.first);
         }
 
         {
-            auto runtime_args = GetRuntimeArgs(program, unary_writer_kernel_id, core);
-            runtime_args[0] = dst_buffer->address();
-            SetRuntimeArgs(program, unary_writer_kernel_id, core, runtime_args);
+            SetRuntimeArgs(program, unary_writer_kernel_id, core, all_runtime_args.second);
         }
     };
 
-    return {std::move(program), override_runtime_args_callback};
+    return {.program=std::move(program), .override_runtime_arguments_callback=override_runtime_args_callback};
 }
 
 operation::ProgramWithCallbacks unpad_single_core(const Tensor &a, Tensor& output, const Shape &output_tensor_start, const Shape &output_tensor_end) {
