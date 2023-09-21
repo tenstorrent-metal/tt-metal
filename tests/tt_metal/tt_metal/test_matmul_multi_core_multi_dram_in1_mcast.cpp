@@ -386,8 +386,11 @@ int main(int argc, char **argv) {
     try {
         int start_core_x = 0;
         int start_core_y = 0;
-        int num_cores_r = 9;
-        int num_cores_c = 12;
+        int device_id = 0;
+        tt_metal::Device *device = tt_metal::CreateDevice(device_id);
+
+        int num_cores_r = device->logical_grid_size().y - 1;
+        int num_cores_c = device->logical_grid_size().x;
         uint32_t M = 16 * num_cores_r;
         uint32_t K = 16 * 12;
         uint32_t N = 16 * num_cores_c;
@@ -412,24 +415,6 @@ int main(int argc, char **argv) {
         tt::deprecated::Tensor<bfloat16> tensor = tt::deprecated::initialize_tensor<bfloat16>(shape, tt::deprecated::Initialize::RANDOM, 100, std::chrono::system_clock::now().time_since_epoch().count());
         auto identity = create_identity_matrix(K * 32, N * 32, std::min(K, N) * 32); //bflaot16 identity
         auto golden = select_columns(tensor.get_values(), M, K, N);
-        ////////////////////////////////////////////////////////////////////////////
-        //                      Initial Runtime Args Parse
-        ////////////////////////////////////////////////////////////////////////////
-        std::vector<std::string> input_args(argv, argv + argc);
-        string arch_name = "";
-        try {
-            std::tie(arch_name, input_args) =
-                test_args::get_command_option_and_remaining_args(input_args, "--arch", "grayskull");
-        } catch (const std::exception& e) {
-            log_fatal(tt::LogTest, "Command line arguments found exception", e.what());
-        }
-        const tt::ARCH arch = tt::get_arch_from_string(arch_name);
-        ////////////////////////////////////////////////////////////////////////////
-        //                      Device Setup
-        ////////////////////////////////////////////////////////////////////////////
-        int device_id = 0;
-        tt_metal::Device *device =
-            tt_metal::CreateDevice(device_id);
 
 
 
