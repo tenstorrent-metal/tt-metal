@@ -2257,7 +2257,7 @@ def permute(
     t0 = t0.to(layout[0])
     t0 = tensor_to_device(t0, device, buffer_type[0])
 
-    t1 = ttl.tensor.permute(t0, *permute_dims, output_mem_config=output_mem_config)
+    t1 = ttl.tensor.permute(t0, permute_dims, output_mem_config=output_mem_config)
 
     output = t1.cpu().to(ttl.tensor.Layout.ROW_MAJOR).to_torch()
     return output
