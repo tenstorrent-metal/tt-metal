@@ -234,6 +234,7 @@ void py_module(py::module& m_primary) {
 
     // softmax
     m_primary.def("softmax_in_place", &softmax_in_place,
+        py::arg("input").noconvert(),
         "Performs a softmax operation on the last tensor dimension. Returns a reference to the input tensor modified in place.");
 
 }

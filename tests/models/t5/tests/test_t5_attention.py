@@ -8,7 +8,6 @@ import tt_lib
 
 from transformers import T5Model
 from loguru import logger
-from tt_lib.fused_ops.softmax import softmax as tt_softmax
 from models.utility_functions import (
     torch2tt_tensor,
     tt2torch_tensor,
@@ -125,7 +124,7 @@ def run_test_softmax(device):
 
     pt_out = torch.nn.functional.softmax(test_input.float(), dim=-1).type_as(test_input)
 
-    tt_out = tt_softmax(torch2tt_tensor(test_input, device))
+    tt_out = tt_lib.tensor.softmax(torch2tt_tensor(test_input, device), dim=-1)
     tt_out = tt2torch_tensor(tt_out)
 
     does_pass, pcc_message = comp_pcc(pt_out, tt_out, 0.99)

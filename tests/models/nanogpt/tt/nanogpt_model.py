@@ -171,7 +171,7 @@ class TtGPT(nn.Module):
 
             # apply softmax to convert logits to (normalized) probabilities
             tt_logits = torch_to_tt_tensor_rm(logits, self.device, put_on_device=False)
-            tt_probs = fallback_ops.softmax(tt_logits, dim=-1)
+            tt_probs = tt_lib.tensor.softmax(tt_logits, dim=-1)
             probs = tt2torch_tensor(tt_probs)
             probs = probs.squeeze(0)
             probs = probs.squeeze(0)

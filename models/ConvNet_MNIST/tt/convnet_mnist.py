@@ -76,7 +76,7 @@ class TtConvNet(torch.nn.Module):
             tt_lib.tensor.BcastOpDim.H,
         )
 
-        return fallback_ops.softmax(out, -1)
+        return tt_lib.tensor.softmax(out, -1)
 
 
 def _convnet_mnist(device, state_dict) -> TtConvNet:

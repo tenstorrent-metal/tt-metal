@@ -216,7 +216,7 @@ class TtWhisperAttention(nn.Module):
                 bsz * self.num_heads, tgt_len, src_len
             )
             attn_weights = torch2tt_tensor(torch_attn_weights, self.device)
-        attn_weights = fallback_ops.softmax(attn_weights, dim=-1)
+        attn_weights = tt_lib.tensor.softmax(attn_weights, dim=-1)
 
         if layer_head_mask is not None:
             if layer_head_mask.shape() != [1, 1, 1, self.num_heads]:

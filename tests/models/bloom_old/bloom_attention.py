@@ -12,7 +12,6 @@ import tests.models.bloom_old.baddbmm as baddbmm
 import tests.models.bloom_old.bloom_attention_merge_heads as bloom_attention_merge_heads
 
 from fused_ops.linear import Linear as TtLinear
-from fused_ops.softmax import softmax as TtSoftmax
 from typing import Optional, Tuple, Union
 
 

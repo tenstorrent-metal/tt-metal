@@ -10,7 +10,6 @@ from torch.nn import functional as F
 
 import tt_lib as ttl
 from tt_lib.fallback_ops import fallback_ops
-from tests.tt_eager.python_api_testing.fused_ops.softmax import softmax as TtSoftmax
 
 from models.stable_diffusion.sd_utils import make_linear
 
@@ -158,7 +157,7 @@ class TtCrossAttention(nn.Module):
         if attention_mask is not None:
             attention_scores = ttl.tensor.add(attention_scores, attention_mask)
 
-        attention_probs = TtSoftmax(attention_scores)
+        attention_probs = ttl.tensor.softmax(attention_scores, dim=-1)
 
         return attention_probs
 

@@ -15,7 +15,6 @@ import tests.models.bloom_old.bloom_mlp as bloom_mlp
 from fused_ops.linear import Linear as TtLinear
 from fused_ops.layernorm import Layernorm as TtLayernorm
 
-from fused_ops.softmax import softmax as TtSoftmax
 from transformers import BloomForCausalLM
 
 from typing import Optional, Tuple, Union

@@ -134,7 +134,7 @@ class TtMultiHeadSelfAttention(nn.Module):
 
         scores = torch_to_tt_tensor_rm(scores, self.device, put_on_device=False)
 
-        weights = fallback_ops.softmax(scores, -1)
+        weights = tt_lib.tensor.softmax(scores, -1)
 
         if head_mask is not None:
             weights = tt_lib.temsor.mul(weights, head_mask)

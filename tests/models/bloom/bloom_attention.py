@@ -9,7 +9,6 @@ from torch.nn import functional as F
 import tt_lib
 import tests.models.bloom.bloom_utils as bloom_utils
 import tests.models.bloom.bloom_merge_heads as bloom_merge_heads
-from tt_lib.fused_ops.softmax import softmax as tt_softmax
 
 import tests.models.bloom.baddbmm as baddbmm
 from typing import Optional, Tuple, Union
@@ -324,7 +323,7 @@ class TtBloomAttention(torch.nn.Module):
         if self.use_tt_softmax:
             attn_weights = torch.masked_fill(attention_scores, attention_mask, -100.0)
             attn_weights = bloom_utils.torch2tt_tensor(attn_weights, device)
-            attention_probs = tt_softmax(attn_weights, stable=False)
+            attention_probs = tt_lib.tensor.softmax(attn_weights, dim=-1)
         else:
             attn_weights = torch.masked_fill(
                 attention_scores,

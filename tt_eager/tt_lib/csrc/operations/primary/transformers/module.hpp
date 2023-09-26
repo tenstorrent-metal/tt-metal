@@ -41,7 +41,8 @@ void py_module(py::module& m_transformers) {
     )doc");
 
     m_transformers.def("scale_mask_softmax_in_place", &scale_mask_softmax_in_place,
-        "Performs a fused scale->attention_mask->softmax operation. Returns a reference to the input tensor modified in place.");
+        py::arg("input").noconvert(), py::arg("scale").noconvert() = std::nullopt, py::arg("mask").noconvert() = std::nullopt,
+        "Performs a fused scale->attention_mask->softmax operation on the last tensor dimension. Returns a reference to the input tensor modified in place.");
 }
 
 }  // namespace transformers

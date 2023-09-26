@@ -197,7 +197,7 @@ class TtTrOCRAttention(nn.Module):
                 attn_weights, 1, bsz * self.num_heads, tgt_len, src_len
             )
 
-        attn_weights = fallback_ops.softmax(attn_weights, dim=-1)
+        attn_weights = tt_lib.tensor.softmax(attn_weights, dim=-1)
 
         if layer_head_mask is not None:
             if layer_head_mask.size() != (self.num_heads,):

@@ -117,7 +117,7 @@ class TtSSD(nn.Module):
         image_shapes: Tuple[int, int],
     ) -> List[Dict[str, tt_lib.tensor.Tensor]]:
         bbox_regression = head_outputs["bbox_regression"]
-        pred_scores = fallback_ops.softmax(head_outputs["cls_logits"], dim=-1)
+        pred_scores = tt_lib.tensor.softmax(head_outputs["cls_logits"], dim=-1)
 
         num_classes = pred_scores.shape()[-1]
 

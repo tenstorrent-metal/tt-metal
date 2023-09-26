@@ -2602,6 +2602,16 @@ void TensorModule(py::module &m_tensor) {
         "Performs a groupnorm operation on the channel dimension grouped per group_size, with optional fused with post-multiplication and addition via W-bcast.
     )doc");
 
+    // softmax
+    m_tensor.def("softmax", &softmax,
+        py::arg("input").noconvert(), py::arg("dim").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+        "Performs a softmax operation on the specified tensor dimension.
+    )doc");
+    m_tensor.def("scale_mask_softmax", &scale_mask_softmax,
+        py::arg("input").noconvert(), py::arg("dim").noconvert(), py::arg("scale").noconvert() = std::nullopt, py::arg("mask").noconvert() = std::nullopt, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+        "Performs a fused scale->attention_mask->softmax operation on the specified tensor dimension.
+    )doc");
+
     // layernorm
     m_tensor.def("layernorm", &layernorm,
         py::arg("input").noconvert(), py::arg("eps").noconvert(), py::arg("gamma").noconvert() = std::nullopt, py::arg("beta").noconvert() = std::nullopt, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(

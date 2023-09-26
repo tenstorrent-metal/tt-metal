@@ -269,7 +269,7 @@ class TtRobertaSelfAttention(nn.Module):
 
         # Fallback softmax drops PCC a bit from 0.9999 to 0.998
         # Device softmax only support tile shape/layout
-        attention_probs = fallback_ops.softmax(attention_scores, dim=-1)
+        attention_probs = tt_lib.tensor.softmax(attention_scores, dim=-1)
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.

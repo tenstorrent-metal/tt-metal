@@ -186,7 +186,7 @@ class TtSwinSelfAttention(nn.Module):
             )
 
         # Normalize the attention scores to probabilities.
-        attention_probs = fallback_ops.softmax(attention_scores, dim=-1)
+        attention_probs = tt_lib.tensor.softmax(attention_scores, dim=-1)
 
         # Mask heads if we want to
         if head_mask is not None:

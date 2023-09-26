@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tt_eager/tt_dnn/op_library/softmax/softmax_op.hpp"
+#include "tt_eager/tt_dnn/op_library/transpose/transpose_op.hpp"
 #include "tt_eager/tt_dnn/op_library/work_split.hpp"
 #include "tt_dnn/op_library/run_operation.hpp"
 
@@ -13,10 +14,7 @@
 
 #include <optional>
 
-using u32 = std::uint32_t;
 using namespace tt::constants;
-using namespace std;
-using namespace tt::tt_metal;
 
 namespace tt {
 namespace operations {
@@ -29,14 +27,14 @@ inline bool is_dram(const std::optional<const Tensor> input_tensor) {
 inline bool is_dram(const Buffer* b) { return b->buffer_type() == BufferType::DRAM; }
 
 // implementation of softmax with optional scale/mask (see the header for input_tensor more detailed description)
-operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, const std::optional<const Tensor> mask, std::optional<float> scale) {
+operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, const std::optional<const Tensor> mask, const Tensor &output_tensor, std::optional<float> scale) {
 
     const auto shape = input_tensor.shape();
-    u32 W = shape[3], H = shape[2] * shape[1], NC = shape[0];
-    u32 HW = H*W;
+    uint32_t W = shape[3], H = shape[2] * shape[1], NC = shape[0];
+    uint32_t HW = H*W;
 
-    u32 Wt = W/TILE_WIDTH;
-    u32 Ht = H/TILE_HEIGHT;
+    uint32_t Wt = W/TILE_WIDTH;
+    uint32_t Ht = H/TILE_HEIGHT;
 
     uint32_t num_tensor_tiles = NC*H*W / TILE_HW;
 
@@ -50,7 +48,11 @@ operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, 
     tt::DataFormat mask_cb_data_format = mask.has_value() ? tt_metal::datatype_to_dataformat_converter(mask.value().dtype()) : tt::DataFormat::Float16_b;
     uint32_t mask_tile_size = tt_metal::detail::TileSize(mask_cb_data_format);
 
-    auto src0_dram_buffer = input_tensor.buffer();
+    tt::DataFormat out_cb_data_format = tt_metal::datatype_to_dataformat_converter(output_tensor.dtype());
+    uint32_t out_tile_size = tt_metal::detail::TileSize(out_cb_data_format);
+
+    auto src0_buffer = input_tensor.buffer();
+    auto dst_buffer = output_tensor.buffer();
 
     int32_t num_tiles = input_tensor.volume()/TILE_HW;
 
@@ -115,7 +117,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, 
         });
     }
     CoreRangeSet all_cores(all_cores_set);
-    bool src0_is_dram = src0_dram_buffer->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
+    bool src0_is_dram = src0_buffer->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
     std::vector<uint32_t> reader_compile_time_args = {
         // interleaved accessor args
         src0_is_dram,
@@ -125,10 +127,10 @@ operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, 
         bool mask_is_dram = mask.value().buffer()->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
         reader_compile_time_args.push_back(mask_is_dram);
     }
-
+    bool dst_is_dram = dst_buffer->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
     std::vector<uint32_t> writer_compile_time_args = {
         // interleaved accessor args
-        src0_is_dram,
+        dst_is_dram,
         block_size
     };
     std::map<string, string> softmax_defines;
@@ -173,7 +175,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, 
     // Create circular buffers
     // see softmax.cpp for which buffers are needed
     CreateCircularBuffers( program, CB::c_in0,       all_cores, in0_t,  in0_t * in0_tile_size, in0_cb_data_format );
-    CreateCircularBuffers( program, CB::c_out0,      all_cores, out0_t, out0_t * in0_tile_size, in0_cb_data_format );
+    CreateCircularBuffers( program, CB::c_out0,      all_cores, out0_t, out0_t * out_tile_size, out_cb_data_format );
     CreateCircularBuffers( program, CB::c_intermed1, all_cores, im1_t,  im1_t * in0_tile_size,  in0_cb_data_format );
     CreateCircularBuffers( program, CB::c_in2,       all_cores, in2_t,  in2_t * scalar_tile_size,  DataFormat::Float16_b );
     CreateCircularBuffers( program, CB::c_intermed0, all_cores, im0_t,  im0_t * in0_tile_size,  in0_cb_data_format );
@@ -182,8 +184,9 @@ operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, 
         CreateCircularBuffers( program, CB::c_in3,       all_cores, in3_t,  in3_t * scalar_tile_size,  DataFormat::Float16_b );
         CreateCircularBuffers( program, CB::c_in4,       all_cores, in4_t,  in4_t * mask_tile_size,  mask_cb_data_format );
     }
-    uint32_t src_addr = src0_dram_buffer->address();
+    uint32_t src_addr = src0_buffer->address();
     uint32_t mask_addr = mask.has_value() ? mask.value().buffer()->address() : 0;
+    uint32_t dst_addr = dst_buffer->address();
 
     for (uint32_t icore = 0; icore < num_cores; icore++) {
         auto core = grid.wrap_core(icore);
@@ -193,7 +196,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, 
         // always in-place
         //                                                              0  1    2       3            4   5       6          7           8
         SetRuntimeArgs(program, reader_kernels_id, core, { src_addr, 0, s.u, wtpc*Wt, tile_offset, partHt, Wt, mask_addr, 0x3f800000 }); // [8]=1.0f is scaler
-        SetRuntimeArgs(program, writer_kernels_id, core, { src_addr, wtpc*Wt, tile_offset });
+        SetRuntimeArgs(program, writer_kernels_id, core, { dst_addr, wtpc*Wt, tile_offset });
     }
 
     auto override_runtime_args_callback = [
@@ -209,24 +212,25 @@ operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, 
     ) {
         TT_ASSERT(input_buffers.size() == 2);
 
-        auto src_dram_buffer = input_buffers.at(0);
-        auto mask_dram_buffer = input_buffers.at(1);
+        auto src_buffer = input_buffers.at(0);
+        auto mask_buffer = input_buffers.at(1);
+        auto dst_buffer = output_buffers.at(0);
 
         for (uint32_t icore = 0; icore < num_cores; icore++) {
             auto core = grid.wrap_core(icore);
 
             {
                 auto runtime_args = GetRuntimeArgs(program, reader_kernel_id, core);
-                runtime_args[0] = src_dram_buffer->address();
-                if (mask_dram_buffer != nullptr) {
-                    runtime_args[7] = mask_dram_buffer->address();
+                runtime_args[0] = src_buffer->address();
+                if (mask_buffer != nullptr) {
+                    runtime_args[7] = mask_buffer->address();
                 }
                 SetRuntimeArgs(program, reader_kernel_id, core, runtime_args);
             }
 
             {
                 auto runtime_args = GetRuntimeArgs(program, writer_kernel_id, core);
-                runtime_args[0] = src_dram_buffer->address();
+                runtime_args[0] = dst_buffer->address();
                 SetRuntimeArgs(program, writer_kernel_id, core, runtime_args);
             }
         }
@@ -236,13 +240,14 @@ operation::ProgramWithCallbacks scale_mask_softmax_(const Tensor &input_tensor, 
 } // scale_mask_softmax_
 
 
-void SoftmaxInPlace::validate(const std::vector<Tensor> &input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) const {
+void Softmax::validate(const std::vector<Tensor> &input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) const {
     TT_ASSERT(input_tensors.size() == 1 and optional_input_tensors.size() <= 1, "Must have 1 or 2 input tensors");
-    auto& input_tensor = input_tensors.at(0);
+    const auto& input_tensor = input_tensors.at(0);
     TT_ASSERT(input_tensor.storage_type() == StorageType::DEVICE, "Operands to softmax need to be on device!");
     TT_ASSERT(input_tensor.buffer() != nullptr , "Operands to softmax need to be allocated in buffers on device!");
     TT_ASSERT((input_tensor.layout() == Layout::TILE), "Inputs to softmax must be tilized");
     TT_ASSERT(input_tensor.dtype() == DataType::BFLOAT16 || input_tensor.dtype() == DataType::BFLOAT8_B);
+    TT_ASSERT(this->dim == input_tensor.shape().rank() - 1, "Only softmax on last dim is supported");
     if (optional_input_tensors.size() == 1) {
         if (optional_input_tensors.at(0).has_value()) {
             auto& mask = optional_input_tensors.at(0).value();
@@ -259,30 +264,42 @@ void SoftmaxInPlace::validate(const std::vector<Tensor> &input_tensors, const st
 
 }
 
-std::vector<Shape> SoftmaxInPlace::compute_output_shapes(const std::vector<Tensor> &input_tensors) const {
-    // Do nothing because it's an in-place operation
-    return {};
+std::vector<Shape> Softmax::compute_output_shapes(const std::vector<Tensor> &input_tensors) const {
+    auto& input_tensor = input_tensors.at(0);
+    return {input_tensor.shape()};
 }
 
-std::vector<Tensor> SoftmaxInPlace::create_output_tensors(const std::vector<Tensor> &input_tensors) const {
-    // Do nothing because it's an in-place operation
-    return {};
+std::vector<Tensor> Softmax::create_output_tensors(const std::vector<Tensor> &input_tensors) const {
+    if (this->in_place) {
+        return {};
+    } else {
+        auto& input_tensor = input_tensors.at(0);
+        return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.dtype(), Layout::TILE, this->output_mem_config);
+    }
 }
 
-operation::ProgramWithCallbacks SoftmaxInPlace::create_program(
+operation::ProgramWithCallbacks Softmax::create_program(
     const std::vector<Tensor>& input_tensors,
     const std::vector<std::optional<const Tensor>>& optional_input_tensors,
     std::vector<Tensor> &output_tensors
 ) const {
     auto& input_tensor = input_tensors.at(0);
     const auto& mask = optional_input_tensors.at(0);
-    return scale_mask_softmax_(input_tensor, mask, this->scale);
+    if (this->in_place) {
+        return scale_mask_softmax_(input_tensor, mask, input_tensor, this->scale);
+    } else {
+        const auto& output_tensor = output_tensors.at(0);
+        return scale_mask_softmax_(input_tensor, mask, output_tensor, this->scale);
+    }
 
 }
 
-tt::stl::reflection::Attributes SoftmaxInPlace::attributes() const {
+tt::stl::reflection::Attributes Softmax::attributes() const {
     return {
         {"scale", this->scale},
+        {"dim", this->dim},
+        {"in_place", this->in_place},
+        {"output_mem_config", this->output_mem_config},
     };
 }
 
@@ -292,11 +309,37 @@ Tensor softmax_in_place(Tensor& input_tensor) {
 
 namespace transformers {
 Tensor scale_mask_softmax_in_place(Tensor& input_tensor, std::optional<float> scale, std::optional<const Tensor> mask) {
-    operation::run(SoftmaxInPlace{.scale=scale}, {input_tensor}, {mask});
+    operation::run(Softmax{.scale=scale, .dim=input_tensor.shape().rank() - 1, .in_place=true, .output_mem_config=input_tensor.memory_config()}, {input_tensor}, {mask});
     return input_tensor;
 }
 
 }  // namespace transformers
 }  // namespace primary
 }  // namespace operations
+
+namespace tt_metal {
+
+Tensor softmax(const Tensor& input_tensor, const std::int64_t dim, const MemoryConfig& output_mem_config) {
+    return scale_mask_softmax(input_tensor, dim, std::nullopt, std::nullopt, output_mem_config);
+}
+
+Tensor scale_mask_softmax(const Tensor& input_tensor, const std::int64_t dim, std::optional<float> scale, std::optional<const Tensor> mask, const MemoryConfig& output_mem_config) {
+    uint32_t normalized_dim = input_tensor.shape().get_normalized_index(dim);
+    uint32_t last_dim = input_tensor.shape().rank() - 1;
+    bool transpose_input = normalized_dim != last_dim;
+    Tensor transposed_input_tensor = input_tensor;
+    if (transpose_input) {
+        TT_ASSERT(!mask.has_value(), "Non-last dim softmax does not support mask input");
+        transposed_input_tensor = transpose(input_tensor, normalized_dim, last_dim);
+    }
+
+    Shape pad_shape = AutoFormat::pad_to_tile_shape(transposed_input_tensor.shape());
+    FormatParams input_format_params = {.pad_shape=pad_shape, .pad_value=-std::numeric_limits<float>::lowest(), .target_layout=Layout::TILE};
+    Tensor output = operation::run_with_autoformat(operations::primary::Softmax{.scale=scale, .dim=last_dim, .in_place=false}, {transposed_input_tensor}, {input_format_params}, {Layout::TILE}, {mask}).at(0);
+    if (transpose_input) {
+        output = transpose(input_tensor, normalized_dim, last_dim);
+    }
+    return output;
+}
+}  // namespace tt_metal
 }  // namespace tt

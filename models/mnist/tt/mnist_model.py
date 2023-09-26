@@ -7,7 +7,6 @@ import torch
 import tt_lib
 
 from tt_lib.fallback_ops import fallback_ops
-from tt_lib.fused_ops.softmax import softmax as tt_softmax
 from models.utility_functions import torch2tt_tensor, tt2torch_tensor
 from models.mnist.reference.mnist import MnistModel
 
@@ -66,8 +65,7 @@ class TtMnistModel(torch.nn.Module):
         )
         x = tt_lib.tensor.relu(x)
 
-        x = tt_lib.fused_ops.softmax.softmax(x)
-        # x = fallback_ops.softmax(x, -1)
+        x = tt_lib.tensor.softmax(x, -1)
         return x
 
 
