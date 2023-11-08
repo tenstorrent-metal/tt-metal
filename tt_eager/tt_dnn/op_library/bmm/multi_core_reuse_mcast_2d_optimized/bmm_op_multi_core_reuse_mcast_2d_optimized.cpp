@@ -429,6 +429,9 @@ operation::ProgramWithCallbacks create_program_mcast_in0_in1(
     uint32_t src2_cb_index = 2;
     CircularBufferID cb_src2 = 0;
     if (in0_is_sharded) {
+        if (in2_CB_size < in0_buffer->size()) {
+            std::cout << "BMM multi core reuse mcast 2d optimized cb_src2 cb smaller than buffer" << std::endl;
+        }
         tt_metal::CircularBufferConfig src2_cb_config = tt_metal::CircularBufferConfig(in2_CB_size, {{src2_cb_index, in0_data_format}})
             .set_page_size(src2_cb_index, in0_single_tile_size).set_globally_allocated_address(*in0_buffer);
         cb_src2 = tt_metal::CreateCircularBuffer(program, all_cores, src2_cb_config);
@@ -444,6 +447,9 @@ operation::ProgramWithCallbacks create_program_mcast_in0_in1(
 		.set_page_size(output_cb_index, output_single_tile_size)
         .set_page_size(interm0_cb_index, output_single_tile_size);
     if (output_is_sharded) {
+        if (out_CB_size < out_buffer->size()) {
+            std::cout << "BMM multi core reuse mcast 2d optimized cb_output cb smaller than buffer" << std::endl;
+        }
         output_cb_config = output_cb_config.set_globally_allocated_address(*out_buffer);
     }
     auto cb_output = tt_metal::CreateCircularBuffer(program, CoreRangeSet({all_cores}), output_cb_config);

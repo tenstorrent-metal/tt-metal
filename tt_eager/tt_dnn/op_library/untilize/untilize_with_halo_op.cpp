@@ -255,6 +255,11 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core_s2(const Tensor& i
 
     uint32_t src_cb_id = CB::c_in0;
     uint32_t num_input_tiles = ntiles_per_block * nblocks_per_core;
+
+            if (num_input_tiles * in_tile_size < input.buffer()->size()) {
+                std::cout << "untilize w halo src_cb cb smaller than buffer" << std::endl;
+            }
+
     auto src_cb_config = CircularBufferConfig(num_input_tiles * in_tile_size, {{src_cb_id, in_df}})
                             .set_page_size(src_cb_id, in_tile_size)
                             .set_globally_allocated_address(*input.buffer());
@@ -271,6 +276,11 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core_s2(const Tensor& i
     uint32_t out_cb_id = CB::c_out1;
     uint32_t out_cb_pagesize = out_nbytes * in_c;
     uint32_t out_cb_npages = max_nsticks;
+
+            if (out_cb_npages * out_cb_pagesize < output.buffer()->size()) {
+                std::cout << "untilize w halo out_cb cb smaller than buffer" << std::endl;
+            }
+
     auto out_cb_config = CircularBufferConfig(out_cb_npages * out_cb_pagesize, {{out_cb_id, out_df}})
                             .set_page_size(out_cb_id, out_cb_pagesize)
                             .set_globally_allocated_address(*output.buffer());
@@ -897,6 +907,11 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(const Tensor& a, T
 
     uint32_t src_cb_id = CB::c_in0;
     uint32_t num_input_tiles = ntiles_per_block * nblocks_per_core;
+
+            if (num_input_tiles * in_tile_size < a.buffer()->size()) {
+                std::cout << "untilize w halo src_cb cb smaller than buffer" << std::endl;
+            }
+
     auto src_cb_config = CircularBufferConfig(num_input_tiles * in_tile_size, {{src_cb_id, in_df}})
                             .set_page_size(src_cb_id, in_tile_size)
                             .set_globally_allocated_address(*a.buffer());
@@ -917,6 +932,11 @@ operation::ProgramWithCallbacks untilize_with_halo_multi_core(const Tensor& a, T
         log_debug(LogOp, "out_cb_pagesize: {}", out_cb_pagesize);
         log_debug(LogOp, "out_nsticks_per_core: {}", out_nsticks_per_core);
     }
+
+            if (out_shard_size_max_per_core * out_cb_pagesize < output.buffer()->size()) {
+                std::cout << "untilize w halo out_cb_vb cb smaller than buffer" << std::endl;
+            }
+
     auto out_cb_config = CircularBufferConfig(out_shard_size_max_per_core * out_cb_pagesize, {{out_cb_id, out_df}})
                             .set_page_size(out_cb_id, out_cb_pagesize)
                             .set_globally_allocated_address(*output.buffer());

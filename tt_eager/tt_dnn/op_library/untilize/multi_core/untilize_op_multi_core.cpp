@@ -214,6 +214,11 @@ operation::ProgramWithCallbacks untilize_multi_core(const Tensor& a, Tensor& out
     tt_metal::CircularBufferConfig src0_cb_config = tt_metal::CircularBufferConfig(num_input_tiles * input_single_tile_size, {{src0_cb_index, input_cb_data_format}})
         .set_page_size(src0_cb_index, input_single_tile_size);
     if (src_sharded) {
+
+            if (num_input_tiles * input_single_tile_size < a.buffer()->size()) {
+                std::cout << "untilize  cb_src0 cb smaller than buffer" << std::endl;
+            }
+
         src0_cb_config = src0_cb_config.set_globally_allocated_address(*a.buffer());
     }
     auto cb_src0 = tt_metal::CreateCircularBuffer(program, all_cores, src0_cb_config);
@@ -652,6 +657,11 @@ operation::ProgramWithCallbacks untilize_with_unpadding_multi_core(const Tensor 
     tt_metal::CircularBufferConfig src0_cb_config = tt_metal::CircularBufferConfig(num_input_tiles * input_single_tile_size, {{src0_cb_index, input_cb_data_format}})
         .set_page_size(src0_cb_index, input_single_tile_size);
     if (src_sharded) {
+
+            if (num_input_tiles * input_single_tile_size < a.buffer()->size()) {
+                std::cout << "untilize  cb_src0 cb smaller than buffer" << std::endl;
+            }
+
         src0_cb_config = src0_cb_config.set_globally_allocated_address(*a.buffer());
     }
     auto cb_src0 = tt_metal::CreateCircularBuffer(program, all_cores, src0_cb_config);
@@ -665,6 +675,11 @@ operation::ProgramWithCallbacks untilize_with_unpadding_multi_core(const Tensor 
     CircularBufferID cb_sharded_output = 0;
     uint32_t sharded_output_cb_index = CB::c_out1;
     if (out_sharded) {
+
+            if (num_output_rows_unpadded * block_row_size < output.buffer()->size()) {
+                std::cout << "untilize  cb_sharded_output cb smaller than buffer" << std::endl;
+            }
+
         tt_metal::CircularBufferConfig sharded_output_cb_config = tt_metal::CircularBufferConfig(num_output_rows_unpadded * block_row_size, {{sharded_output_cb_index, output_cb_data_format}})
             .set_page_size(sharded_output_cb_index, block_row_size).set_globally_allocated_address(*output.buffer());
         cb_sharded_output = tt_metal::CreateCircularBuffer(program, all_cores, sharded_output_cb_config);

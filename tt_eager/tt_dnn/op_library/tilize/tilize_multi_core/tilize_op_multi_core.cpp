@@ -394,12 +394,22 @@ operation::ProgramWithCallbacks tilize_multi_core_sharded(const Tensor &input, T
 
     uint32_t src0_cb_index = CB::c_in0;
     uint32_t num_input_tiles = num_tiles_per_shard;
+
+            if (num_input_tiles * input_single_tile_size < input.buffer()->size()) {
+                std::cout << "tilize cb_src0 cb smaller than buffer" << std::endl;
+            }
+
     tt_metal::CircularBufferConfig src0_cb_config = tt_metal::CircularBufferConfig(num_input_tiles * input_single_tile_size, {{src0_cb_index, input_cb_data_format}})
 		.set_page_size(src0_cb_index, input_single_tile_size).set_globally_allocated_address(*input.buffer());
 	auto cb_src0 = tt_metal::CreateCircularBuffer(program, all_cores, src0_cb_config);
 
     uint32_t output_cb_index = CB::c_out0;
     uint32_t num_output_tiles = num_tiles_per_shard;
+
+            if (num_output_tiles * output_single_tile_size < output.buffer()->size()) {
+                std::cout << "tilize cb_output cb smaller than buffer" << std::endl;
+            }
+
     tt_metal::CircularBufferConfig cb_output_config = tt_metal::CircularBufferConfig(num_output_tiles * output_single_tile_size, {{output_cb_index, output_cb_data_format}})
 		.set_page_size(output_cb_index, output_single_tile_size).set_globally_allocated_address(*output.buffer());
     auto cb_output = tt_metal::CreateCircularBuffer(program, all_cores, cb_output_config);
@@ -531,6 +541,11 @@ operation::ProgramWithCallbacks tilize_with_val_padding_multi_core(const Tensor 
     tt_metal::CircularBufferConfig src0_cb_config = tt_metal::CircularBufferConfig(input_shard_size_bytes, {{src0_cb_index, input_cb_data_format}})
         .set_page_size(src0_cb_index, input_shard_width_bytes);
     if (src_sharded) {
+
+            if (input_shard_size_bytes < a.buffer()->size()) {
+                std::cout << "tilize cb_src0 cb smaller than buffer" << std::endl;
+            }
+
         src0_cb_config = src0_cb_config.set_globally_allocated_address(*a.buffer());
     }
     auto cb_src0 = tt_metal::CreateCircularBuffer(program, all_cores, src0_cb_config);
@@ -552,6 +567,11 @@ operation::ProgramWithCallbacks tilize_with_val_padding_multi_core(const Tensor 
     tt_metal::CircularBufferConfig output_cb_config = tt_metal::CircularBufferConfig(ntiles_per_core * output_single_tile_size, {{output_cb_index, output_cb_data_format}})
         .set_page_size(output_cb_index, output_single_tile_size);
     if (out_sharded) {
+
+            if (ntiles_per_core * output_single_tile_size < output.buffer()->size()) {
+                std::cout << "tilize cb_output cb smaller than buffer" << std::endl;
+            }
+
         output_cb_config.set_globally_allocated_address(*output.buffer());
     }
     auto cb_output = tt_metal::CreateCircularBuffer(program, all_cores, output_cb_config);

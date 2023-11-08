@@ -286,6 +286,11 @@ operation::ProgramWithCallbacks max_pool_2d_multi_core_sharded_with_halo(const T
         auto raw_in_cb_id = CB::c_in2;
         uint32_t raw_in_cb_npages = in_nhw_per_core;
         uint32_t raw_in_cb_pagesize = in_nbytes_c;
+
+            if (raw_in_cb_npages * raw_in_cb_pagesize < input.buffer()->size()) {
+                std::cout << "max pool multi core sharded with halo raw_in_cb cb smaller than buffer" << std::endl;
+            }
+
         CircularBufferConfig raw_in_cb_config = CircularBufferConfig(
                                                     raw_in_cb_npages * raw_in_cb_pagesize,
                                                     {{raw_in_cb_id, in_df}})
@@ -326,6 +331,11 @@ operation::ProgramWithCallbacks max_pool_2d_multi_core_sharded_with_halo(const T
         uint32_t sharded_out_num_pages = output.shard_spec().value().shard_shape[0];
 
         uint32_t sharded_out_cb_page_size = output.shard_spec().value().shard_shape[1] * out_nbytes;    // there is just one row of channels after reduction
+
+            if (sharded_out_num_pages * sharded_out_cb_page_size < output.buffer()->size()) {
+                std::cout << "max pool multi core sharded with halo cb_sharded_out cb smaller than buffer" << std::endl;
+            }
+
         CircularBufferConfig cb_sharded_out_config = CircularBufferConfig(sharded_out_num_pages * sharded_out_cb_page_size, {{sharded_out_cb_id, out_df}})
             .set_page_size(sharded_out_cb_id, sharded_out_cb_page_size).set_globally_allocated_address(*output.buffer());
         cb_sharded_out = tt_metal::CreateCircularBuffer(program, all_cores, cb_sharded_out_config);

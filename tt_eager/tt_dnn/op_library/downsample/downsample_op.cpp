@@ -450,6 +450,11 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
 
     uint32_t input_cb_index = CB::c_in0;
     uint32_t num_input_tiles = num_input_tiles_in_row * num_rows_of_input_tiles;
+
+            if (num_input_tiles * input_single_tile_size < a.buffer()->size()) {
+                std::cout << "downsample input_cb cb smaller than buffer" << std::endl;
+            }
+
     tt_metal::CircularBufferConfig input_cb_config = tt_metal::CircularBufferConfig(num_input_tiles * input_single_tile_size, {{input_cb_index, input_cb_data_format}})
 		.set_page_size(input_cb_index, input_single_tile_size);
     input_cb_config = input_cb_config.set_globally_allocated_address(*a.buffer());
@@ -495,6 +500,11 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
 
     uint32_t final_tilize_output_cb_index = CB::c_out0;
     uint32_t num_tiles_final_tilize_output_cb = num_output_tiles; // final output cb size == output size per core
+
+            if (num_tiles_final_tilize_output_cb * output_single_tile_size < output.buffer()->size()) {
+                std::cout << "downsample final_tilize_output_cb cb smaller than buffer" << std::endl;
+            }
+
     tt_metal::CircularBufferConfig final_tilize_output_cb_config = tt_metal::CircularBufferConfig(num_tiles_final_tilize_output_cb * output_single_tile_size, {{final_tilize_output_cb_index, output_cb_data_format}})
 		.set_page_size(final_tilize_output_cb_index, output_single_tile_size);
     final_tilize_output_cb_config = final_tilize_output_cb_config.set_globally_allocated_address(*output.buffer());

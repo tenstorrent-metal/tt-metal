@@ -95,6 +95,10 @@ tuple<CircularBufferID, CircularBufferID> create_CBs(tt_metal::Program &program,
     if (input.memory_config().is_sharded()) {
         uint32_t num_bytes_for_df = datum_size(act_df);
         auto shard_shape = input.shard_spec().value().shard_shape;
+        if (shard_shape[0] * shard_shape[1] * num_bytes_for_df < input.buffer()->size()) {
+            std::cout << "conv optimized cb_sharded_act cb smaller than buffer" << std::endl;
+        }
+
         CircularBufferConfig cb_sharded_act_config = CircularBufferConfig(shard_shape[0] * shard_shape[1] * num_bytes_for_df, {{sharded_act_cb, act_df}})
 		    .set_page_size(sharded_act_cb, shard_shape[1] * num_bytes_for_df);
         // incoming data is the input cb instead of raw l1/dram addr
@@ -133,6 +137,11 @@ tuple<CircularBufferID, CircularBufferID> create_CBs(tt_metal::Program &program,
         CircularBufferConfig cb_output_config = CircularBufferConfig(num_writer_output_tiles * out_tile_size, {{out0_cb, out_df}})
 		    .set_page_size(out0_cb, out_tile_size);
         if (output.memory_config().is_sharded()) {
+
+            if (num_writer_output_tiles * out_tile_size < output.buffer()->size()) {
+                std::cout << "conv optimized cb_output cb smaller than buffer" << std::endl;
+            }
+
             cb_output_config = cb_output_config.set_globally_allocated_address(*output.buffer());
         }
         cb_output = tt_metal::CreateCircularBuffer(program, core, cb_output_config);
@@ -146,6 +155,11 @@ tuple<CircularBufferID, CircularBufferID> create_CBs(tt_metal::Program &program,
 		    .set_page_size(out0_cb, out_tile_size)
             .set_page_size(matmul_partials_cb, out_tile_size);
         if (output.memory_config().is_sharded()) {
+
+            if (num_writer_output_tiles * out_tile_size < output.buffer()->size()) {
+                std::cout << "conv optimized cb_output cb smaller than buffer" << std::endl;
+            }
+
             cb_matmul_partials_config = cb_matmul_partials_config.set_globally_allocated_address(*output.buffer());
         }
         cb_output = tt_metal::CreateCircularBuffer(program, cores, cb_matmul_partials_config);
