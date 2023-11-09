@@ -41,6 +41,8 @@ import torch
         1,
         2,
         8,
+        16,
+        20,
     ),
 )
 @pytest.mark.parametrize("extra_padding_for_32B_alignment", (25,))
@@ -58,12 +60,14 @@ def test_resnet50_first_conv(
     compute_grid_size = device.compute_with_storage_grid_size()
     is_e75_grid_size = (compute_grid_size.x * compute_grid_size.y) == 88
     if N == 8 and is_e75_grid_size:
-        pytest.skip(f"Skipping batch 8 on E75 because expected grid size is 12x9 but E75 grid size is {compute_grid_size}")
-    if N != 8:
+        pytest.skip(
+            f"Skipping batch 8 on E75 because expected grid size is 12x9 but E75 grid size is {compute_grid_size}"
+        )
+    if N < 8:
         pytest.skip("Skipping non-batch 8 tests due to potential non-determinism")
     if N == 8 and is_wormhole_b0():
         pytest.skip("Parallelization unsupported for WH B0")
-    if sharded_out and N != 8:
+    if sharded_out and N < 8:
         pytest.skip("Tensor sharding unsupported for shape")
     (K, C, padded_C, H, W, R, S, padded_S, stride_h, stride_w, pad_h, pad_w) = (
         64,
@@ -122,6 +126,20 @@ def test_resnet50_first_conv(
             act_block_h_datums = 1024
             grid_size = (12, 9)
             per_core_out_h_ntiles = 32
+            # act_block_h_datums = 256
+            # grid_size = (7,8)
+            # per_core_out_h_ntiles = 56
+        elif N == 16:
+            act_block_h_datums = 2048
+            grid_size = (12, 9)
+            per_core_out_h_ntiles = 64
+            # act_block_h_datums = 256
+            # grid_size = (7,8)
+            # per_core_out_h_ntiles = 56
+        elif N == 20:
+            act_block_h_datums = 2336
+            grid_size = (12, 9)
+            per_core_out_h_ntiles = 73
             # act_block_h_datums = 256
             # grid_size = (7,8)
             # per_core_out_h_ntiles = 56
@@ -223,7 +241,9 @@ def test_resnet50_first_conv(
             output_mem_config,
         )
         if sharded_out:
-            out = ttl.tensor.sharded_to_interleaved(out, memory_config)
+            out = ttl.tensor.sharded_to_interleaved(
+                out, ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM)
+            )
 
         if not untilize_out:
             out_unpadded_shape = [1, 1, N * OH * OW, K]

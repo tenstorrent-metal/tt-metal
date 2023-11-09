@@ -544,7 +544,7 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
         num_weight_cb_tiles = weight_block_h_ntiles * weight_block_w_ntiles * num_blocks_weight_w * num_blocks_act_w;
     }
     if (conv_act_size_c / conv_act_c_blocks < 256) {
-        num_act_cb_tiles = num_act_cb_tiles * 2; // double buffered
+        num_act_cb_tiles = num_act_cb_tiles; // double buffered
     }
     uint32_t writer_output_block_num_tiles = out_block_h_ntiles * weight_block_w_ntiles;
 

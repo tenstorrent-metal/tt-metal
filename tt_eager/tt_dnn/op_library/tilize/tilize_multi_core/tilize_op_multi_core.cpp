@@ -385,7 +385,7 @@ operation::ProgramWithCallbacks tilize_multi_core_sharded(const Tensor &input, T
 
     tt_metal::Device *device = input.device();
 
-    auto shard_spec = input.shard_spec().value();
+    auto shard_spec = output.shard_spec().value();
     uint32_t num_tiles_per_shard = shard_spec.shard_shape[0] * shard_spec.shard_shape[1] / TILE_HW;
     uint32_t num_tiles_per_row = shard_spec.shard_shape[1] / TILE_WIDTH;
     auto all_cores = shard_spec.shard_grid;

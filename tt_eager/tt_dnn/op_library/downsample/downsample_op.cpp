@@ -464,14 +464,14 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
     // CB to store halo data
     // hardcode to store 1 row of tiles
     uint32_t halo_prev_input_cb_index = CB::c_in1;
-    uint32_t halo_prev_input_cb_max_rows_of_tiles = 4;
+    uint32_t halo_prev_input_cb_max_rows_of_tiles = 8;
     uint32_t num_halo_prev_cb_input_tiles = num_input_tiles_in_row  * halo_prev_input_cb_max_rows_of_tiles;
     tt_metal::CircularBufferConfig halo_prev_input_cb_config = tt_metal::CircularBufferConfig(num_halo_prev_cb_input_tiles * input_single_tile_size, {{halo_prev_input_cb_index, input_cb_data_format}})
 		.set_page_size(halo_prev_input_cb_index, input_single_tile_size);
     auto halo_prev_input_cb = tt_metal::CreateCircularBuffer(program, core_range, halo_prev_input_cb_config);
 
     uint32_t halo_next_input_cb_index = CB::c_in2;
-    uint32_t halo_next_input_cb_max_rows_of_tiles = 12; // TODO: Remove hardcoding
+    uint32_t halo_next_input_cb_max_rows_of_tiles = 40; // TODO: Remove hardcoding
     uint32_t num_halo_next_cb_input_tiles = num_input_tiles_in_row  * halo_next_input_cb_max_rows_of_tiles;
     tt_metal::CircularBufferConfig halo_next_input_cb_config = tt_metal::CircularBufferConfig(num_halo_next_cb_input_tiles * input_single_tile_size, {{halo_next_input_cb_index, input_cb_data_format}})
 		.set_page_size(halo_next_input_cb_index, input_single_tile_size);

@@ -145,6 +145,9 @@ uint32_t get_num_cores(CoreCoord grid_size, uint32_t out_nhw) {
         case 50176: // nbatch = 16
             ncores = 98;
             break;
+        case 62720: // nbatch = 16
+            ncores = 98;
+            break;
         case 784:   // test case
             ncores = 49;
             break;

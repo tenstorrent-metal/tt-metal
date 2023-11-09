@@ -110,11 +110,12 @@ void MemoryReporter::flush_program_memory_usage(const Program &program, const De
 
 void MemoryReporter::dump_memory_usage_state(const Device *device) const {
     std::ofstream memory_usage_summary_report, l1_usage_summary_report, detailed_memory_usage_report;
-
+    static uint32_t i = 0;
     fs::create_directories(metal_reports_dir());
-    memory_usage_summary_report.open(metal_reports_dir() + "memory_usage_summary.csv");
-    l1_usage_summary_report.open(metal_reports_dir() + "l1_usage_summary.csv");
-    detailed_memory_usage_report.open(metal_reports_dir() + "detailed_memory_usage.csv");
+    memory_usage_summary_report.open(metal_reports_dir() + std::to_string(i) + "_memory_usage_summary.csv");
+    l1_usage_summary_report.open(metal_reports_dir() + std::to_string(i) + "_l1_usage_summary.csv");
+    detailed_memory_usage_report.open(metal_reports_dir() + std::to_string(i) + "_detailed_memory_usage.csv");
+    i++;
 
     write_headers(memory_usage_summary_report, l1_usage_summary_report, /*add_program_id=*/false);
     populate_reports(device, memory_usage_summary_report, detailed_memory_usage_report, l1_usage_summary_report);

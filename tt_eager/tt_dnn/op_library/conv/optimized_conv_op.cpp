@@ -4,6 +4,7 @@
 
 #include "tt_dnn/op_library/conv/optimized_conv_op.hpp"
 #include "tt_dnn/op_library/eltwise_unary/eltwise_unary_op.hpp"
+#include "tt_metal/detail/reports/memory_reporter.hpp"
 
 #include "tt_metal/host_api.hpp"
 #include "tt_metal/detail/tt_metal.hpp"
