@@ -32,7 +32,7 @@ namespace kernel_profiler{
     constexpr static uint32_t PADDING_MARKER = ((1<<16) - 1);
     constexpr static uint32_t NOC_ALIGNMENT_FACTOR = 4;
 
-    enum BufferIndex {FW_START, FW_START_L, KERNEL_START, KERNEL_START_L, KERNEL_END, KERNEL_END_L, FW_END, FW_END_L, CUSTOM_MARKERS};
+    enum BufferIndex {ID, ID_L, FW_START, FW_START_L, KERNEL_START, KERNEL_START_L, KERNEL_END, KERNEL_END_L, FW_END, FW_END_L, CUSTOM_MARKERS};
     enum ControlBuffer
     {
         HOST_BUFFER_END_INDEX_BR,

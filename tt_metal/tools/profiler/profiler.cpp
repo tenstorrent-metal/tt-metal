@@ -145,7 +145,7 @@ void Profiler::readRiscProfilerResults(
                 bufferEndIndex = PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC;
             }
 
-            for (int index = bufferRiscShift; index < (bufferRiscShift + bufferEndIndex); index += PROFILER_L1_MARKER_UINT32_SIZE)
+            for (int index = bufferRiscShift + kernel_profiler::FW_START; index < (bufferRiscShift + bufferEndIndex); index += PROFILER_L1_MARKER_UINT32_SIZE)
             {
                 uint32_t marker = (profile_buffer[index] & 0xFFFF0000) >> 16;
                 uint32_t time_H = profile_buffer[index] & 0x0000FFFF;
@@ -157,7 +157,7 @@ void Profiler::readRiscProfilerResults(
                         worker_core.y,
                         riscNum,
                         (uint64_t(time_H) << 32) | time_L,
-                        marker+1);
+                        marker);
             }
         }
     }

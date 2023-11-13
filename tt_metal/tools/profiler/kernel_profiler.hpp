@@ -45,7 +45,6 @@ namespace kernel_profiler{
     inline __attribute__((always_inline)) void init_profiler()
     {
 #if defined(PROFILE_KERNEL)
-
         volatile uint32_t *profiler_control_buffer = reinterpret_cast<uint32_t*>(PROFILER_L1_BUFFER_CONTROL);
         profiler_control_buffer[deviceBufferEndIndex] = 0;
 
@@ -82,7 +81,7 @@ namespace kernel_profiler{
         uint32_t time_H = ckernel::reg_read(RISCV_DEBUG_REG_WALL_CLOCK_H);
 #endif
         volatile tt_l1_ptr uint32_t *buffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(profilerBuffer);
-        buffer[index] = ((time_H & 0x0000FFFF) | (index << 15)); // index is devided by 2
+        buffer[index] = ((time_H & 0x0000FFFF) | (index << 15)); // index is 2x marker ID so one less shift, divide by 2
         buffer[index+1] = time_L;
 #endif //PROFILE_KERNEL
     }
@@ -165,7 +164,6 @@ namespace kernel_profiler{
         uint32_t core_flat_id = get_flat_id(dram_noc_x, dram_noc_y);
 
         finish();
-
 
         int hostIndex;
         int deviceIndex;
