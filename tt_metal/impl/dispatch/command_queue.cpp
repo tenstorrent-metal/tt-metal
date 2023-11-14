@@ -331,6 +331,8 @@ void EnqueueReadBufferCommand::process() {
     uint32_t cmd_size = DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + data_size_in_bytes;
 
     this->writer.cq_reserve_back(this->device, cmd_size);
+
+//ADD SHARD, do one page at at time instead, dev page id in order, host location from mapping stored in buffer object
     this->writer.cq_write(this->device, cmd.get_desc().data(), DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, write_ptr);
     this->writer.cq_push_back(this->device, cmd_size);
 }
@@ -409,6 +411,7 @@ void EnqueueWriteBufferCommand::process() {
         uint32_t num_pages = this->buffer.num_pages();
         uint32_t dst = system_memory_temporary_storage_address;
         for (uint32_t i = 0; i < num_pages; i++) {
+//ADD SHARD SUPPORT, instead of going in order, use the host_page from dev_page mapping
             vector<uint32_t> src_page(src_iterator, src_iterator + num_u32s_in_page);
             this->writer.cq_write(this->device, src_page.data(), src_page.size() * sizeof(uint32_t), dst);
             src_iterator += num_u32s_in_page;

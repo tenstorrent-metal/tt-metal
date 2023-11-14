@@ -381,6 +381,7 @@ void Cluster::write_dram_vec(vector<uint32_t> &vec, tt_target_dram dram, uint64_
         d_subchannel < desc_to_use.dram_cores.at(d_chan).size(),
         "Trying to address dram sub channel that doesnt exist in the device descriptor");
     tt_cxy_pair dram_core = tt_cxy_pair(chip_id, desc_to_use.get_core_for_dram_channel(d_chan, d_subchannel));
+
     size_t offset = desc_to_use.get_address_offset(d_chan);
         write_dram_vec(vec, dram_core, addr + offset, small_access);
 }
@@ -412,6 +413,7 @@ void Cluster::write_dram_vec(
             soc_desc, {dram_core.x, dram_core.y}, addr, len * sizeof(uint32_t));
     }
     tt_cxy_pair virtual_dram_core = soc_desc.convert_to_umd_coordinates(dram_core);
+
     this->device_->write_to_device(mem_ptr, len, virtual_dram_core, addr, "LARGE_WRITE_TLB");
     if (this->device_->get_target_remote_device_ids().find(virtual_dram_core.chip) !=
         this->device_->get_target_remote_device_ids().end()) {

@@ -384,6 +384,42 @@ const inline bool operator==(const CoreRangeSet &a, const CoreRangeSet &b) {
   return false;
 }
 
+inline std::vector<CoreCoord> grid_to_cores(uint32_t num_cores, uint32_t grid_size_x, uint32_t grid_size_y, bool row_wise=false) {
+    std::vector<CoreCoord> cores;
+    cores.reserve(num_cores);
+    TT_ASSERT(num_cores <= grid_size_x * grid_size_y);
+    if (row_wise) {
+        for(uint32_t i = 0; i < num_cores; ++i) {
+            cores.push_back({i % grid_size_x, i / grid_size_x});
+        }
+    } else {
+        for(uint32_t i = 0; i < num_cores; ++i) {
+            cores.push_back({i / grid_size_y, i % grid_size_y});
+        }
+    }
+    return cores;
+}
+
+
+
+
+inline std::vector<CoreCoord> corerange_to_cores(const CoreRangeSet crs, bool row_wise = false){
+
+  std::vector <CoreCoord> all_cores;
+  for(auto core_range : crs.ranges()){
+      auto start_coord = core_range.start;
+      auto end_coord = core_range.end;
+      auto num_cores_x = (end_coord.x+1) - start_coord.x;
+      auto num_cores_y = (end_coord.y+1) - start_coord.y;
+
+      auto cores = grid_to_cores(num_cores_x * num_cores_y, num_cores_x, num_cores_y, row_wise);
+      all_cores.insert(all_cores.end(), cores.begin(), cores.end());
+  }
+
+  return all_cores;
+
+}
+
 const inline bool operator!=(const CoreRangeSet &a, const CoreRangeSet &b) { return !(a == b); }
 
 template <>

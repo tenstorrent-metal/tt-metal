@@ -19,7 +19,7 @@
 #include "common/bfloat16.hpp"
 #include "common/bfloat8.hpp"
 
-#include "tt_stl/reflection.hpp"
+#include "tt_metal/tt_stl/reflection.hpp"
 
 namespace tt {
 
@@ -31,8 +31,8 @@ class Tensor {
         // ======================================================================================
         //                                  Hi Level APIs
         // ======================================================================================
-        Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout, std::optional<ShardSpec> shard_spec);
         Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout);
+        Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout, ShardSpec shard_spec);
 
         Tensor(const Tensor &other) = default;
         Tensor& operator=(const Tensor &other) = default;
@@ -45,6 +45,7 @@ class Tensor {
         void deallocate(bool force=false);
 
         Tensor to(Device *target_device, const MemoryConfig &mem_config={.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) const;
+        Tensor to(Device *target_device, const MemoryConfig &mem_config, const ShardSpec & shard_spec) const;
 
         Tensor to(Layout target_layout) const;
 
@@ -106,6 +107,7 @@ class Tensor {
                 std::cref(this->shard_spec_));
         }
 
+        std::vector<uint32_t> host_page_ordering();
     private:
         Storage storage_;
         Shape shape_;

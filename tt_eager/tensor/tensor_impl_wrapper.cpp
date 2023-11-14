@@ -5,6 +5,7 @@
 #include "tensor/tensor_impl_wrapper.hpp"
 
 #include "common/bfloat16.hpp"
+#include <bitset>
 
 namespace tt {
 
@@ -16,7 +17,8 @@ uint32_t element_size_bytes_wrapper(DataType dtype) {
     const static std::map<DataType, std::function<uint32_t()>> element_size_bytes_map = {
         {DataType::BFLOAT16, &element_size_bytes<bfloat16>},
         {DataType::FLOAT32, &element_size_bytes<float>},
-        {DataType::UINT32, &element_size_bytes<uint32_t>}
+        {DataType::UINT32, &element_size_bytes<uint32_t>},
+        {DataType::BFLOAT8_B, &element_size_bytes<std::byte>}
     };
     return element_size_bytes_map.at(dtype)();
 }
@@ -42,13 +44,27 @@ Tensor to_host_wrapper(const Tensor &tensor) {
 }
 
 Tensor to_device_wrapper(const Tensor &tensor, Device *target_device, const MemoryConfig &mem_config) {
-    const static std::map<DataType, std::function<Tensor(const Tensor &, Device *, const MemoryConfig &)>> to_device_map = {
+    const static std::unordered_map<DataType, std::function<Tensor(const Tensor &, Device *, const MemoryConfig &)>> to_device_map = {
         {DataType::BFLOAT16, &to_device<bfloat16>},
         {DataType::FLOAT32, &to_device<float>},
         {DataType::UINT32, &to_device<uint32_t>},
         {DataType::BFLOAT8_B, &to_device<uint32_t>}
     };
+    TT_ASSERT((to_device_map.find(tensor.dtype()) != to_device_map.end())
+        && "Incorrect datatype");
     return to_device_map.at(tensor.dtype())(tensor, target_device, mem_config);
+}
+
+
+
+Tensor to_device_wrapper_sharded(const Tensor &tensor, Device *target_device, const MemoryConfig &mem_config, const ShardSpec & shard_spec) {
+    const static std::unordered_map<DataType, std::function<Tensor(const Tensor &, Device *, const MemoryConfig &, const ShardSpec &)>> to_device_map = {
+        {DataType::BFLOAT16, &to_device_sharded<bfloat16>},
+        {DataType::FLOAT32, &to_device_sharded<float>},
+        {DataType::UINT32, &to_device_sharded<uint32_t>},
+        {DataType::BFLOAT8_B, &to_device_sharded<uint32_t>}
+    };
+    return to_device_map.at(tensor.dtype())(tensor, target_device, mem_config, shard_spec);
 }
 
 Tensor to_layout_wrapper(const Tensor &tensor, Layout target_layout) {

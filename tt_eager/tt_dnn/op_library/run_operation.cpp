@@ -11,7 +11,7 @@
 #include "tt_metal/detail/tt_metal.hpp"
 #include "tt_numpy/functions.hpp"
 
-#include "tt_stl/reflection.hpp"
+#include "tt_metal/tt_stl/reflection.hpp"
 
 #include "third_party/magic_enum/magic_enum.hpp"
 #include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"

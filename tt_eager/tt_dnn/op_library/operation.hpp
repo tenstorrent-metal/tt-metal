@@ -12,8 +12,8 @@
 
 #include "tt_metal/host_api.hpp"
 #include "tt_metal/impl/program.hpp"
-#include "tt_stl/concepts.hpp"
-#include "tt_stl/reflection.hpp"
+#include "tt_metal/tt_stl/concepts.hpp"
+#include "tt_metal/tt_stl/reflection.hpp"
 
 namespace tt {
 
