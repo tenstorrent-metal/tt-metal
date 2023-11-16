@@ -91,13 +91,49 @@ namespace operations {
 using namespace tt_metal;
 
 namespace primary {
-inline Tensor layernorm(const Tensor &a, float eps, std::optional<const Tensor> gamma = std::nullopt, std::optional<const Tensor> beta = std::nullopt, const MemoryConfig& mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG) {
-    return operation::run(LayerNorm{.eps=eps, .output_mem_config=mem_config}, {a}, {std::nullopt, gamma, beta}).at(0);
+struct LayerNormShardedDefaultProgramConfig{
+    tt::stl::reflection::Attributes attributes() const { return {}; };
+};
+struct LayerNormShardedMultiCoreProgramConfig {
+    CoreCoord compute_with_storage_grid_size;
+    std::size_t subblock_w;
+    std::size_t block_h;
+    std::size_t block_w;
+    MathFidelity math_fidelity;
+    DataType data_format;
+
+    tt::stl::reflection::Attributes attributes() const;
+};
+
+
+using LayerNormShardedProgramConfig = std::variant<
+    LayerNormShardedDefaultProgramConfig,
+    LayerNormShardedMultiCoreProgramConfig
+>;
+
+struct LayerNorm {
+    float eps;
+    MemoryConfig output_mem_config;
+    tt::operations::primary::LayerNormShardedProgramConfig program_config;
+
+    void validate(const std::vector<Tensor> &input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) const;
+    std::vector<Shape> compute_output_shapes(const std::vector<Tensor> &input_tensors) const;
+    std::vector<Tensor> create_output_tensors(const std::vector<Tensor> &input_tensors) const;
+    operation::ProgramWithCallbacks create_program(
+        const std::vector<Tensor>& input_tensors,
+        const std::vector<std::optional<const Tensor>>& optional_input_tensors,
+        std::vector<Tensor> &output_tensors
+    ) const;
+    tt::stl::reflection::Attributes attributes() const;
+};
+
+inline Tensor layernorm(const Tensor &a, float eps, std::optional<const Tensor> gamma = std::nullopt, std::optional<const Tensor> beta = std::nullopt, const MemoryConfig& mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, const LayerNormShardedProgramConfig& program_config = LayerNormShardedDefaultProgramConfig{}) {
+    return operation::run(LayerNorm{.eps=eps, .output_mem_config=mem_config, .program_config=program_config}, {a}, {std::nullopt, gamma, beta}).at(0);
 }
 
 // computes layernorm(a+b)*gamma+beta
-inline Tensor add_layernorm(const Tensor &a, const Tensor& b, float eps, std::optional<const Tensor> gamma = std::nullopt, std::optional<const Tensor> beta = std::nullopt, const MemoryConfig& mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG) {
-    return operation::run(LayerNorm{.eps=eps, .output_mem_config=mem_config}, {a}, {b, gamma, beta}).at(0);
+inline Tensor add_layernorm(const Tensor &a, const Tensor& b, float eps, std::optional<const Tensor> gamma = std::nullopt, std::optional<const Tensor> beta = std::nullopt, const MemoryConfig& mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, const LayerNormShardedProgramConfig& program_config = LayerNormShardedDefaultProgramConfig{}) {
+    return operation::run(LayerNorm{.eps=eps, .output_mem_config=mem_config, .program_config=program_config}, {a}, {b, gamma, beta}).at(0);
 }
 }  // namespace primary
 

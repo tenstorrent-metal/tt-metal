@@ -250,6 +250,20 @@ void py_module(py::module& m_primary) {
         )doc"
     );
 
+    py::class_<LayerNormShardedDefaultProgramConfig>(m_primary, "LayerNormShardedDefaultProgramConfig")
+        .def(py::init<>());
+
+    py::class_<LayerNormShardedMultiCoreProgramConfig>(m_primary, "LayerNormShardedMultiCoreProgramConfig")
+        .def(
+            py::init<CoreCoord, std::size_t, std::size_t, std::size_t, MathFidelity, DataType>(),
+            py::kw_only(),
+            py::arg("compute_with_storage_grid_size"),
+            py::arg("subblock_w").noconvert(),
+            py::arg("block_h").noconvert(),
+            py::arg("block_w").noconvert(),
+            py::arg("math_fidelity").noconvert() = MathFidelity::HiFi4,
+            py::arg("data_format").noconvert()
+        );
 
     m_primary.def(
         "layernorm",
@@ -259,6 +273,7 @@ void py_module(py::module& m_primary) {
         py::arg("gamma").noconvert() = std::nullopt,
         py::arg("beta").noconvert() = std::nullopt,
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+        py::arg("program_config").noconvert() = LayerNormShardedDefaultProgramConfig{},
         R"doc(
             Performs a layernorm operation on the last tensor dimension with optional fused with post-multiplication and addition via W-bcast.
         )doc"
@@ -273,6 +288,7 @@ void py_module(py::module& m_primary) {
         py::arg("gamma").noconvert() = std::nullopt,
         py::arg("beta").noconvert() = std::nullopt,
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+        py::arg("program_config").noconvert() = LayerNormShardedDefaultProgramConfig{},
         R"doc(
             Performs a layernorm(a+b)*gamma + beta operation.
         )doc"
