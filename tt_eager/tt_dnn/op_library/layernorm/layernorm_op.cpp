@@ -967,11 +967,11 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         auto& output_cb_config = GetCircularBufferConfig(program, cb_output);
             output_cb_config.set_globally_allocated_address(*dst_buffer);
 
-        int i=0;
+        int index=0;
         for (uint32_t i = 0; i < num_cores; ++i) {
             CoreCoord core = {i % grid_size.x, i / grid_size.x};
 
-            auto writer_kernel_id = writer_kernel_ids.at(i);
+            auto writer_kernel_id = writer_kernel_ids.at(index);
 
             auto runtime_args = GetRuntimeArgs(program, writer_kernel_id, core);
 
@@ -981,7 +981,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
             if (beta_tensor.has_value()) {
                 runtime_args[4] = beta_tensor.value().buffer()->address();
             }
-            i++;
+            index++;
         }
     };
 
