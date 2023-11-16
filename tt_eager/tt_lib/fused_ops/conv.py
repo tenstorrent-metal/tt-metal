@@ -6,6 +6,125 @@ from typing import List, Union
 from .. import tensor, operations
 from ..utils import _nearest_32, _nearest_y
 import torch
+import numpy
+
+
+def compute_conv_output_shape(conv_params, x_shape):
+    H = x_shape[1]
+    W = x_shape[2]
+    K, C, R, S, U, V, P_H, P_W, dilation, groups = [conv_params[i] for i in range(10)]
+    OH = ((int)((H - R + 2 * P_H) / U)) + 1
+    OW = ((int)((W - S + 2 * P_W) / V)) + 1
+    return [x_shape[0], OH, OW, K]
+
+
+def conv_op_trace(conv_params, input_nhwc_shape):
+    assert len(conv_params) == 10
+    output_channels, input_channels, filter_h, filter_w, stride_h, stride_w, pad_h, pad_w, dilation, groups = [
+        conv_params[i] for i in range(10)
+    ]
+    assert dilation == 1 and groups == 1
+    assert len(input_nhwc_shape) == 4
+    input_n, input_h, input_w, input_c = [input_nhwc_shape[i] for i in range(4)]
+    # indices in the following arrays are channel/stick indices
+    # data indices array contains the input indices corresponding to the top left corner of filter window
+    data_indices = []
+
+    # 2 lists -
+    # data_start_size holds start stick index and size for contigious sticks in tensor
+    # pad_start_size holds start stick index and size for contingous padding sticks
+    # stick indices in data_start_size are after pad insertion
+    # Example for input of 4x8 and pad = 1
+
+    # image 1 data (example sequential integer data)
+    # 1  2  3  4  5  6  7  8
+    # 9  10 11 12 13 14 15 16
+    # 17 18 19 20 21 22 23 24
+    # 25 26 27 28 29 30 31 32
+
+    # image 2 data (example sequential integer data)
+    # 33 34 35 36 37 38 39 40
+    # 41 42 43 44 45 46 47 48
+    # 49 50 51 52 53 54 55 56
+    # 57 58 59 60 61 62 63 64
+
+    # Concatenated image data (example sequential integer data from above)
+    # Inserted padding above and between and on the sides of the images (pad = 1)
+    # 0  0  0  0  0  0  0  0  0 0
+    # 0  1  2  3  4  5  6  7  8 0
+    # 0  9 10 11 12 13 14 15 16 0
+    # 0 17 18 19 20 21 22 23 24 0
+    # 0 25 26 27 28 29 30 31 32 0
+    # 0  0  0  0  0  0  0  0  0 0
+    # 0 33 34 35 36 37 38 39 40 0
+    # 0 41 42 43 44 45 46 47 48 0
+    # 0 49 50 51 52 53 54 55 56 0
+    # 0 57 58 59 60 61 62 63 64 0
+    # 0  0  0  0  0  0  0  0  0 0
+
+    # We encode the above shown padded tensor via 2 lists -
+    # pad_start_size: [(0, 11), (20, 2), ... ]
+    # data_start_size: [(11, 8), (22, 8), ... ]
+
+    data_start_size = []
+    pad_start_size = []
+
+    # image padding
+    padded_input_h = input_h + (2 * pad_h)
+    padded_input_w = input_w + (2 * pad_w)
+
+    def update_start_size_list_and_coalesce(start_size_list, new_start, new_size):
+        if len(start_size_list) > 0 and start_size_list[-1][0] == new_start - 1:
+            start_size_list[-1][1] += new_size
+        else:
+            start_size_list.append([new_start, new_size])
+
+    # trace the image and collect padding and data start and sizes
+    # also, populate pad_input - for every index in holistic padded tensor, specify pad is true or false
+    pad_input = []
+    channel_idx = 0
+    for n in range(input_n):
+        # top padding
+        if pad_h > 0:
+            if n == 0:
+                # add top padding only for first image
+                pad_start_size.append([channel_idx, pad_h * padded_input_w])
+                pad_input.extend([True] * pad_h * padded_input_w)
+                channel_idx += pad_h * padded_input_w
+        for ih in range(pad_h, input_h + pad_h):
+            if pad_w > 0:
+                # left padding
+                update_start_size_list_and_coalesce(pad_start_size, channel_idx, pad_w)
+                pad_input.extend([True] * pad_w)
+                channel_idx += pad_w
+            update_start_size_list_and_coalesce(data_start_size, channel_idx, input_w)
+            pad_input.extend([False] * input_w)
+            channel_idx += input_w
+            if pad_w > 0:
+                # right padding
+                update_start_size_list_and_coalesce(pad_start_size, channel_idx, pad_w)
+                pad_input.extend([True] * pad_w)
+                channel_idx += pad_w
+        # bottom padding
+        if pad_h > 0:
+            update_start_size_list_and_coalesce(pad_start_size, channel_idx, pad_h * padded_input_w)
+            pad_input.extend([True] * pad_h * padded_input_w)
+            channel_idx += pad_h * padded_input_w
+    assert len(pad_input) == channel_idx
+    # output image size
+    [output_n, output_h, output_w, output_c] = compute_conv_output_shape(conv_params, input_nhwc_shape)
+    assert input_n == output_n
+
+    # trace index of the top-left position of sliding window in the padded output tensor == channel_idx
+    for n in range(input_n):
+        for oh in range(output_h):
+            for ow in range(output_w):
+                ih = oh * stride_h
+                iw = ow * stride_w
+                channel_idx = (n * (input_h + pad_h) * padded_input_w) + (ih * padded_input_w) + iw
+                data_indices.append(channel_idx)
+
+    return data_indices, pad_input, data_start_size, pad_start_size
 
 
 def conv(weight: List[Union[int, float]], conv_params, device, bias=None):
