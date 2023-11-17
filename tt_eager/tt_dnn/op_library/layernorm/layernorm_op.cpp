@@ -509,7 +509,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     Tensor& output,
     float eps,
     MathFidelity fidelity,
-    DataType data_format,
+    DataType im_data_format,
     CoreCoord grid_size,
     uint32_t subblock_wt,
     uint32_t block_ht,
@@ -518,7 +518,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     // convert data format
     tt::DataFormat in_data_format = tt_metal::datatype_to_dataformat_converter(a.dtype());
     tt::DataFormat out_data_format = tt_metal::datatype_to_dataformat_converter(output.dtype());
-    tt::DataFormat cb_data_format = tt_metal::datatype_to_dataformat_converter(data_format);
+    tt::DataFormat cb_data_format = tt_metal::datatype_to_dataformat_converter(im_data_format);
     // tile sizes
     uint32_t in_single_tile_size = tt_metal::detail::TileSize(in_data_format);
     uint32_t single_tile_size = tt_metal::detail::TileSize(cb_data_format);
@@ -621,10 +621,10 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     std::map<string, string> reader_mcast_sender_defines;
     std::map<string, string> reader_mcast_receiver_defines;
     if (b) {
-        if (b.value().memory_config().is_sharded()) {
-            reader_mcast_sender_defines["IN1_SHARDED"] = "1";
-            reader_mcast_receiver_defines["IN1_SHARDED"] = "1";
-        }
+        // if (b.value().memory_config().is_sharded()) {
+        //     reader_mcast_sender_defines["IN1_SHARDED"] = "1";
+        //     reader_mcast_receiver_defines["IN1_SHARDED"] = "1";
+        // }
         reader_mcast_sender_defines["FUSE_PRE_ADD"] = "1";
         reader_mcast_receiver_defines["FUSE_PRE_ADD"] = "1";
     }
@@ -1053,14 +1053,15 @@ std::vector<Tensor> LayerNorm::create_output_tensors(const std::vector<Tensor> &
                 uint32_t num_cores_y = program_config.compute_with_storage_grid_size.y;
                 uint32_t per_core_M = M / num_cores_x;
                 uint32_t per_core_N = K / num_cores_y;
-                DataType data_format = program_config.data_format;
+                DataType im_data_format = program_config.im_data_format;
+                DataType out_data_format = program_config.out_data_format;
 
                 CoreRangeSet all_cores({});
                 ShardOrientation shard_orientation;
                 all_cores = CoreRangeSet({CoreRange{.start={0, 0}, .end={num_cores_x - 1, num_cores_y - 1}}});
                 shard_orientation = ShardOrientation::COL_MAJOR;
                 ShardSpec shard_spec = ShardSpec{.shard_grid=all_cores, .shard_shape={per_core_M * TILE_HEIGHT, per_core_N * TILE_WIDTH}, .shard_orientation=shard_orientation};
-                return {create_sharded_device_tensor(this->compute_output_shapes(input_tensors).at(0), DataType::BFLOAT16, Layout::TILE, input_tensor.device(), this->output_mem_config, shard_spec)};
+                return {create_sharded_device_tensor(this->compute_output_shapes(input_tensors).at(0), out_data_format, Layout::TILE, input_tensor.device(), this->output_mem_config, shard_spec)};
             } else {
                 return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.dtype(), Layout::TILE, this->output_mem_config);
             }
@@ -1093,7 +1094,7 @@ operation::ProgramWithCallbacks LayerNorm::create_program(
                 return layernorm_sharded_(
                                             a, b, gamma, beta, output_tensor, this->eps,
                                             fidelity,
-                                            program_config.data_format,
+                                            program_config.im_data_format,
                                             grid_size,
                                             program_config.subblock_w,
                                             program_config.block_h,
