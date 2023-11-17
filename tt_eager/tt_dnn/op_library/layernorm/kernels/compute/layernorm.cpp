@@ -29,9 +29,7 @@ void MAIN {
     constexpr uint32_t subblock_w                     = get_compile_time_arg_val(6);
     constexpr uint32_t num_subblocks_w                = get_compile_time_arg_val(7);
 
-    // binary_op_init_common(tt::CB::c_in0, tt::CB::c_in0);
     binary_op_init_common_with_dt(tt::CB::c_in0, tt::CB::c_in0, tt::CB::c_intermed0);
-    // pack_reconfig_data_format(tt::CB::c_intermed0);
 
     constexpr uint32_t dst0 = 0;
     constexpr uint32_t scaler0 = 0;
@@ -273,53 +271,6 @@ void MAIN {
         cb_pop_front(cb_ex2pe, 1);
         cb_pop_front(cb_xmm, block_w);
         cb_wait_front(cb_im, block_w);
-
-        // cb_wait_front(cb_xmm, block_w);
-        // mul_bcast_cols_init_short();
-        // index_subblock_w_offset = 0;
-        // for (uint32_t j = 0; j < num_subblocks_w; j++) {
-        //     tile_regs_acquire();
-        //     for (uint32_t w = 0; w < subblock_w; w++) {
-        //         index = w + index_subblock_w_offset;
-        //         mul_tiles_bcast_cols(cb_xmm, cb_ex2pe, index, 0, w);
-        //     }
-        //     tile_regs_commit();
-        //     cb_reserve_back(cb_fusion, subblock_w);
-        //     tile_regs_wait();
-        //     for (uint32_t i = 0; i < subblock_w; i++) {
-        //         pack_tile(i, cb_fusion);
-        //     }
-        //     tile_regs_release();
-        //     cb_push_back(cb_fusion, subblock_w);
-        //     index_subblock_w_offset += subblock_w;
-        // }
-        // cb_pop_front(cb_ex2pe, 1);
-        // cb_pop_front(cb_xmm, block_w);
-        // cb_wait_front(cb_fusion, block_w);
-        // UNPACK(( DPRINT  << TSLICE(cb_fusion, 0, SliceRange::h0_w0_32()) << ENDL()  ));
-
-        // data copy
-        // copy_tile_init();
-        // pack_reconfig_data_format(cb_out);
-        // index_subblock_w_offset = 0;
-        // for (uint32_t j = 0; j < num_subblocks_w; j++) {
-        //     tile_regs_acquire();
-        //     for (uint32_t w = 0; w < subblock_w; w++) {
-        //         index = w + index_subblock_w_offset;
-        //         copy_tile(cb_fusion, index, w);
-        //     }
-        //     tile_regs_commit();
-        //     cb_reserve_back(cb_out, subblock_w);
-        //     tile_regs_wait();
-        //     for (uint32_t i = 0; i < subblock_w; i++) {
-        //         pack_tile(i, cb_out);
-        //     }
-        //     tile_regs_release();
-        //     cb_push_back(cb_out, subblock_w);
-        //     index_subblock_w_offset += subblock_w;
-        // }
-        // cb_wait_front(cb_out, block_w);
-        // UNPACK(( DPRINT  << TSLICE(cb_out, 0, SliceRange::h0_w0_32()) << ENDL()  ));
 
         if constexpr(do_gamma) {
             if constexpr(do_beta == 0) {

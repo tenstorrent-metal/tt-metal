@@ -619,10 +619,6 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     std::map<string, string> reader_mcast_sender_defines;
     std::map<string, string> reader_mcast_receiver_defines;
     if (b) {
-        // if (b.value().memory_config().is_sharded()) {
-        //     reader_mcast_sender_defines["IN1_SHARDED"] = "1";
-        //     reader_mcast_receiver_defines["IN1_SHARDED"] = "1";
-        // }
         reader_mcast_sender_defines["FUSE_PRE_ADD"] = "1";
         reader_mcast_receiver_defines["FUSE_PRE_ADD"] = "1";
     }
