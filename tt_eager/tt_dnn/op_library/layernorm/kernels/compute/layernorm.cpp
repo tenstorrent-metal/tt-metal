@@ -15,7 +15,7 @@
 #include "compute_kernel_api/bcast.h"
 #include "compute_kernel_api/eltwise_binary.h"
 #include "compute_kernel_api/layernorm.h"
-
+#include "compute_kernel_api/tile_move_copy.h"
 
 namespace NAMESPACE {
 void MAIN {
@@ -92,6 +92,8 @@ void MAIN {
         }
         cb_wait_front(cb_in, block_w+index_h_offset);
         unpack_reconfig_data_format(tt::CB::c_intermed0, tt::CB::c_intermed0);
+        // pack_reconfig_data_format(tt::CB::c_in0);
+        // pack_reconfig_data_format(tt::CB::c_intermed0);
         #endif
 
         // E[x],
@@ -110,6 +112,9 @@ void MAIN {
         cb_push_back(cb_ex_partial, 1);
         index_h_offset += block_w;
     }
+
+    // cb_wait_front(cb_ex_partial, 2);
+    // UNPACK(( DPRINT  << TSLICE(cb_ex_partial, 0, SliceRange::h0_w0_32()) << ENDL()  ));
 
     // global reduce, cb_ex <-- cb_ex_external, cb_ex_partial
     if constexpr(is_top_row) {
@@ -247,34 +252,76 @@ void MAIN {
         cb_wait_front(cb_ex2pe, 1);
 
         // (x - Ex) * 1/[sqrt(Var + eps)]
+        // cb_wait_front(cb_xmm, block_w);
+        // mul_bcast_cols_init_short();
+        // index_subblock_w_offset = 0;
+        // for (uint32_t j = 0; j < num_subblocks_w; j++) {
+        //     tile_regs_acquire();
+        //     for (uint32_t w = 0; w < subblock_w; w++) {
+        //         index = w + index_subblock_w_offset;
+        //         mul_tiles_bcast_cols(cb_xmm, cb_ex2pe, index, 0, w);
+        //     }
+        //     tile_regs_commit();
+        //     cb_reserve_back(cb_im, subblock_w);
+        //     tile_regs_wait();
+        //     for (uint32_t i = 0; i < subblock_w; i++) {
+        //         pack_tile(i, cb_im);
+        //     }
+        //     tile_regs_release();
+        //     cb_push_back(cb_im, subblock_w);
+        //     index_subblock_w_offset += subblock_w;
+        // }
+        // cb_pop_front(cb_ex2pe, 1);
+        // cb_pop_front(cb_xmm, block_w);
+        // cb_wait_front(cb_im, block_w);
+
 
         cb_wait_front(cb_xmm, block_w);
         mul_bcast_cols_init_short();
-        pack_reconfig_data_format(cb_out);
-        // mul_tiles_init();
         index_subblock_w_offset = 0;
         for (uint32_t j = 0; j < num_subblocks_w; j++) {
             tile_regs_acquire();
             for (uint32_t w = 0; w < subblock_w; w++) {
                 index = w + index_subblock_w_offset;
                 mul_tiles_bcast_cols(cb_xmm, cb_ex2pe, index, 0, w);
-                // mul_tiles(cb_xmm, cb_ex2pe, index, 0, w);
             }
             tile_regs_commit();
-            cb_reserve_back(cb_im, subblock_w);
+            cb_reserve_back(cb_fusion, subblock_w);
             tile_regs_wait();
             for (uint32_t i = 0; i < subblock_w; i++) {
-                pack_tile(i, cb_im);
+                pack_tile(i, cb_fusion);
             }
             tile_regs_release();
-            cb_push_back(cb_im, subblock_w);
+            cb_push_back(cb_fusion, subblock_w);
             index_subblock_w_offset += subblock_w;
         }
         cb_pop_front(cb_ex2pe, 1);
         cb_pop_front(cb_xmm, block_w);
-        cb_wait_front(cb_im, block_w);
+        cb_wait_front(cb_fusion, block_w);
+        UNPACK(( DPRINT  << TSLICE(cb_fusion, 0, SliceRange::h0_w0_32()) << ENDL()  ));
 
-        UNPACK(( DPRINT  << TSLICE(cb_im, 0, SliceRange::h0_w0_32()) << ENDL()  ));
+        // data copy
+        copy_tile_to_dst_init_short_with_dt(cb_out);
+        // pack_reconfig_data_format(cb_out);
+        index_subblock_w_offset = 0;
+        for (uint32_t j = 0; j < num_subblocks_w; j++) {
+            tile_regs_acquire();
+            for (uint32_t w = 0; w < subblock_w; w++) {
+                index = w + index_subblock_w_offset;
+                copy_tile(cb_fusion, index, w);
+            }
+            tile_regs_commit();
+            cb_reserve_back(cb_out, subblock_w);
+            tile_regs_wait();
+            for (uint32_t i = 0; i < subblock_w; i++) {
+                pack_tile(i, cb_out);
+            }
+            tile_regs_release();
+            cb_push_back(cb_out, subblock_w);
+            index_subblock_w_offset += subblock_w;
+        }
+        cb_wait_front(cb_out, block_w);
+        UNPACK(( DPRINT  << TSLICE(cb_out, 0, SliceRange::h0_w0_32()) << ENDL()  ));
 
         // if constexpr(do_gamma) {
         //     // pack_reconfig_data_format(tt::CB::c_out0);

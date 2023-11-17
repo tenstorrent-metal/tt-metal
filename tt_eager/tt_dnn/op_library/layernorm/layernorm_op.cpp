@@ -1058,7 +1058,7 @@ std::vector<Tensor> LayerNorm::create_output_tensors(const std::vector<Tensor> &
                 all_cores = CoreRangeSet({CoreRange{.start={0, 0}, .end={num_cores_x - 1, num_cores_y - 1}}});
                 shard_orientation = ShardOrientation::COL_MAJOR;
                 ShardSpec shard_spec = ShardSpec{.shard_grid=all_cores, .shard_shape={per_core_M * TILE_HEIGHT, per_core_N * TILE_WIDTH}, .shard_orientation=shard_orientation};
-                return {create_sharded_device_tensor(this->compute_output_shapes(input_tensors).at(0), input_tensor.dtype(), Layout::TILE, input_tensor.device(), this->output_mem_config, shard_spec)};
+                return {create_sharded_device_tensor(this->compute_output_shapes(input_tensors).at(0), DataType::BFLOAT16, Layout::TILE, input_tensor.device(), this->output_mem_config, shard_spec)};
             } else {
                 return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.dtype(), Layout::TILE, this->output_mem_config);
             }
