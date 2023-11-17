@@ -98,7 +98,8 @@ struct LayerNormShardedMultiCoreProgramConfig {
     std::size_t block_h;
     std::size_t block_w;
     MathFidelity math_fidelity;
-    DataType data_format;
+    DataType im_data_format;
+    DataType out_data_format;
 
     tt::stl::reflection::Attributes attributes() const;
 };

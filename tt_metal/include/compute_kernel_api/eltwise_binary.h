@@ -25,6 +25,26 @@ namespace ckernel {
  * | icb0           | The identifier of the circular buffer (CB) containing A  | uint32_t | 0 to 31                                        | True     |
  * | icb1           | The identifier of the circular buffer (CB) containing B  | uint32_t | 0 to 31                                        | True     |
  */
+ALWI void binary_op_init_common_with_dt(uint32_t icb0, uint32_t icb1, uint32_t icb2)
+{
+    UNPACK(( llk_setup_operands() ));
+    #ifdef ARCH_GRAYSKULL
+    UNPACK(( llk_unpack_AB_init<BroadcastType::NONE>() ));
+    UNPACK(( llk_unpack_AB_hw_configure_disaggregated<BroadcastType::NONE>(icb0, icb1) ));
+    #else
+    UNPACK(( llk_unpack_AB_init<BroadcastType::NONE>(icb0, icb1) ));
+    UNPACK(( llk_unpack_AB_hw_configure_disaggregated(icb0, icb1) ));
+    #endif
+
+    MATH(( llk_math_pack_sync_init<SYNC>() ));
+
+
+    PACK(( llk_pack_init() ));
+    PACK(( llk_pack_hw_configure_disaggregated<false>(icb2) ));
+    PACK(( llk_setup_outputs() ));
+    PACK(( llk_pack_dest_init<SYNC, DstTileFaceLayout::RowMajor, false>() ));
+}
+
 ALWI void binary_op_init_common(uint32_t icb0, uint32_t icb1)
 {
     UNPACK(( llk_setup_operands() ));
