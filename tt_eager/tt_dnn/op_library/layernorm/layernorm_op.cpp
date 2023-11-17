@@ -514,10 +514,13 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     uint32_t block_wt
 ) {
     // convert data format
-    tt::DataFormat io_format = tt_metal::datatype_to_dataformat_converter(a.dtype());
+    tt::DataFormat in_data_format = tt_metal::datatype_to_dataformat_converter(a.dtype());
+    tt::DataFormat out_data_format = tt_metal::datatype_to_dataformat_converter(output.dtype());
     tt::DataFormat cb_data_format = tt_metal::datatype_to_dataformat_converter(data_format);
     // tile sizes
+    uint32_t in_single_tile_size = tt_metal::detail::TileSize(in_data_format);
     uint32_t single_tile_size = tt_metal::detail::TileSize(cb_data_format);
+    uint32_t out_single_tile_size = tt_metal::detail::TileSize(out_data_format);
     // tensor shape
     const auto shape = a.shape();
     uint32_t M = shape[2];
@@ -565,7 +568,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     // block size for in0 (tensor a)
     uint32_t in0_block_tiles = block_wt * block_ht;
     uint32_t in0_CB_tiles = in0_block_tiles;
-    uint32_t in0_CB_size = in0_CB_tiles * single_tile_size;
+    uint32_t in0_CB_size = in0_CB_tiles * in_single_tile_size;
     // block size for in1 (tensor b)
     uint32_t in1_CB_size = in0_CB_size;
     // in2 - scaler
@@ -573,20 +576,20 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     // in3 - eps
     uint32_t in3_CB_size = single_tile_size;
     // gamma
-    uint32_t in5_CB_size = in0_CB_size / block_ht;
+    uint32_t in5_CB_size = in0_block_tiles * single_tile_size / block_ht;
     // beta
-    uint32_t in6_CB_size = in0_CB_size / block_ht;
+    uint32_t in6_CB_size = in0_block_tiles * single_tile_size / block_ht;
     // itermediate buffers change later
-    uint32_t x_CB_size = in0_CB_size;
-    uint32_t xmm_CB_size = in0_CB_size;
-    uint32_t ex_partial_CB_size = in0_CB_size / block_wt;
+    uint32_t x_CB_size = in0_block_tiles * single_tile_size;
+    uint32_t xmm_CB_size = in0_block_tiles * single_tile_size;
+    uint32_t ex_partial_CB_size = in0_block_tiles * single_tile_size / block_wt;
     uint32_t ex_CB_size = ex_partial_CB_size;
     uint32_t ex_external_CB_size = Kt / block_wt * single_tile_size;
-    uint32_t xmm2_CB_size = in0_CB_size / block_ht;
+    uint32_t xmm2_CB_size = in0_block_tiles * single_tile_size / block_ht;
     uint32_t ex2pe_CB_size = 2 * single_tile_size;
-    uint32_t fusion_CB_size = 2 * in0_CB_size / block_ht;
+    uint32_t fusion_CB_size = 2 * in0_block_tiles * single_tile_size / block_ht;
     // output buffer size
-    uint32_t out_CB_size = in0_CB_size;
+    uint32_t out_CB_size = in0_block_tiles * out_single_tile_size;
 
     ////////////////////////////////////////////////////////////////////////////
     //                      Application Setup
@@ -733,22 +736,16 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     // Create circular buffers
     // in0 sharded
     uint32_t in0_cb_index = CB::c_in0;
-    tt_metal::CircularBufferConfig in0_cb_config = tt_metal::CircularBufferConfig(in0_CB_size, {{in0_cb_index, io_format}})
-		.set_page_size(in0_cb_index, single_tile_size).set_globally_allocated_address(*a.buffer());
+    tt_metal::CircularBufferConfig in0_cb_config = tt_metal::CircularBufferConfig(in0_CB_size, {{in0_cb_index, in_data_format}})
+		.set_page_size(in0_cb_index, in_single_tile_size).set_globally_allocated_address(*a.buffer());
     auto cb_in0 = tt_metal::CreateCircularBuffer(program, all_cores, in0_cb_config);
     // in1 sharded
     uint32_t in1_cb_index = CB::c_in1;
     CircularBufferID cb_in1 = 0;
     if (b) {
-        if (b.value().memory_config().is_sharded()) {
-            tt_metal::CircularBufferConfig in1_cb_config = tt_metal::CircularBufferConfig(in1_CB_size, {{in1_cb_index, io_format}})
-                .set_page_size(in1_cb_index, single_tile_size).set_globally_allocated_address(*b.value().buffer());
-            cb_in1 = tt_metal::CreateCircularBuffer(program, all_cores, in1_cb_config);
-        } else {
-            tt_metal::CircularBufferConfig in1_cb_config = tt_metal::CircularBufferConfig(in1_CB_size, {{in1_cb_index, cb_data_format}})
-                .set_page_size(in1_cb_index, single_tile_size);
-            cb_in1 = tt_metal::CreateCircularBuffer(program, all_cores, in1_cb_config);
-        }
+        tt_metal::CircularBufferConfig in1_cb_config = tt_metal::CircularBufferConfig(in1_CB_size, {{in1_cb_index, in_data_format}})
+            .set_page_size(in1_cb_index, in_single_tile_size).set_globally_allocated_address(*b.value().buffer());
+        cb_in1 = tt_metal::CreateCircularBuffer(program, all_cores, in1_cb_config);
     }
     // in2 scaler
     uint32_t in2_cb_index = CB::c_in2;
@@ -841,8 +838,8 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     auto cb_fusion = tt_metal::CreateCircularBuffer(program, all_cores, fusion_cb_config);
     // out
     uint32_t output_cb_index = CB::c_out0; // output operands start at index 16
-    tt_metal::CircularBufferConfig output_cb_config = tt_metal::CircularBufferConfig(out_CB_size, {{output_cb_index, io_format}})
-		.set_page_size(output_cb_index, single_tile_size).set_globally_allocated_address(*output.buffer());
+    tt_metal::CircularBufferConfig output_cb_config = tt_metal::CircularBufferConfig(out_CB_size, {{output_cb_index, out_data_format}})
+		.set_page_size(output_cb_index, out_single_tile_size).set_globally_allocated_address(*output.buffer());
     auto cb_output = tt_metal::CreateCircularBuffer(program, all_cores, output_cb_config);
     // NoC coords
     uint32_t diff_start_coord;
@@ -1054,6 +1051,7 @@ std::vector<Tensor> LayerNorm::create_output_tensors(const std::vector<Tensor> &
                 uint32_t num_cores_y = program_config.compute_with_storage_grid_size.y;
                 uint32_t per_core_M = M / num_cores_x;
                 uint32_t per_core_N = K / num_cores_y;
+                DataType data_format = program_config.data_format;
 
                 CoreRangeSet all_cores({});
                 ShardOrientation shard_orientation;
