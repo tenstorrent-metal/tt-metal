@@ -29,7 +29,7 @@ struct PipelineRowConfig {
     size_t num_repetitions;
 };
 
-void create_and_run_row_pipeline(tt_metal::Device* device, const PipelineRowConfig& test_config) {
+void create_and_run_row_pipeline(const tt_metal::Device& device, const PipelineRowConfig& test_config) {
     CommandQueue& cq = *tt::tt_metal::detail::GLOBAL_CQ;
 
     tt_metal::Program program = tt_metal::CreateProgram();
@@ -79,17 +79,13 @@ void create_and_run_row_pipeline(tt_metal::Device* device, const PipelineRowConf
         auto cb = tt_metal::CreateCircularBuffer(program, core, cb_config);
     }
 
-    /// used only if IO data in DRAM
-    tt_metal::Buffer src_buffer;
-    tt_metal::Buffer dst_buffer;
-
     uint32_t src_address;
     CoreCoord src_noc_xy;
     uint32_t dst_address;
     CoreCoord dst_noc_xy;
 
-    src_buffer = CreateBuffer(device, buffer_size, buffer_size, test_config.IO_data_in_dram ? tt_metal::BufferType::DRAM : tt_metal::BufferType::L1);
-    dst_buffer = CreateBuffer(device, buffer_size, buffer_size, test_config.IO_data_in_dram ? tt_metal::BufferType::DRAM : tt_metal::BufferType::L1);
+    tt_metal::Buffer src_buffer = CreateBuffer(device, buffer_size, buffer_size, test_config.IO_data_in_dram ? tt_metal::BufferType::DRAM : tt_metal::BufferType::L1);
+    tt_metal::Buffer dst_buffer = CreateBuffer(device, buffer_size, buffer_size, test_config.IO_data_in_dram ? tt_metal::BufferType::DRAM : tt_metal::BufferType::L1);
 
     src_address = src_buffer.address();
     src_noc_xy = src_buffer.noc_coordinates();
@@ -177,8 +173,8 @@ void create_and_run_row_pipeline(tt_metal::Device* device, const PipelineRowConf
                 program,
                 receiver_kernels.at(core_id),
                 core,
-                {(uint32_t)device->worker_core_from_logical_core(cores[core_id - 1]).x,
-                 (uint32_t)device->worker_core_from_logical_core(cores[core_id - 1]).y,
+                {(uint32_t)device.worker_core_from_logical_core(cores[core_id - 1]).x,
+                 (uint32_t)device.worker_core_from_logical_core(cores[core_id - 1]).y,
                  (uint32_t)num_tiles,
                  (uint32_t)sender_semaphore_addr,
                  (uint32_t)receiver_semaphore_addr,
@@ -196,8 +192,8 @@ void create_and_run_row_pipeline(tt_metal::Device* device, const PipelineRowConf
                 program,
                 sender_kernels.at(core_id),
                 core,
-                {(uint32_t)device->worker_core_from_logical_core(cores[core_id + 1]).x,
-                 (uint32_t)device->worker_core_from_logical_core(cores[core_id + 1]).y,
+                {(uint32_t)device.worker_core_from_logical_core(cores[core_id + 1]).x,
+                 (uint32_t)device.worker_core_from_logical_core(cores[core_id + 1]).y,
                  (uint32_t)num_tiles,
                  (uint32_t)sender_semaphore_addr,
                  (uint32_t)receiver_semaphore_addr,
@@ -243,7 +239,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::PipelineRowConfig test_config;
 
     // // saturate DRAM
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64 * 1024;
     test_config.block_size_tiles = 16;
     test_config.num_blocks_in_CB = 2;
@@ -252,7 +248,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::create_and_run_row_pipeline(this->device_, test_config);
 
     // saturate L1
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64;
     test_config.block_size_tiles = 16;
     test_config.num_blocks_in_CB = 2;
@@ -261,7 +257,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::create_and_run_row_pipeline(this->device_, test_config);
 
     // test #1
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64;
     test_config.block_size_tiles = 1;
     test_config.num_blocks_in_CB = 16;
@@ -270,7 +266,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::create_and_run_row_pipeline(this->device_, test_config);
 
     // test #2
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64;
     test_config.block_size_tiles = 2;
     test_config.num_blocks_in_CB = 16;
@@ -279,7 +275,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::create_and_run_row_pipeline(this->device_, test_config);
 
     // test #3
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64;
     test_config.block_size_tiles = 4;
     test_config.num_blocks_in_CB = 16;
@@ -288,7 +284,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::create_and_run_row_pipeline(this->device_, test_config);
 
     // test #4
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64;
     test_config.block_size_tiles = 8;
     test_config.num_blocks_in_CB = 8;
@@ -297,7 +293,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::create_and_run_row_pipeline(this->device_, test_config);
 
     // test #5
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64;
     test_config.block_size_tiles = 16;
     test_config.num_blocks_in_CB = 4;
@@ -306,7 +302,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::create_and_run_row_pipeline(this->device_, test_config);
 
     // test #6
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64;
     test_config.block_size_tiles = 32;
     test_config.num_blocks_in_CB = 4;
@@ -315,7 +311,7 @@ TEST_F(CommandQueueFixture, TestPipelineAcrossRows) {
     unit_tests::create_pipeline::create_and_run_row_pipeline(this->device_, test_config);
 
     // test #7
-    test_config.num_cores = this->device_->compute_with_storage_grid_size().x - 1;
+    test_config.num_cores = this->device_.compute_with_storage_grid_size().x - 1;
     test_config.num_tiles = 64;
     test_config.block_size_tiles = 64;
     test_config.num_blocks_in_CB = 4;

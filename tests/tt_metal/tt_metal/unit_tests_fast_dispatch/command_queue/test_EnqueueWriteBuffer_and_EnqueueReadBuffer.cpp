@@ -38,7 +38,7 @@ vector<uint32_t> generate_arange_vector(uint32_t size_bytes) {
     return src;
 }
 
-bool test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue& cq, const BufferConfig& config) {
+bool test_EnqueueWriteBuffer_and_EnqueueReadBuffer(const Device& device, CommandQueue& cq, const BufferConfig& config) {
     bool pass = true;
     for (const bool use_void_star_api: {true, false}) {
 
@@ -66,7 +66,7 @@ bool test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue&
 }
 
 bool stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer(
-    Device* device, CommandQueue& cq, const BufferStressTestConfig& config) {
+    const Device& device, CommandQueue& cq, const BufferStressTestConfig& config) {
     srand(config.seed);
     bool pass = true;
     uint32_t num_pages_left = config.num_pages_total;
@@ -96,7 +96,7 @@ bool stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer(
     return pass;
 }
 
-bool test_EnqueueWrap_on_EnqueueReadBuffer(Device* device, CommandQueue& cq, const BufferConfig& config) {
+bool test_EnqueueWrap_on_EnqueueReadBuffer(const Device& device, CommandQueue& cq, const BufferConfig& config) {
     auto [buffer, src] = EnqueueWriteBuffer_prior_to_wrap(device, cq, config);
 
     vector<uint32_t> dst;
@@ -106,7 +106,7 @@ bool test_EnqueueWrap_on_EnqueueReadBuffer(Device* device, CommandQueue& cq, con
 }
 
 bool stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer_wrap(
-    Device* device, CommandQueue& cq, const BufferStressTestConfig& config) {
+    const Device& device, CommandQueue& cq, const BufferStressTestConfig& config) {
 
     srand(config.seed);
 
@@ -123,11 +123,12 @@ bool stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer_wrap(
     for (uint32_t i = 0; i < config.num_iterations; i++) {
         size_t buf_size = unique_vectors[i % unique_vectors.size()].size() * sizeof(uint32_t);
         try {
-            bufs.push_back(CreateBuffer(device, buf_size, config.page_size, BufferType::DRAM));
+            bufs.emplace_back(CreateBuffer(device, buf_size, config.page_size, BufferType::DRAM));
         } catch (const std::exception& e) {
             tt::log_info("Deallocating on iteration {}", i);
             start = i;
-            bufs = {CreateBuffer(device, buf_size, config.page_size, BufferType::DRAM)};
+            bufs.clear();
+            bufs.emplace_back( CreateBuffer(device, buf_size, config.page_size, BufferType::DRAM) );
         }
 
         EnqueueWriteBuffer(cq, bufs[bufs.size() - 1], unique_vectors[i % unique_vectors.size()], false);
@@ -159,7 +160,7 @@ TEST_F(CommandQueueFixture, WriteOneTileToDramBank0) {
 
 TEST_F(CommandQueueFixture, WriteOneTileToAllDramBanks) {
     BufferConfig config = {
-        .num_pages = uint32_t(this->device_->num_banks(BufferType::DRAM)),
+        .num_pages = uint32_t(this->device_.num_banks(BufferType::DRAM)),
         .page_size = 2048,
         .buftype = BufferType::DRAM};
 
@@ -169,7 +170,7 @@ TEST_F(CommandQueueFixture, WriteOneTileToAllDramBanks) {
 TEST_F(CommandQueueFixture, WriteOneTileAcrossAllDramBanksTwiceRoundRobin) {
     constexpr uint32_t num_round_robins = 2;
     BufferConfig config = {
-        .num_pages = num_round_robins * (this->device_->num_banks(BufferType::DRAM)),
+        .num_pages = num_round_robins * (this->device_.num_banks(BufferType::DRAM)),
         .page_size = 2048,
         .buftype = BufferType::DRAM};
 
@@ -234,7 +235,7 @@ TEST_F(CommandQueueFixture, WriteOneTileToL1Bank0) {
 }
 
 TEST_F(CommandQueueFixture, WriteOneTileToAllL1Banks) {
-    auto compute_with_storage_grid = this->device_->compute_with_storage_grid_size();
+    auto compute_with_storage_grid = this->device_.compute_with_storage_grid_size();
     BufferConfig config = {
         .num_pages = uint32_t(compute_with_storage_grid.x * compute_with_storage_grid.y),
         .page_size = 2048,
@@ -244,7 +245,7 @@ TEST_F(CommandQueueFixture, WriteOneTileToAllL1Banks) {
 }
 
 TEST_F(CommandQueueFixture, WriteOneTileToAllL1BanksTwiceRoundRobin) {
-    auto compute_with_storage_grid = this->device_->compute_with_storage_grid_size();
+    auto compute_with_storage_grid = this->device_.compute_with_storage_grid_size();
     BufferConfig config = {
         .num_pages = 2 * uint32_t(compute_with_storage_grid.x * compute_with_storage_grid.y),
         .page_size = 2048,

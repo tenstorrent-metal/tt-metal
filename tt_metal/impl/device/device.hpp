@@ -52,19 +52,20 @@ class Device {
     // TODO: move these to host_api
     static size_t detect_num_available_devices();
     static size_t detect_num_pci_devices();
-    // friend void tt_gdb(Device* device, int chip_id, const vector<CoreCoord> cores, vector<string> ops);
+    // friend void tt_gdb(const Device& device, int chip_id, const vector<CoreCoord> cores, vector<string> ops);
     Device () = delete;
     Device(chip_id_t device_id, const std::vector<uint32_t>& l1_bank_remap = {});
 
     ~Device();
 
     // TODO: Add copy/move semantics
-    Device(const Device &other) { }
-    Device& operator=(const Device &other) { return *this; }
+    Device(const Device &other) = delete;
+    Device& operator=(const Device &other) = delete;
 
-    Device(Device &&other) { }
-    Device& operator=(Device &&other) { return *this; }
+    Device(Device &&other) = default;
+    Device& operator=(Device &&other) = default;
 
+    bool operator==(const Device& other) const{ return this->id() == other.id(); }
     tt::ARCH arch() const;
 
     chip_id_t id() const { return id_; }
@@ -137,38 +138,38 @@ class Device {
     // core.y represents different channels along one <x>
     const std::set<CoreCoord> &ethernet_cores() const { return this->ethernet_cores_; }
 
-    void deallocate_buffers();
+    const std::set<CoreCoord> &compute_cores() const { return this->compute_cores_; }
 
     // machine epsilon
     float sfpu_eps() const;
 
+    const std::vector<uint32_t>& l1_bank_remap() const { return this->l1_bank_remap_; }
+
    private:
-    void check_allocator_is_initialized() const;
 
     // Checks that the given arch is on the given pci_slot and that it's responding
     // Puts device into reset
-    bool initialize(const std::vector<uint32_t>& l1_bank_remap = {});
+    bool initialize();
     void initialize_cluster();
-    void initialize_allocator(const std::vector<uint32_t>& l1_bank_remap = {});
+    void initialize_grid();
     void initialize_build();
     void initialize_firmware(CoreCoord phys_core, launch_msg_t *launch_msg);
     void initialize_and_launch_firmware();
     void clear_l1_state();
     // Puts device into reset
     bool close();
-    friend bool CloseDevice(Device *device);
+    friend bool CloseDevice(const Device& device);
 
     // TODO: Uplift usage of friends. Buffer and Program just need access to allocator
     friend class Buffer;
     friend class Program;
 
-    static constexpr MemoryAllocator allocator_scheme_ = MemoryAllocator::L1_BANKING;
     static ActiveDevices active_devices_;
     chip_id_t id_;
-    std::unique_ptr<Allocator> allocator_ = nullptr;
+    std::vector<uint32_t> l1_bank_remap_;
     bool initialized_ = false;
 
-    std::set<CoreCoord> compute_cores;
+    std::set<CoreCoord> compute_cores_;
     std::set<CoreCoord> storage_only_cores_;
     std::set<CoreCoord> dispatch_cores_;
     std::set<CoreCoord> ethernet_cores_;

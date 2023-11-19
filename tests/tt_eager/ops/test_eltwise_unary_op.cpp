@@ -59,7 +59,7 @@ Tensor host_function(const Tensor& input_tensor) {
 }
 
 template <auto HostFunction, typename DeviceFunction, typename... Args>
-bool run_test(const DeviceFunction& device_function, Device* device, const Shape& shape, float low, float high, Args... args) {
+bool run_test(const DeviceFunction& device_function, const Device& device, const Shape& shape, float low, float high, Args... args) {
     auto input_tensor = tt::numpy::random::uniform(bfloat16(low), bfloat16(high), shape).to(Layout::TILE);
 
     auto host_output = HostFunction(input_tensor);
@@ -97,7 +97,7 @@ void test_shape_padding() {
     tt::log_info(tt::LogTest, "Running {}", __func__);
 
     int device_id = 0;
-    auto device = tt::tt_metal::CreateDevice(device_id);
+    const auto &device = tt::tt_metal::CreateDevice(device_id);
     tt::tt_metal::AutoFormat::SetDefaultDevice(device);
 
 
@@ -136,7 +136,7 @@ void test_numerically() {
     using tt::constants::TILE_WIDTH;
 
     int device_id = 0;
-    auto device = tt::tt_metal::CreateDevice(device_id);
+    const auto &device = tt::tt_metal::CreateDevice(device_id);
 
 
 
@@ -203,7 +203,7 @@ void test_program_cache() {
     using tt::constants::TILE_WIDTH;
 
     int device_id = 0;
-    auto device = tt::tt_metal::CreateDevice(device_id);
+    const auto &device = tt::tt_metal::CreateDevice(device_id);
 
 
 
