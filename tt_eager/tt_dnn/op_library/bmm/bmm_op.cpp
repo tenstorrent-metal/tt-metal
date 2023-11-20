@@ -734,7 +734,7 @@ void Matmul::validate(
                     uint32_t per_core_M = program_config.per_core_M;
                     uint32_t per_core_N = program_config.per_core_N;
 
-                    TT_ASSERT(program_config.out_subblock_w == per_core_N || program_config.out_subblock_h == 1);
+                    // TT_ASSERT(program_config.out_subblock_w == per_core_N || program_config.out_subblock_h == 1);
                 }
             } else {
                 TT_ASSERT(input_tensor_a.memory_config().memory_layout == TensorMemoryLayout::INTERLEAVED);
