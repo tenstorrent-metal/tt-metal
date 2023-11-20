@@ -134,6 +134,7 @@ def test_layernorm_sharded(
         math_fidelity=fidelity,
         im_data_format=cb_dtype,
         out_data_format=out_dtype,
+        inplace=True,
     )
 
     if test_id == 0:
@@ -294,6 +295,7 @@ def test_layernorm_sharded_mix_precision(
         math_fidelity=fidelity,
         im_data_format=cb_dtype,
         out_data_format=out_dtype,
+        inplace=True,
     )
 
     if test_id == 0:
@@ -338,6 +340,6 @@ def test_layernorm_sharded_mix_precision(
         in0 + in1, in0.shape[-1:], gamma[:, :, 0:1, :].flatten(), beta[:, :, 0:1, :].flatten(), epsf
     )
 
-    passing, output = comp_pcc(tt_got_back, ref_lnorm, 0.98)
+    passing, output = comp_pcc(tt_got_back, ref_lnorm, 0.999)
     logger.info(output)
     assert passing

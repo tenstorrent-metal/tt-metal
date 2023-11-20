@@ -100,6 +100,7 @@ struct LayerNormShardedMultiCoreProgramConfig {
     MathFidelity math_fidelity;
     DataType im_data_format;
     DataType out_data_format;
+    bool inplace;
 
     tt::stl::reflection::Attributes attributes() const;
 };

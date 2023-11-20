@@ -1041,21 +1041,25 @@ std::vector<Tensor> LayerNorm::create_output_tensors(const std::vector<Tensor> &
             if constexpr (
                 std::is_same_v<ProgramConfigType, tt::operations::primary::LayerNormShardedMultiCoreProgramConfig>
             ) {
-                uint32_t M = input_tensor.volume() / input_tensor.shape()[-1] / TILE_HEIGHT;
-                uint32_t K = input_tensor.shape()[-1] / TILE_WIDTH;
-                uint32_t num_cores_x = program_config.compute_with_storage_grid_size.x;
-                uint32_t num_cores_y = program_config.compute_with_storage_grid_size.y;
-                uint32_t per_core_M = M / num_cores_x;
-                uint32_t per_core_N = K / num_cores_y;
-                DataType im_data_format = program_config.im_data_format;
-                DataType out_data_format = program_config.out_data_format;
+                if (program_config.inplace) {
+                    return {input_tensors.at(0)};
+                } else {
+                    uint32_t M = input_tensor.volume() / input_tensor.shape()[-1] / TILE_HEIGHT;
+                    uint32_t K = input_tensor.shape()[-1] / TILE_WIDTH;
+                    uint32_t num_cores_x = program_config.compute_with_storage_grid_size.x;
+                    uint32_t num_cores_y = program_config.compute_with_storage_grid_size.y;
+                    uint32_t per_core_M = M / num_cores_x;
+                    uint32_t per_core_N = K / num_cores_y;
+                    DataType im_data_format = program_config.im_data_format;
+                    DataType out_data_format = program_config.out_data_format;
 
-                CoreRangeSet all_cores({});
-                ShardOrientation shard_orientation;
-                all_cores = CoreRangeSet({CoreRange{.start={0, 0}, .end={num_cores_x - 1, num_cores_y - 1}}});
-                shard_orientation = ShardOrientation::COL_MAJOR;
-                ShardSpec shard_spec = ShardSpec{.shard_grid=all_cores, .shard_shape={per_core_M * TILE_HEIGHT, per_core_N * TILE_WIDTH}, .shard_orientation=shard_orientation};
-                return {create_sharded_device_tensor(this->compute_output_shapes(input_tensors).at(0), out_data_format, Layout::TILE, input_tensor.device(), this->output_mem_config, shard_spec)};
+                    CoreRangeSet all_cores({});
+                    ShardOrientation shard_orientation;
+                    all_cores = CoreRangeSet({CoreRange{.start={0, 0}, .end={num_cores_x - 1, num_cores_y - 1}}});
+                    shard_orientation = ShardOrientation::COL_MAJOR;
+                    ShardSpec shard_spec = ShardSpec{.shard_grid=all_cores, .shard_shape={per_core_M * TILE_HEIGHT, per_core_N * TILE_WIDTH}, .shard_orientation=shard_orientation};
+                    return {create_sharded_device_tensor(this->compute_output_shapes(input_tensors).at(0), out_data_format, Layout::TILE, input_tensor.device(), this->output_mem_config, shard_spec)};
+                }
             } else {
                 return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.dtype(), Layout::TILE, this->output_mem_config);
             }

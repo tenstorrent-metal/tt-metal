@@ -253,7 +253,7 @@ void py_module(py::module& m_primary) {
 
     py::class_<LayerNormShardedMultiCoreProgramConfig>(m_primary, "LayerNormShardedMultiCoreProgramConfig")
         .def(
-            py::init<CoreCoord, std::size_t, std::size_t, std::size_t, MathFidelity, DataType, DataType>(),
+            py::init<CoreCoord, std::size_t, std::size_t, std::size_t, MathFidelity, DataType, DataType, bool>(),
             py::kw_only(),
             py::arg("compute_with_storage_grid_size"),
             py::arg("subblock_w").noconvert(),
@@ -261,7 +261,8 @@ void py_module(py::module& m_primary) {
             py::arg("block_w").noconvert(),
             py::arg("math_fidelity").noconvert() = MathFidelity::HiFi4,
             py::arg("im_data_format").noconvert(),
-            py::arg("out_data_format").noconvert()
+            py::arg("out_data_format").noconvert(),
+            py::arg("inplace").noconvert()
         );
 
     m_primary.def(

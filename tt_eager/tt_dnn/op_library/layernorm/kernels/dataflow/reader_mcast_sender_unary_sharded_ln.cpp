@@ -22,7 +22,6 @@ void kernel_main() {
     const uint32_t noc_same_coord                       = get_arg_val<uint32_t>(4);
     volatile tt_l1_ptr uint32_t * noc_diff_coord        = (volatile tt_l1_ptr uint32_t*)(get_arg_addr(5));
 
-    constexpr uint32_t cb_in0 = tt::CB::c_in0;
     constexpr uint32_t cb_ex_partial = tt::CB::dataflow0;
     constexpr uint32_t cb_ex = tt::CB::dataflow1;
     constexpr uint32_t cb_ex_external = tt::CB::dataflow2;
@@ -30,8 +29,8 @@ void kernel_main() {
     constexpr uint32_t cb_ex2 = tt::CB::dataflow4;
     constexpr uint32_t cb_ex_external2 = tt::CB::dataflow5;
 
-    const uint32_t single_tile_size_bytes = get_tile_size(cb_in0);
-    const DataFormat data_format = get_dataformat(cb_in0);
+    const uint32_t single_tile_size_bytes = get_tile_size(cb_ex_partial);
+    const DataFormat data_format = get_dataformat(cb_ex_partial);
 
     const uint64_t reduce_sender_semaphore_noc_addr = get_noc_multicast_addr(
         mcast_dest_noc_start_x,
