@@ -22,11 +22,13 @@ def run_matmul_test(input_shape_1, input_shape_2, dtype, dlayout, in_mem_config,
     x = gen_rand(size=input_shape_1, low=low, high=high).to(torch.bfloat16)
     y = gen_rand(size=input_shape_2, low=low, high=high).to(torch.bfloat16)
 
-    pt_result = pytorch_ops.recip(x)
+    factor = random.randrange(low, high)
 
-    tt_result = tt_lib_ops.eltwise_recip(
+    pt_result = pytorch_ops.eltwise_rpow(x, factor)
+
+    tt_result = tt_lib_ops.eltwise_rpow(
         x=x,
-        # y=y,
+        factor=factor,
         device=device,
         dtype=dtype,
         layout=dlayout,
@@ -164,9 +166,9 @@ for i in range(len(range_start)):
     test_sweep_args.append(
         (
             (1, 4, 128, 128),
-            (1, 1, 128, 128),
+            (1, 4, 128, 128),
             [ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.BFLOAT16],
-            [ttl.tensor.Layout.ROW_MAJOR, ttl.tensor.Layout.ROW_MAJOR],
+            [ttl.tensor.Layout.TILE, ttl.tensor.Layout.TILE],
             [
                 ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
                 ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
