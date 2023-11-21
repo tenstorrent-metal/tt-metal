@@ -131,6 +131,7 @@ KernelGroup::KernelGroup(
     // The code below sets the brisc_noc_id for use by the device firmware
     // Use 0 if neither brisc nor trisc specify a noc
     this->launch_msg.brisc_noc_id = 0;
+    this->launch_msg.programID_size8 = program.get_id();
     if (brisc_id) {
         // Use brisc's noc if brisc specifies a noc
         this->launch_msg.enable_brisc = true;

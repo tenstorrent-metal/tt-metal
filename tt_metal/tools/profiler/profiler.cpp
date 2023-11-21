@@ -145,19 +145,30 @@ void Profiler::readRiscProfilerResults(
                 bufferEndIndex = PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC;
             }
 
-            for (int index = bufferRiscShift + kernel_profiler::FW_START; index < (bufferRiscShift + bufferEndIndex); index += PROFILER_L1_MARKER_UINT32_SIZE)
-            {
-                uint32_t marker = (profile_buffer[index] & 0xFFFF0000) >> 16;
-                uint32_t time_H = profile_buffer[index] & 0x0000FFFF;
-                uint32_t time_L = profile_buffer[index + 1];
+            uint16_t programID = 0;
 
-                dumpDeviceResultToFile(
-                        device_id,
-                        worker_core.x,
-                        worker_core.y,
-                        riscNum,
-                        (uint64_t(time_H) << 32) | time_L,
-                        marker);
+            for (int index = bufferRiscShift; index < (bufferRiscShift + bufferEndIndex); index += PROFILER_L1_MARKER_UINT32_SIZE)
+            {
+                if (profile_buffer[index] != 0)
+                {
+                    uint32_t marker = (profile_buffer[index] & 0xFFFF0000) >> 16;
+                    uint32_t time_H = profile_buffer[index] & 0x0000FFFF;
+                    uint32_t time_L = profile_buffer[index + 1];
+
+                    dumpDeviceResultToFile(
+                            programID,
+                            device_id,
+                            worker_core.x,
+                            worker_core.y,
+                            riscNum,
+                            (uint64_t(time_H) << 32) | time_L,
+                            marker);
+                }
+                else
+                {
+                    index += PROFILER_L1_MARKER_UINT32_SIZE;
+                    programID = profile_buffer[index] & 0x0000FFFF;
+                }
             }
         }
     }
@@ -171,6 +182,7 @@ void Profiler::readRiscProfilerResults(
 }
 
 void Profiler::dumpDeviceResultToFile(
+        uint16_t programID,
         int chip_id,
         int core_x,
         int core_y,
@@ -188,7 +200,7 @@ void Profiler::dumpDeviceResultToFile(
     {
         log_file.open(log_path);
         log_file << "ARCH: " << get_string_lowercase(device_architecture) << ", CHIP_FREQ[MHz]: " << device_core_frequency << std::endl;
-        log_file << "PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset]" << std::endl;
+        log_file << "Program ID, PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset]" << std::endl;
         device_new_log = false;
     }
     else
@@ -219,7 +231,7 @@ void Profiler::dumpDeviceResultToFile(
         device_data.emplace(eventID,std::list<uint64_t>{timestamp});
     }
 
-    log_file << chip_id << ", " << core_x << ", " << core_y << ", " << riscName[risc] << ", ";
+    log_file << programID << ", "  << chip_id << ", " << core_x << ", " << core_y << ", " << riscName[risc] << ", ";
     log_file << timer_id << ", ";
     log_file << timestamp;
     log_file << std::endl;

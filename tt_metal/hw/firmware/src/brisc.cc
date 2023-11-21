@@ -310,7 +310,11 @@ int main() {
         while (mailboxes->launch.run != RUN_MSG_GO);
         DEBUG_STATUS('G', 'D');
 
-        kernel_profiler::init_profiler();
+        kernel_profiler::init_profiler(
+                mailboxes->launch.programID_size8,
+                mailboxes->launch.programID_size8,
+                mailboxes->launch.programID_size8
+                );
         kernel_profiler::mark_fw_start();
 
 

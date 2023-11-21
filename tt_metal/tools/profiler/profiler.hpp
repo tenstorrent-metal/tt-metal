@@ -82,6 +82,7 @@ class Profiler {
 
         // Dumping profile result to file
         void dumpDeviceResultToFile(
+                uint16_t kernelID,
                 int chip_id,
                 int core_x,
                 int core_y,

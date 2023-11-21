@@ -42,13 +42,27 @@ namespace kernel_profiler{
     uint32_t deviceBufferEndIndex = DEVICE_BUFFER_END_INDEX_T2;
 #endif
 
-    inline __attribute__((always_inline)) void init_profiler()
+    inline __attribute__((always_inline)) void init_profiler(uint16_t briscKernelID = 0, uint16_t ncriscKernelID = 0, uint16_t triscsKernelID = 0)
     {
 #if defined(PROFILE_KERNEL)
-        volatile uint32_t *profiler_control_buffer = reinterpret_cast<uint32_t*>(PROFILER_L1_BUFFER_CONTROL);
+        volatile tt_l1_ptr uint32_t *profiler_control_buffer = reinterpret_cast<uint32_t*>(PROFILER_L1_BUFFER_CONTROL);
         profiler_control_buffer[deviceBufferEndIndex] = 0;
-
         wIndex = CUSTOM_MARKERS;
+
+#if defined(COMPILE_FOR_BRISC)
+        volatile tt_l1_ptr uint32_t *briscBuffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(PROFILER_L1_BUFFER_BR);
+        volatile tt_l1_ptr uint32_t *ncriscBuffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(PROFILER_L1_BUFFER_NC);
+        volatile tt_l1_ptr uint32_t *trisc0Buffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(PROFILER_L1_BUFFER_T0);
+        volatile tt_l1_ptr uint32_t *trisc1Buffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(PROFILER_L1_BUFFER_T1);
+        volatile tt_l1_ptr uint32_t *trisc2Buffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(PROFILER_L1_BUFFER_T2);
+
+        briscBuffer[ID_LH] = briscKernelID;
+        ncriscBuffer[ID_LH] = ncriscKernelID;
+        trisc0Buffer[ID_LH] = triscsKernelID;
+        trisc1Buffer[ID_LH] = triscsKernelID;
+        trisc2Buffer[ID_LH] = triscsKernelID;
+#endif //BRISC_INIT
+
 #endif //PROFILE_KERNEL
     }
 
@@ -81,7 +95,7 @@ namespace kernel_profiler{
         uint32_t time_H = ckernel::reg_read(RISCV_DEBUG_REG_WALL_CLOCK_H);
 #endif
         volatile tt_l1_ptr uint32_t *buffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(profilerBuffer);
-        buffer[index] = ((time_H & 0x0000FFFF) | (index << 15)); // index is 2x marker ID so one less shift, divide by 2
+        buffer[index] = ((time_H & 0x0000FFFF) | ((index - FW_START + 2) << 15)); // index is 2x marker ID so one less shift, divide by 2
         buffer[index+1] = time_L;
 #endif //PROFILE_KERNEL
     }
@@ -154,7 +168,6 @@ namespace kernel_profiler{
     {
 #if defined(PROFILE_KERNEL) && defined(COMPILE_FOR_BRISC)
         volatile uint32_t *profiler_control_buffer = reinterpret_cast<uint32_t*>(PROFILER_L1_BUFFER_CONTROL);
-        volatile  uint32_t *buffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(profilerBuffer);
 
         const uint32_t NOC_ID_MASK = (1 << NOC_ADDR_NODE_ID_BITS) - 1;
         uint32_t noc_id = noc_local_node_id() & 0xFFF;
