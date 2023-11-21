@@ -319,8 +319,8 @@ void Profiler::dumpDeviceResults (
     device_core_frequency = tt::Cluster::instance().get_device_aiclk(device_id);
     std::vector<uint32_t> profile_buffer(PROFILER_FULL_HOST_BUFFER_SIZE/sizeof(uint32_t), 0);
 
-    tt::Cluster::instance().read_sysmem_vec(profile_buffer, PROFILER_HUGE_PAGE_ADDRESS, PROFILER_FULL_HOST_BUFFER_SIZE, 0);
-    tt::Cluster::instance().write_sysmem_vec(profile_buffer, PROFILER_HUGE_PAGE_ADDRESS, 0);
+    //tt::Cluster::instance().read_sysmem(profile_buffer, PROFILER_HUGE_PAGE_ADDRESS, PROFILER_FULL_HOST_BUFFER_SIZE, 0);
+    //tt::Cluster::instance().write_sysmem(profile_buffer, PROFILER_HUGE_PAGE_ADDRESS, 0);
 
     for (const auto &worker_core : worker_cores) {
         readRiscProfilerResults(

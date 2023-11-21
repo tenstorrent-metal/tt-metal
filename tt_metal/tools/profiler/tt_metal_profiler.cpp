@@ -50,7 +50,7 @@ void InitDeviceProfiler(Device *device){
     //}
 
     vector<uint32_t> huge_zero_buffer(PROFILER_HOST_BUFFER_SIZE / sizeof(uint32_t), 0);
-    tt::Cluster::instance().write_sysmem_vec(huge_zero_buffer, PROFILER_HUGE_PAGE_ADDRESS, 0);
+    //tt::Cluster::instance().write_sysmem(huge_zero_buffer, PROFILER_HUGE_PAGE_ADDRESS, 0);
 
 #endif
 }
@@ -69,9 +69,6 @@ void DumpDeviceProfileResults(Device *device) {
             CoreCoord logical_core = {x, y};
             workerCores.push_back(device->worker_core_from_logical_core(logical_core));
         }
-        TT_FATAL(tt_is_print_server_running() == false, "Debug print server is running, cannot dump device profiler data");
-        auto worker_cores_used_in_program =\
-            device->worker_cores_from_logical_cores(logical_cores);
     }
     DumpDeviceProfileResults(device, workerCores);
 #endif
