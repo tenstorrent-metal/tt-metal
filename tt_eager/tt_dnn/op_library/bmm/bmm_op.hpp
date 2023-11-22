@@ -343,7 +343,6 @@ Tensor matmul_1d(const Tensor &input_tensor_a, const Tensor &input_tensor_b, std
 }  // namespace tt
 
 namespace bmm_op_utils {
-using namespace tt::tt_metal;
 
 constexpr std::array<tuple<uint32_t, uint32_t>, 20> SUBBLOCK_HW_CHOICES = {{
     {4, 2}, {2, 4}, {8, 1}, {1, 8},
@@ -360,5 +359,5 @@ tuple<uint32_t, uint32_t, uint32_t, uint32_t> get_large_matmul_params(uint32_t M
 
 CoreCoord get_core_range(uint32_t num_blocks_rows, uint32_t num_blocks_cols, uint32_t max_num_rows, uint32_t max_num_cols);
 
-tt::operations::primary::MatmulMultiCoreReuseMultiCast1DProgramConfig get_mcast_1d_config(const Tensor &input_tensor_a, const Tensor &input_tensor_b, bool fuse_batch = false, std::optional<UnaryWithParam> fused_activation = std::nullopt, bool mcast_in0 = true, bool out_sharded = false);
+tt::operations::primary::MatmulMultiCoreReuseMultiCast1DProgramConfig get_mcast_1d_config(const tt::tt_metal::Tensor &input_tensor_a, const tt::tt_metal::Tensor &input_tensor_b, bool fuse_batch = false, std::optional<tt::tt_metal::UnaryWithParam> fused_activation = std::nullopt, bool mcast_in0 = true, bool out_sharded = false);
 }  // namespace bmm_op_utils

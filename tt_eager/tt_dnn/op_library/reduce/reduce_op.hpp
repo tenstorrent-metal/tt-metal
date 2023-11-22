@@ -61,10 +61,8 @@ Tensor global_mean(const Tensor& input_tensor, const MemoryConfig& output_mem_co
 
 namespace reduce_op_utils {
 
-using namespace tt::tt_metal;
+string dim_to_kernel_name(tt::tt_metal::ReduceOpDim reduce_dim, tt::tt_metal::ReduceOpMath reduce_op);
 
-string dim_to_kernel_name(ReduceOpDim reduce_dim, ReduceOpMath reduce_op);
-
-std::map<string, string> get_defines(ReduceOpMath reduce_op, ReduceOpDim reduce_dim);
+std::map<string, string> get_defines(tt::tt_metal::ReduceOpMath reduce_op, tt::tt_metal::ReduceOpDim reduce_dim);
 
 } // namespace reduce_op_utils

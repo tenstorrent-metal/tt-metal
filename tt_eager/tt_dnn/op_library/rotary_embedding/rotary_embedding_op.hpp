@@ -46,7 +46,7 @@ struct RotaryEmbedding {
 };
 
 inline Tensor rotary_embedding(const Tensor& input_tensor, const Tensor& cos, const Tensor& sin, std::optional<uint32_t> token_idx = std::nullopt, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG) {
-    TT_ASSERT(input_tensor.shape()[-1] % (TILE_WIDTH * 2) == 0, "Input X dim must be divisible into tiles");
+    TT_ASSERT(input_tensor.shape()[-1] % (tt::constants::TILE_WIDTH * 2) == 0, "Input X dim must be divisible into tiles");
     uint32_t seq_len = input_tensor.shape()[-2];
     uint32_t B = input_tensor.shape()[0];
     uint32_t X = input_tensor.shape()[-1];

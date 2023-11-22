@@ -10,8 +10,6 @@
 
 #include "tt_dnn/op_library/run_operation.hpp"
 
-using namespace tt::tt_metal;
-
 namespace tt {
 
 namespace tt_metal {
@@ -98,14 +96,12 @@ inline Tensor bcast_without_autoformat(const Tensor &input_tensor_a, const Tenso
 
 namespace bcast_op_utils {
 
-using namespace tt::tt_metal;
+const char* get_reader_name(tt::tt_metal::BcastOpDim bcast_dim, tt::tt_metal::BcastOpParallelizationStrategy bcast_parallelization_strategy);
 
-const char* get_reader_name(BcastOpDim bcast_dim, BcastOpParallelizationStrategy bcast_parallelization_strategy);
+const char* get_compute_name(tt::tt_metal::BcastOpDim bcast_dim);
 
-const char* get_compute_name(BcastOpDim bcast_dim);
+const char* get_math_to_op_define(tt::tt_metal::BcastOpMath bcast_math);
 
-const char* get_math_to_op_define(BcastOpMath bcast_math);
-
-std::map<std::string, std::string> get_defines(BcastOpDim bcast_dim, BcastOpMath bcast_math);
+std::map<std::string, std::string> get_defines(tt::tt_metal::BcastOpDim bcast_dim, tt::tt_metal::BcastOpMath bcast_math);
 
 } // namespace bcast_op_utils

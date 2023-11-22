@@ -35,8 +35,8 @@ Tensor mk_scalar(T value) {
 template<typename T>
 Tensor mk_tiled_scalar(T value) {
     assert(std::is_scalar<T>::value && "T should be scalar");
-    std::array<unsigned int,4> shape = {1, 1, TILE_HEIGHT, TILE_WIDTH};
-    std::vector<bfloat16> buffer_vec(TILE_HW, bfloat16(0));
+    std::array<unsigned int,4> shape = {1, 1, tt::constants::TILE_HEIGHT, tt::constants::TILE_WIDTH};
+    std::vector<bfloat16> buffer_vec(tt::constants::TILE_HW, bfloat16(0));
     buffer_vec[0] = bfloat16(value);
     auto buffer = owned_buffer::create(std::move(buffer_vec));
     Tensor scalar = Tensor(OwnedStorage{buffer}, shape, DataType::BFLOAT16, Layout::TILE);

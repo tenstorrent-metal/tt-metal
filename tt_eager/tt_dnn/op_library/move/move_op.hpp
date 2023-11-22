@@ -12,10 +12,8 @@
 
 #include "tt_dnn/op_library/run_operation.hpp"
 #include "tt_metal/detail/tt_metal.hpp"
-using namespace tt::constants;
 
 namespace move_op_utils {
-using namespace tt::tt_metal;
 
 bool can_deallocate(const Tensor &input_tensor);
 
@@ -62,7 +60,7 @@ inline Tensor move(Tensor& input_tensor, std::optional<MemoryConfig>& mem_config
     bool tilized = input_tensor.layout() == Layout::TILE;
 
     // get_parallelization_strategy
-    uint32_t num_units = tilized ? input_tensor.volume() / TILE_HW : input_tensor.volume() / input_tensor.shape()[-1];
+    uint32_t num_units = tilized ? input_tensor.volume() / tt::constants::TILE_HW : input_tensor.volume() / input_tensor.shape()[-1];
 
     bool move_within_same_mem_space = input_mem_config.buffer_type == output_mem_config.buffer_type;
     // Input and output addresses won't overlap if they are in different memory substrates

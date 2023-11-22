@@ -10,6 +10,7 @@
 #include "tt_numpy/functions.hpp"
 #include "tt_eager/tensor/tensor_utils.hpp"
 
+using namespace tt::constants;
 namespace tt {
 
 namespace tt_metal {

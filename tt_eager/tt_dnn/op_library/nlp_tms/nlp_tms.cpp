@@ -9,6 +9,8 @@
 
 #include "third_party/magic_enum/magic_enum.hpp"
 
+using namespace tt::constants;
+
 namespace tt {
 
 namespace tt_metal {

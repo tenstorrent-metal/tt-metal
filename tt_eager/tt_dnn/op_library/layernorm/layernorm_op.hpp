@@ -10,8 +10,6 @@
 
 #include "tt_dnn/op_library/run_operation.hpp"
 
-using namespace tt::constants;
-
 namespace tt {
 
 namespace tt_metal {
@@ -47,7 +45,7 @@ struct RMSNorm {
 };
 
 inline Tensor layernorm(const Tensor &a, float eps, std::optional<const Tensor> gamma = std::nullopt, std::optional<const Tensor> beta = std::nullopt, const MemoryConfig& mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG) {
-    TT_ASSERT(a.shape()[3] % TILE_WIDTH == 0, "Normalizing on last dim cannot be padded");
+    TT_ASSERT(a.shape()[3] % tt::constants::TILE_WIDTH == 0, "Normalizing on last dim cannot be padded");
 
     if (gamma.has_value() and gamma.value().layout() == Layout::TILE) {
         TT_ASSERT(gamma.value().shape()[3] == a.shape()[3], "Gamma width must be equal to input width");
@@ -60,7 +58,7 @@ inline Tensor layernorm(const Tensor &a, float eps, std::optional<const Tensor> 
 
 // computes layernorm(a+b)*gamma+beta
 inline Tensor add_layernorm(const Tensor &a, const Tensor& b, float eps, std::optional<const Tensor> gamma = std::nullopt, std::optional<const Tensor> beta = std::nullopt, const MemoryConfig& mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG) {
-    TT_ASSERT(a.shape()[3] % TILE_WIDTH == 0, "Normalizing on last dim cannot be padded");
+    TT_ASSERT(a.shape()[3] % tt::constants::TILE_WIDTH == 0, "Normalizing on last dim cannot be padded");
     TT_ASSERT(a.shape() == b.shape(), "Input shapes must be equal");
     if (gamma.has_value() and gamma.value().layout() == Layout::TILE) {
         TT_ASSERT(gamma.value().shape()[3] == a.shape()[3], "Gamma width must be equal to input width");
@@ -72,7 +70,7 @@ inline Tensor add_layernorm(const Tensor &a, const Tensor& b, float eps, std::op
 }
 
 inline Tensor rmsnorm(const Tensor &a, float eps, std::optional<const Tensor> gamma = std::nullopt, std::optional<const Tensor> beta = std::nullopt, const MemoryConfig& mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG) {
-    TT_ASSERT(a.shape()[3] % TILE_WIDTH == 0, "Normalizing on last dim cannot be padded");
+    TT_ASSERT(a.shape()[3] % tt::constants::TILE_WIDTH == 0, "Normalizing on last dim cannot be padded");
     if (gamma.has_value()) {
         TT_ASSERT(gamma.value().shape()[3] == a.shape()[3], "Gamma width must be equal to input width");
     }

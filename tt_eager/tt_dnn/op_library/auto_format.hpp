@@ -11,7 +11,6 @@
 #include <optional>
 
 #include "tt_metal/common/math.hpp"
-using namespace tt::constants;
 
 namespace tt {
 
@@ -34,10 +33,10 @@ class AutoFormat {
 
 
         static Shape pad_to_tile_shape(const Shape& unpadded_shape, bool pad_c=false, bool pad_n=false, bool pad_h=true, bool pad_w=true) {
-            auto n = pad_n ? round_up(unpadded_shape[0], TILE_HEIGHT) : unpadded_shape[0];
-            auto c = pad_c ? round_up(unpadded_shape[1], TILE_WIDTH) : unpadded_shape[1];
-            auto h = pad_h ? round_up(unpadded_shape[2], TILE_HEIGHT) : unpadded_shape[2];
-            auto w = pad_w ? round_up(unpadded_shape[3], TILE_WIDTH) : unpadded_shape[3];
+            auto n = pad_n ? round_up(unpadded_shape[0], tt::constants::TILE_HEIGHT) : unpadded_shape[0];
+            auto c = pad_c ? round_up(unpadded_shape[1], tt::constants::TILE_WIDTH) : unpadded_shape[1];
+            auto h = pad_h ? round_up(unpadded_shape[2], tt::constants::TILE_HEIGHT) : unpadded_shape[2];
+            auto w = pad_w ? round_up(unpadded_shape[3], tt::constants::TILE_WIDTH) : unpadded_shape[3];
             Shape padded_shape = {n, c, h, w};
             return padded_shape;
         }
@@ -60,7 +59,7 @@ class AutoFormat {
 
         // TODO: These legal checks should probably be somewhere else like tensor class, since it is common logic not just for autoformat
         static bool legal_tile_shape(const Shape& shape) {
-            return (shape[2] % TILE_HEIGHT == 0 && shape[3] % TILE_WIDTH == 0);
+            return (shape[2] % tt::constants::TILE_HEIGHT == 0 && shape[3] % tt::constants::TILE_WIDTH == 0);
         }
 
         static bool legal_rm_shape(const Shape& shape) {

@@ -106,8 +106,7 @@ inline Tensor add_without_autoformat(const Tensor& input_tensor_a, const Tensor&
 }  // namespace tt
 
 namespace eltwise_binary_op_utils {
-using namespace tt::tt_metal;
 
-std::map<string, string> get_defines(BinaryOpType op_typee, const std::optional<std::vector<UnaryWithParam>> fused_activations);
+std::map<string, string> get_defines(tt::tt_metal::BinaryOpType op_typee, const std::optional<std::vector<tt::tt_metal::UnaryWithParam>> fused_activations);
 
 }  // namespace eltwise_binary_op_utils

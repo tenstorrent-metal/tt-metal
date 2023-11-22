@@ -60,7 +60,7 @@ operation::ProgramWithCallbacks Copy::create_program(const std::vector<Tensor>& 
 
 CopyOpParallelizationStrategy Copy::get_parallelization_strategy(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor = input_tensors.at(0);
-    uint32_t num_units = input_tensor.layout() == Layout::TILE ? input_tensor.volume() / TILE_HW : input_tensor.volume() / input_tensor.shape()[-1];
+    uint32_t num_units = input_tensor.layout() == Layout::TILE ? input_tensor.volume() / tt::constants::TILE_HW : input_tensor.volume() / input_tensor.shape()[-1];
     if (num_units > 1) {
         return CopyOpParallelizationStrategy::MULTI_CORE;
     }

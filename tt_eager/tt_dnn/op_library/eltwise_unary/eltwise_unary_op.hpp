@@ -213,10 +213,9 @@ inline Tensor add1(const Tensor &input_tensor, const MemoryConfig& output_mem_co
 }  // namespace tt
 
 namespace eltwise_unary_op_utils {
-using namespace tt::tt_metal;
 
-bool get_op_approx_mode(UnaryOpType op_type);
-std::pair<string, string> get_op_init_and_func(UnaryOpType op_type, std::optional<float> param={}, string idst="0");
-std::map<string, string> get_defines(UnaryOpType op_type, std::optional<float> param={}, string id="0", string idst="0");
-std::map<string, string> get_block_defines(const std::vector<UnaryWithParam> op_chain, string block_id="0", string idst="0");
+bool get_op_approx_mode(tt::tt_metal::UnaryOpType op_type);
+std::pair<string, string> get_op_init_and_func(tt::tt_metal::UnaryOpType op_type, std::optional<float> param={}, string idst="0");
+std::map<string, string> get_defines(tt::tt_metal::UnaryOpType op_type, std::optional<float> param={}, string id="0", string idst="0");
+std::map<string, string> get_block_defines(const std::vector<tt::tt_metal::UnaryWithParam> op_chain, string block_id="0", string idst="0");
 } // namespace eltwise_unary_op_utils

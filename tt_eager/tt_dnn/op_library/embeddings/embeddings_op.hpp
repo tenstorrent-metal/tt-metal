@@ -10,9 +10,6 @@
 
 #include "tt_dnn/op_library/run_operation.hpp"
 
-using namespace tt::constants;
-
-
 namespace tt {
 
 namespace tt_metal {
@@ -44,7 +41,6 @@ inline Tensor embeddings(const Tensor &input_tensor, const Tensor &weights,
                                             {input_tensor, weights}).at(0);
 
 }
-
 
 }
 } // namespace tt::tt_metal
