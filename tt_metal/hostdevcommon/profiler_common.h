@@ -47,6 +47,7 @@ namespace kernel_profiler{
         DEVICE_BUFFER_END_INDEX_T2,
         FW_RESET_H,
         FW_RESET_L,
+        DRAM_PROFILER_ADDRESS,
         CONTROL_BUFFER_SIZE
     };
 

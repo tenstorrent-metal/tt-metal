@@ -9,6 +9,7 @@
 
 
 #include "tt_metal/host_api.hpp"
+#include "tt_metal/detail/tt_metal.hpp"
 #include "tools/profiler/profiler.hpp"
 #include "tools/profiler/profiler_state.hpp"
 #include "hostdevcommon/profiler_common.h"
@@ -115,12 +116,12 @@ void Profiler::readRiscProfilerResults(
     std::cout << worker_core.x << "," << worker_core.y <<  "," << core_flat_id << "," << startIndex <<  std::endl ;
     for (int j = 0; j < PROFILER_RISC_COUNT; j++)
     {
-        for (int i= 0; i < 8; i ++)
+        for (int i= 0; i < 12; i ++)
         {
             std::cout << profile_buffer_l1[j*PROFILER_L1_VECTOR_SIZE + i] << ",";
         }
         std::cout <<  std::endl;
-        for (int i= 0; i < 8; i ++)
+        for (int i= 0; i < 12; i ++)
         {
             std::cout << profile_buffer[startIndex + j*PROFILER_FULL_HOST_VECTOR_SIZE_PER_RISC + i] << ",";
         }
@@ -319,8 +320,7 @@ void Profiler::dumpDeviceResults (
     device_core_frequency = tt::Cluster::instance().get_device_aiclk(device_id);
     std::vector<uint32_t> profile_buffer(PROFILER_FULL_HOST_BUFFER_SIZE/sizeof(uint32_t), 0);
 
-    //tt::Cluster::instance().read_sysmem(profile_buffer, PROFILER_HUGE_PAGE_ADDRESS, PROFILER_FULL_HOST_BUFFER_SIZE, 0);
-    //tt::Cluster::instance().write_sysmem(profile_buffer, PROFILER_HUGE_PAGE_ADDRESS, 0);
+    tt_metal::detail::ReadFromBuffer(output_dram_buffer, profile_buffer);
 
     for (const auto &worker_core : worker_cores) {
         readRiscProfilerResults(

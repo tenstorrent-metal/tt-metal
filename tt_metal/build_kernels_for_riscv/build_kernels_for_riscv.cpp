@@ -286,7 +286,6 @@ struct CompileState {
         }
         if (profile_kernel) {
             result += " -DPROFILE_KERNEL=1";
-            result += " -DDRAM_PROFILER_ADDRESS=" + to_string(dram_buffer_start_addr);
         }
         for (int j = 0; j < compile_time_args.size(); j++)
             result += " -DKERNEL_COMPILE_TIME_ARG_" + to_string(j) + "=" + to_string(compile_time_args[j]);
@@ -296,9 +295,6 @@ struct CompileState {
             result += " -DWATCHER_ENABLED";
         }
         if (tt::llrt::OptionsG.get_dprint_enabled()) {
-            if (profile_kernel) {
-                TT_THROW("Cannot enable debug printing and profiling");
-            }
             result += " -DDEBUG_PRINT_ENABLED";
         }
 

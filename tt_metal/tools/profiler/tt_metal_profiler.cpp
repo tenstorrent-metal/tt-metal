@@ -32,25 +32,26 @@ void InitDeviceProfiler(Device *device){
 #if defined(PROFILER)
     ZoneScoped;
 
+    tt_metal_profiler.output_dram_buffer = tt_metal::Buffer(device, PROFILER_FULL_HOST_BUFFER_SIZE, PROFILER_FULL_HOST_BUFFER_SIZE, tt_metal::BufferType::DRAM);
+
     CoreCoord compute_with_storage_size = device->logical_grid_size();
     CoreCoord start_core = {0, 0};
     CoreCoord end_core = {compute_with_storage_size.x - 1, compute_with_storage_size.y - 1};
 
-    //std::vector<uint32_t> zero_buffer(PROFILER_RISC_COUNT * PROFILER_L1_VECTOR_SIZE + PROFILER_L1_CONTROL_VECTOR_SIZE, 0);
-    //{
-        //ZoneScopedN("Clearing_profiler_L1");
-        //for (size_t x=start_core.x; x <= end_core.x; x++)
-        //{
-            //for (size_t y=start_core.y; y <= end_core.y; y++)
-            //{
-                //CoreCoord curr_core = {x, y};
-                //tt_metal::detail::WriteToDeviceL1(device, curr_core, PROFILER_L1_BUFFER_BR, zero_buffer);
-            //}
-        //}
-    //}
+    std::vector<uint32_t> control_buffer(kernel_profiler::CONTROL_BUFFER_SIZE, 0);
+    control_buffer[kernel_profiler::DRAM_PROFILER_ADDRESS] = tt_metal_profiler.output_dram_buffer.address();
 
-    vector<uint32_t> huge_zero_buffer(PROFILER_HOST_BUFFER_SIZE / sizeof(uint32_t), 0);
-    //tt::Cluster::instance().write_sysmem(huge_zero_buffer, PROFILER_HUGE_PAGE_ADDRESS, 0);
+    for (size_t x=start_core.x; x <= end_core.x; x++)
+    {
+        for (size_t y=start_core.y; y <= end_core.y; y++)
+        {
+            CoreCoord curr_core = {x, y};
+            tt_metal::detail::WriteToDeviceL1(device, curr_core, PROFILER_L1_BUFFER_CONTROL, control_buffer);
+        }
+    }
+
+    std::vector<uint32_t> inputs_DRAM(PROFILER_FULL_HOST_BUFFER_SIZE/sizeof(uint32_t), 0);
+    tt_metal::detail::WriteToBuffer(tt_metal_profiler.output_dram_buffer, inputs_DRAM);
 
 #endif
 }

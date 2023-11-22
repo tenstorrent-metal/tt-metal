@@ -25,8 +25,6 @@ namespace tt {
 
 namespace tt_metal {
 
-inline uint64_t dram_buffer_start_addr;
-
 // struct for holding start, stop and duration of a timer period in integer format
 struct TimerPeriodInt {
     uint64_t start;
@@ -106,6 +104,9 @@ class Profiler {
 
         //TracyContext
         TracyCLCtx tracyTTCtx;
+
+        //DRAM buffer for device side results
+        Buffer output_dram_buffer;
 
         //Mark the steady_clock for the start of the asked name
         void markStart(const std::string& timer_name);

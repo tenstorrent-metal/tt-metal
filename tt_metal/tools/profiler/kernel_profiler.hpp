@@ -175,9 +175,9 @@ namespace kernel_profiler{
         uint32_t dram_noc_y = (noc_id >> NOC_ADDR_NODE_ID_BITS) & NOC_ID_MASK;
 
         uint32_t core_flat_id = get_flat_id(dram_noc_x, dram_noc_y);
+        uint32_t dram_profiler_address = profiler_control_buffer[DRAM_PROFILER_ADDRESS];
 
         finish();
-
         int hostIndex;
         int deviceIndex;
         for (hostIndex = kernel_profiler::HOST_BUFFER_END_INDEX_BR, deviceIndex = kernel_profiler::DEVICE_BUFFER_END_INDEX_BR;
@@ -188,18 +188,18 @@ namespace kernel_profiler{
                 profiler_control_buffer[deviceIndex] +
                 profiler_control_buffer[hostIndex];
 
-            uint32_t huge_page_address =
-                PROFILER_HUGE_PAGE_ADDRESS +
+            uint32_t dram_address =
+                dram_profiler_address +
                 (core_flat_id) * PROFILER_RISC_COUNT * PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC +
                 hostIndex * PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC +
                 profiler_control_buffer[hostIndex] * sizeof(uint32_t);
 
             if ( currEndIndex < PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC)
             {
-                uint64_t pcie_buffer_dst_noc_addr = get_noc_addr(0, 4, huge_page_address);
+                uint64_t dram_bank_dst_noc_addr = get_noc_addr(1, 0, dram_address);
                 noc_async_write(
                         PROFILER_L1_BUFFER_BR + hostIndex * PROFILER_L1_BUFFER_SIZE,
-                        pcie_buffer_dst_noc_addr,
+                        dram_bank_dst_noc_addr,
                         profiler_control_buffer[deviceIndex] * sizeof(uint32_t));
 
                 noc_async_write_barrier();
