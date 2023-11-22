@@ -24,26 +24,34 @@ def run_matmul_test(input_shape_1, input_shape_2, dtype, dlayout, in_mem_config,
 
     factor = random.randrange(low, high)
 
-    pt_result = pytorch_ops.eltwise_rpow(x, factor)
+    try:
+        pt_result = pytorch_ops.eltwise_rpow(x, factor=factor)
 
-    tt_result = tt_lib_ops.eltwise_rpow(
-        x=x,
-        factor=factor,
-        device=device,
-        dtype=dtype,
-        layout=dlayout,
-        input_mem_config=in_mem_config,
-        output_mem_config=out_mem_config,
-    )
+        tt_result = tt_lib_ops.eltwise_rpow(
+            x=x,
+            factor=factor,
+            device=device,
+            dtype=dtype,
+            layout=dlayout,
+            input_mem_config=in_mem_config,
+            output_mem_config=out_mem_config,
+        )
 
-    success, pcc_value = comp_pcc(pt_result, tt_result)
-    logger.debug(pcc_value)
+        success, pcc_value = comp_pcc(pt_result, tt_result)
+        logger.debug(pcc_value)
 
-    # Max ATOL Delta: 0.24883651733398438, Max RTOL Delta: 0.007148577831685543, PCC: 0.9813426036602166, PCC check failed
-    pcc = pcc_value.split()[9]
-    pcc = pcc.rstrip(",")
+        # Max ATOL Delta: 0.24883651733398438, Max RTOL Delta: 0.007148577831685543, PCC: 0.9813426036602166, PCC check failed
+        pcc = pcc_value.split()[9]
+        pcc = pcc.rstrip(",")
 
-    f.write(f"{pcc}\n")
+        f.write(f"{pcc}\n")
+    except Exception as e:
+        msg = f"{e.args[0]}"
+
+        if "rpow cannot be calcualted for non-positive numbers" in msg:
+            f.write(f"rpow cannot be calcualted for non-positive number\n")
+        else:
+            f.write(f"{e.args[0]}\n")
 
     assert success, f"low: {low}; high: {high}; message: {pcc_value}; extracted pcc: {pcc}"
 
