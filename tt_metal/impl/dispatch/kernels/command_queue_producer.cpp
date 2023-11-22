@@ -81,6 +81,10 @@ void kernel_main() {
     bool db_buf_switch = false;
 
     while (true) {
+
+        kernel_profiler::mark_fw_start();
+        kernel_profiler::mark_kernel_start();
+
         cq_wait_front();
 
         // Read in command
@@ -143,5 +147,10 @@ void kernel_main() {
         cq_pop_front(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + data_size);
 
         db_buf_switch = not db_buf_switch;
+
+        kernel_profiler::mark_fw_end();
+        kernel_profiler::mark_kernel_end();
+        kernel_profiler::finish();
+        kernel_profiler::send_profiler_data_to_host();
     }
 }

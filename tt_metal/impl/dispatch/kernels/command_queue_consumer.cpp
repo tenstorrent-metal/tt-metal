@@ -16,6 +16,10 @@ void kernel_main() {
     uint64_t consumer_noc_encoding = uint64_t(NOC_XY_ENCODING(my_x[0], my_y[0])) << 32;
 
     while (true) {
+
+        kernel_profiler::mark_fw_start();
+        kernel_profiler::mark_kernel_start();
+
         // Wait for producer to supply a command
         db_acquire(db_semaphore_addr, consumer_noc_encoding);
 
@@ -51,5 +55,10 @@ void kernel_main() {
         noc_semaphore_inc(producer_noc_encoding | get_semaphore(0), 1);
         db_buf_switch = not db_buf_switch;
         noc_async_write_barrier(); // Barrier for now
+
+        kernel_profiler::mark_fw_end();
+        kernel_profiler::mark_kernel_end();
+        kernel_profiler::finish();
+        kernel_profiler::send_profiler_data_to_host();
     }
 }
