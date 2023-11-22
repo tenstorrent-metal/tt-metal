@@ -25,15 +25,15 @@ Tensor groupnorm(
     std::optional<const Tensor> gamma,
     std::optional<const Tensor> beta,
     const MemoryConfig& output_mem_config) {
-    TT_ASSERT(a.shape()[3] % TILE_WIDTH == 0, "Normalizing on last dim cannot be padded");
+    TT_FATAL(a.shape()[3] % TILE_WIDTH == 0, "Normalizing on last dim cannot be padded");
     if (gamma.has_value()) {
-        TT_ASSERT(gamma.value().shape()[3] == a.shape()[3], "Gamma width must be equal to input width");
+        TT_FATAL(gamma.value().shape()[3] == a.shape()[3], "Gamma width must be equal to input width");
     }
     if (beta.has_value()) {
-        TT_ASSERT(beta.value().shape()[3] == a.shape()[3], "Beta width must be equal to input width");
+        TT_FATAL(beta.value().shape()[3] == a.shape()[3], "Beta width must be equal to input width");
     }
 
-    TT_ASSERT(group_size == 1 && "group norm size is only supported for size = 1");
+    TT_FATAL(group_size == 1 && "group norm size is only supported for size = 1");
     /**
      * shortcut when group size = 1 we use layernorm with transpose and non-transpose
      */

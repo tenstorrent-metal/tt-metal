@@ -297,7 +297,7 @@ tt::operations::primary::MatmulMultiCoreReuseMultiCast1DProgramConfig get_mcast_
             break;
         }
     }
-    TT_ASSERT(params_found, "Matmul parameters could not be determined for given input shapes");
+    TT_FATAL(params_found, "Matmul parameters could not be determined for given input shapes");
 
     return tt::operations::primary::MatmulMultiCoreReuseMultiCast1DProgramConfig{
         .compute_with_storage_grid_size = grid_size,
@@ -413,8 +413,8 @@ MatmulParallelizationStrategy Matmul::get_parallelization_strategy(const std::ve
 Tensor bert_large_fused_qkv_matmul(const Tensor &input_tensor_a, const Tensor &input_tensor_b, std::optional<const Tensor> bias, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype) {
     auto batch_size = input_tensor_a.shape()[0];
 
-    TT_ASSERT((input_tensor_a.shape() == Shape({batch_size, 1, 384, 1024})), "Unsupported input shape");
-    TT_ASSERT((input_tensor_b.shape() == Shape({1, 1, 1024, 3072})), "Unsupported input shape");
+    TT_FATAL((input_tensor_a.shape() == Shape({batch_size, 1, 384, 1024})), "Unsupported input shape");
+    TT_FATAL((input_tensor_b.shape() == Shape({1, 1, 1024, 3072})), "Unsupported input shape");
 
     auto program_config = operations::primary::MatmulMultiCoreReuseMultiCastProgramConfig{
         .compute_with_storage_grid_size = {12, batch_size},
@@ -432,9 +432,9 @@ Tensor bert_large_fused_qkv_matmul(const Tensor &input_tensor_a, const Tensor &i
 Tensor bert_large_ff1_matmul(const Tensor &input_tensor_a, const Tensor &input_tensor_b, std::optional<const Tensor> bias, std::optional<UnaryWithParam> fused_activation, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype) {
     auto batch_size = input_tensor_a.shape()[0];
 
-    TT_ASSERT((input_tensor_a.dtype() != DataType::BFLOAT16 or input_tensor_b.dtype() != DataType::BFLOAT16 or output_dtype != DataType::BFLOAT16) or (mem_config.buffer_type == BufferType::DRAM) or (input_tensor_a.memory_config().buffer_type == BufferType::DRAM and input_tensor_b.memory_config().buffer_type == BufferType::DRAM), "For BFLOAT16, if output is on L1, one of in0 or in1 must be on DRAM!");
-    TT_ASSERT((input_tensor_a.shape() == Shape({batch_size, 1, 384, 1024})), "Unsupported input shape");
-    TT_ASSERT((input_tensor_b.shape() == Shape({1, 1, 1024, 4096})), "Unsupported input shape");
+    TT_FATAL((input_tensor_a.dtype() != DataType::BFLOAT16 or input_tensor_b.dtype() != DataType::BFLOAT16 or output_dtype != DataType::BFLOAT16) or (mem_config.buffer_type == BufferType::DRAM) or (input_tensor_a.memory_config().buffer_type == BufferType::DRAM and input_tensor_b.memory_config().buffer_type == BufferType::DRAM), "For BFLOAT16, if output is on L1, one of in0 or in1 must be on DRAM!");
+    TT_FATAL((input_tensor_a.shape() == Shape({batch_size, 1, 384, 1024})), "Unsupported input shape");
+    TT_FATAL((input_tensor_b.shape() == Shape({1, 1, 1024, 4096})), "Unsupported input shape");
 
     auto program_config = operations::primary::MatmulMultiCoreReuseMultiCastProgramConfig{
         .compute_with_storage_grid_size = {12, batch_size},
@@ -452,8 +452,8 @@ Tensor bert_large_ff1_matmul(const Tensor &input_tensor_a, const Tensor &input_t
 Tensor bert_large_ff2_matmul(const Tensor &input_tensor_a, const Tensor &input_tensor_b, std::optional<const Tensor> bias, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype) {
     auto batch_size = input_tensor_a.shape()[0];
 
-    TT_ASSERT((input_tensor_a.shape() == Shape({batch_size, 1, 384, 4096})), "Unsupported input shape");
-    TT_ASSERT((input_tensor_b.shape() == Shape({1, 1, 4096, 1024})), "Unsupported input shape");
+    TT_FATAL((input_tensor_a.shape() == Shape({batch_size, 1, 384, 4096})), "Unsupported input shape");
+    TT_FATAL((input_tensor_b.shape() == Shape({1, 1, 4096, 1024})), "Unsupported input shape");
 
     auto program_config = operations::primary::MatmulMultiCoreReuseMultiCastProgramConfig{
         .compute_with_storage_grid_size = {12, batch_size},
@@ -471,8 +471,8 @@ Tensor bert_large_ff2_matmul(const Tensor &input_tensor_a, const Tensor &input_t
 Tensor bert_large_selfout_matmul(const Tensor &input_tensor_a, const Tensor &input_tensor_b, std::optional<const Tensor> bias, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype) {
     auto batch_size = input_tensor_a.shape()[0];
 
-    TT_ASSERT((input_tensor_a.shape() == Shape({batch_size, 1, 384, 1024})), "Unsupported input shape");
-    TT_ASSERT((input_tensor_b.shape() == Shape({1, 1, 1024, 1024})), "Unsupported input shape");
+    TT_FATAL((input_tensor_a.shape() == Shape({batch_size, 1, 384, 1024})), "Unsupported input shape");
+    TT_FATAL((input_tensor_b.shape() == Shape({1, 1, 1024, 1024})), "Unsupported input shape");
 
     auto program_config = operations::primary::MatmulMultiCoreReuseMultiCastProgramConfig{
         .compute_with_storage_grid_size = {12, batch_size},
@@ -490,8 +490,8 @@ Tensor bert_large_selfout_matmul(const Tensor &input_tensor_a, const Tensor &inp
 Tensor bert_large_pre_softmax_bmm(const Tensor &input_tensor_a, const Tensor &input_tensor_b, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype) {
     auto batch_size = input_tensor_a.shape()[0];
 
-    TT_ASSERT((input_tensor_a.shape() == Shape({batch_size, 16, 384, 64})), "Unsupported input shape");
-    TT_ASSERT((input_tensor_b.shape() == Shape({batch_size, 16, 64, 384})), "Unsupported input shape");
+    TT_FATAL((input_tensor_a.shape() == Shape({batch_size, 16, 384, 64})), "Unsupported input shape");
+    TT_FATAL((input_tensor_b.shape() == Shape({batch_size, 16, 64, 384})), "Unsupported input shape");
 
     auto program_config = operations::primary::MatmulMultiCoreReuseProgramConfig{
         .compute_with_storage_grid_size = {12, batch_size},
@@ -508,8 +508,8 @@ Tensor bert_large_pre_softmax_bmm(const Tensor &input_tensor_a, const Tensor &in
 Tensor bert_large_post_softmax_bmm(const Tensor &input_tensor_a, const Tensor &input_tensor_b, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype) {
     auto batch_size = input_tensor_a.shape()[0];
 
-    TT_ASSERT((input_tensor_a.shape() == Shape({batch_size, 16, 384, 384})), "Unsupported input shape");
-    TT_ASSERT((input_tensor_b.shape() == Shape({batch_size, 16, 384, 64})), "Unsupported input shape");
+    TT_FATAL((input_tensor_a.shape() == Shape({batch_size, 16, 384, 384})), "Unsupported input shape");
+    TT_FATAL((input_tensor_b.shape() == Shape({batch_size, 16, 384, 64})), "Unsupported input shape");
 
     auto program_config = operations::primary::MatmulMultiCoreReuseProgramConfig{
         .compute_with_storage_grid_size = {12, batch_size},
@@ -544,13 +544,13 @@ Tensor falcon_dense_4h_to_h_matmul(const Tensor &input_tensor_a, const Tensor &i
 Tensor falcon_dense_h_to_4h_matmul(const Tensor &input_tensor_a, const Tensor &input_tensor_b, std::optional<const Tensor> bias, std::optional<UnaryWithParam> fused_activation, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype) {
     auto seq_len = input_tensor_a.shape()[2];
     if (seq_len > 1024) {
-        TT_ASSERT(not fused_activation.has_value());
+        TT_FATAL(not fused_activation.has_value());
         // TODO: Check support for seq_len == 128, 256, 512, ..., 2048
-        TT_ASSERT(seq_len % TILE_HEIGHT == 0, "Falcon mm's seq_len must be a multiple of 32!");
-        TT_ASSERT(seq_len >=  128, "Falcon mm's seq_len must be greater than 128!");
-        TT_ASSERT((input_tensor_a.shape() == Shape({1, 1, seq_len, 4544})), "Unsupported input shape");
-        TT_ASSERT((input_tensor_b.shape() == Shape({1, 1, 4544, 18176})), "Unsupported input shape");
-        TT_ASSERT(!fused_activation.has_value());
+        TT_FATAL(seq_len % TILE_HEIGHT == 0, "Falcon mm's seq_len must be a multiple of 32!");
+        TT_FATAL(seq_len >=  128, "Falcon mm's seq_len must be greater than 128!");
+        TT_FATAL((input_tensor_a.shape() == Shape({1, 1, seq_len, 4544})), "Unsupported input shape");
+        TT_FATAL((input_tensor_b.shape() == Shape({1, 1, 4544, 18176})), "Unsupported input shape");
+        TT_FATAL(!fused_activation.has_value());
         return operation::run_with_autoformat(Matmul{.bcast_batch=true, .output_mem_config=mem_config, .output_dtype=output_dtype.value_or(input_tensor_a.dtype())}, {input_tensor_a, input_tensor_b}).at(0);
     } else {
         auto program_config = bmm_op_utils::get_mcast_1d_config(input_tensor_a, input_tensor_b, true, fused_activation, true, mem_config.is_sharded());
@@ -563,10 +563,10 @@ Tensor falcon_lm_head_matmul(const Tensor &input_tensor_a, const Tensor &input_t
 
     if (seq_len > 512) {
         // TODO: Check support for seq_len == 128, 256, 512, ..., 2048
-        TT_ASSERT(seq_len % TILE_HEIGHT == 0, "Falcon mm's seq_len must be a multiple of 32!");
-        TT_ASSERT(seq_len >=  128, "Falcon mm's seq_len must be greater than 128!");
-        TT_ASSERT((input_tensor_a.shape() == Shape({1, 1, seq_len, 4544})), "Unsupported input shape");
-        TT_ASSERT((input_tensor_b.shape() == Shape({1, 1, 4544, 65024})), "Unsupported input shape");
+        TT_FATAL(seq_len % TILE_HEIGHT == 0, "Falcon mm's seq_len must be a multiple of 32!");
+        TT_FATAL(seq_len >=  128, "Falcon mm's seq_len must be greater than 128!");
+        TT_FATAL((input_tensor_a.shape() == Shape({1, 1, seq_len, 4544})), "Unsupported input shape");
+        TT_FATAL((input_tensor_b.shape() == Shape({1, 1, 4544, 65024})), "Unsupported input shape");
         return operation::run_with_autoformat(Matmul{.bcast_batch=true, .output_mem_config=mem_config, .output_dtype=output_dtype.value_or(input_tensor_a.dtype())}, {input_tensor_a, input_tensor_b}, {bias}).at(0);
     } else {
         auto program_config = bmm_op_utils::get_mcast_1d_config(input_tensor_a, input_tensor_b, true, std::nullopt, true, mem_config.is_sharded());
@@ -612,6 +612,9 @@ void Matmul::validate(
     const auto& optional_bias = optional_input_tensors.at(0);
     if (optional_bias.has_value()) {
         const auto& bias = optional_bias.value();
+        TT_FATAL(bias.storage_type() == StorageType::DEVICE, "Operands to matmul need to be on device!");
+        TT_FATAL(input_tensor_a.device() == bias.device(), "Operands to matmul need to be on the same device!");
+        TT_FATAL(bias.buffer() != nullptr, "Operands to matmul need to be allocated in buffers on device!");
         TT_FATAL(bias.layout() == Layout::TILE, "Unsupported input layout");
         TT_FATAL(bias.shape() == Shape({1, 1, TILE_HEIGHT, input_tensor_b.shape()[3]}), "Unsupported bias shape");
     }

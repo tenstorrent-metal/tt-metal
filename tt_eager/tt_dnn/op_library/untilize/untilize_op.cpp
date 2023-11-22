@@ -148,7 +148,7 @@ void UntilizeWithUnpadding::validate(const std::vector<Tensor> &input_tensors) c
             }
             if (output_mem_config.is_sharded()) {
                 TT_FATAL(this->output_mem_config == input_tensor_a.memory_config());
-                TT_ASSERT(input_tensor_a.shape()[-1] == output_shape[-1]);
+                TT_FATAL(input_tensor_a.shape()[-1] == output_shape[-1]);
             } else {
                 TT_FATAL(this->output_mem_config.memory_layout == TensorMemoryLayout::INTERLEAVED);
                 TT_FATAL(input_tensor_a.volume() / (input_tensor_a.shape()[-2] * input_tensor_a.shape()[-1]) == 1, "Can only write unbatched output interleaved");
@@ -226,7 +226,7 @@ Tensor untilize_with_unpadding(const Tensor &input_tensor_a, const Shape &output
                 return input_tensor_a;
             }
         } else {
-            TT_ASSERT(false, "Cannot untilize and unpad input which is not tilized");
+            TT_FATAL(false, "Cannot untilize and unpad input which is not tilized");
         }
     }
     return operation::run_without_autoformat(UntilizeWithUnpadding{output_tensor_start, output_tensor_end, output_mem_config}, {input_tensor_a}).at(0);

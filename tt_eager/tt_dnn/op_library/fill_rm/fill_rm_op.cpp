@@ -29,7 +29,7 @@ operation::ProgramWithCallbacks fill_rm_single_core(const Tensor& any, Tensor &o
     TT_ASSERT(dst_buffer != nullptr, "Output buffer should be allocated on device!");
 
     uint32_t num_cb_tiles = 16;
-    TT_ASSERT(W < 1024*num_cb_tiles); // Limitation for simplifying the kernel
+    TT_FATAL(W < 1024*num_cb_tiles); // Limitation for simplifying the kernel
 
     tt_metal::CircularBufferConfig cb_src0_config = tt_metal::CircularBufferConfig(num_cb_tiles * single_tile_size, {{0, cb_data_format}})
 		.set_page_size(0, single_tile_size);

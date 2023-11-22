@@ -113,7 +113,7 @@ inline std::set<CoreRange> num_cores_to_corerange_set(const uint32_t target_num_
 	uint32_t num_cores_x = grid_size.x;
     uint32_t num_cores_y = grid_size.y;
 
-	TT_ASSERT(target_num_cores <= num_cores_x * num_cores_y, "Target number of cores is greater than total number of cores of specified core grid");
+	TT_FATAL(target_num_cores <= num_cores_x * num_cores_y, "Target number of cores is greater than total number of cores of specified core grid");
 	std::set<CoreRange> all_cores_set;
     if (row_wise) {
         if (target_num_cores > num_cores_x) {
@@ -235,7 +235,7 @@ inline std::vector<CoreCoord> grid_to_cores(const uint32_t num_cores, const uint
     ZoneScoped;
     std::vector<CoreCoord> cores;
     cores.reserve(num_cores);
-    TT_ASSERT(num_cores <= grid_size_x * grid_size_y);
+    TT_FATAL(num_cores <= grid_size_x * grid_size_y);
     if (row_wise) {
         for(uint32_t i = 0; i < num_cores; ++i) {
             cores.push_back({i % grid_size_x, i / grid_size_x});
@@ -254,8 +254,8 @@ inline std::vector<CoreCoord> grid_to_cores_with_noop(const uint32_t bbox_x, con
     ZoneScoped;
     std::vector<CoreCoord> cores;
     cores.reserve(grid_size_x * grid_size_y);
-    TT_ASSERT(bbox_x < grid_size_x);
-    TT_ASSERT(bbox_y < grid_size_y);
+    TT_FATAL(bbox_x < grid_size_x);
+    TT_FATAL(bbox_y < grid_size_y);
     const uint32_t box_size_x = bbox_x + 1;
     const uint32_t box_size_y = bbox_y + 1;
 

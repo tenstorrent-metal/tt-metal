@@ -115,6 +115,7 @@ TransposeOpParallelizationStrategy Transpose::get_parallelization_strategy(const
 tt::stl::reflection::Attributes Transpose::attributes() const {
     return {
         {"dim", this->dim},
+        {"output_mem_config", this->output_mem_config},
     };
 }
 
@@ -160,8 +161,8 @@ Tensor transpose(const Tensor &a, std::int64_t dim1, std::int64_t dim2, const Me
     uint32_t normalized_dim1 = a.shape().get_normalized_index(dim1);
     uint32_t normalized_dim2 = a.shape().get_normalized_index(dim2);
 
-    TT_ASSERT( normalized_dim1 <= 3, "dimension have to be 0-3 only corresponding to N,C,H,W");
-    TT_ASSERT(normalized_dim2 <= 3, "dimension have to be 0-3 only corresponding to N,C,H,W");
+    TT_FATAL( normalized_dim1 <= 3, "dimension have to be 0-3 only corresponding to N,C,H,W");
+    TT_FATAL(normalized_dim2 <= 3, "dimension have to be 0-3 only corresponding to N,C,H,W");
 
     if (
         (normalized_dim1 == normalized_dim2) ||

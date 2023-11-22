@@ -46,7 +46,7 @@ operation::ProgramWithCallbacks move_multi_core_with_overlap(const Tensor &input
 operation::ProgramWithCallbacks move_single_core(const Tensor &input, Tensor &output);
 
 inline Tensor move(Tensor& input_tensor, std::optional<MemoryConfig>& mem_config) {
-    TT_ASSERT(input_tensor.is_allocated(), "Expected input tensor to be allocated");
+    TT_FATAL(input_tensor.is_allocated(), "Expected input tensor to be allocated");
     auto input_mem_config = input_tensor.memory_config();
     auto input_address = input_tensor.buffer()->address();
     auto output_mem_config = mem_config.value_or(input_mem_config);

@@ -37,7 +37,7 @@ Tensor mk_filled_tensor_like(const Tensor& reference_tensor, T val, const Memory
 // Function: softshrink
 // Ref: https://pytorch.org/docs/stable/generated/torch.nn.Softshrink.html
 Tensor _softshrink(const Tensor& a, float param, const MemoryConfig& output_mem_config) {
-    TT_ASSERT(param >= 0);
+    TT_FATAL(param >= 0);
     Tensor t_a_plus_param = add_unary(a, param, output_mem_config);
     Tensor t1 = mul( ltz(t_a_plus_param, output_mem_config), t_a_plus_param, std::nullopt, output_mem_config);
     t_a_plus_param.deallocate();
@@ -53,7 +53,7 @@ Tensor softshrink(const Tensor& a, float param, const MemoryConfig& output_mem_c
 // Function: hardshrink
 // Ref: https://pytorch.org/docs/stable/generated/torch.nn.Hardshrink.html
 Tensor _hardshrink(const Tensor& a, float param, const MemoryConfig& output_mem_config) {
-    TT_ASSERT(param >= 0);
+    TT_FATAL(param >= 0);
     Tensor t1 = mul( ltz(add_unary(a, param)), a, std::nullopt, output_mem_config );
     Tensor t2 = mul( gtz(sub_unary(a, param)), a, std::nullopt, output_mem_config );
     return add( t1, t2, std::nullopt, output_mem_config );
@@ -254,7 +254,7 @@ Tensor selu(const Tensor& x,const float scale, const float alpha, const MemoryCo
 
 // rpow: y = k**(a) = exp( a**log(k) )
 Tensor rpow(const Tensor& a,float k, const MemoryConfig& output_mem_config) {
-  TT_ASSERT( k > 0.0, "rpow cannot be calcualted for non-positive numbers");
+  TT_FATAL( k > 0.0, "rpow cannot be calcualted for non-positive numbers");
   float log_k = logf(k);
   Tensor result = bcast(a, mk_tiled_scalar(log_k), BcastOpMath::MUL, BcastOpDim::HW, output_mem_config);
   return exp(result,output_mem_config);
@@ -312,7 +312,7 @@ Tensor hardswish(const Tensor& a, float scale, float shift, const MemoryConfig& 
 
 //compute polyval by Horner's rule
 Tensor _polyval(const Tensor &input_tensor, std::vector<float> coeffs, const MemoryConfig& output_mem_config) {
-    TT_ASSERT( coeffs.size() != 0 && "coeffs should be 1 or more coefficients");
+    TT_FATAL( coeffs.size() != 0 && "coeffs should be 1 or more coefficients");
     if ( coeffs.size() == 1 ) {
         return  mk_filled_tensor_like( input_tensor, coeffs[0], output_mem_config );
     }
@@ -362,7 +362,7 @@ Tensor _mac(const Tensor& a, const Tensor& b, const Tensor & c, const MemoryConf
 
     // all scalars
     //a - scalar, b - scalar, c - is scalar
-    TT_ASSERT( a_is_scalar && b_is_scalar && c_is_scalar);
+    TT_FATAL( a_is_scalar && b_is_scalar && c_is_scalar);
     return add(mul(a, b), c);
 }
 Tensor mac(const Tensor& a, const Tensor& b, const Tensor& c, const MemoryConfig& output_mem_config )
@@ -684,7 +684,7 @@ Tensor _repeat_interleave(const Tensor& input_a, uint32_t repeat, int32_t dim, c
     // normalizing the negative dim
     uint32_t normalized_dim = input_a.shape().get_normalized_index(dim);
     // check if dim is 1 or 3
-    TT_ASSERT( normalized_dim != 3 || normalized_dim != 1, "dim 1 & 3 is not supported ");
+    TT_FATAL( normalized_dim != 3 || normalized_dim != 1, "dim 1 & 3 is not supported ");
 
     if (normalized_dim <= 1){
         for (int i = 0; i < repeat; i++) {
@@ -1124,8 +1124,8 @@ Tensor _outer(Tensor& a, Tensor& b, const MemoryConfig& output_mem_config) {
     };
 
     //check if 3 dimensions are 1
-    TT_ASSERT( !(num_ones(s_a) < 3) , "3 dimensions are required to be 1 for use with outer product");
-    TT_ASSERT( !(num_ones(s_b) < 3) , "3 dimensions are required to be 1 for use with outer product");
+    TT_FATAL( !(num_ones(s_a) < 3) , "3 dimensions are required to be 1 for use with outer product");
+    TT_FATAL( !(num_ones(s_b) < 3) , "3 dimensions are required to be 1 for use with outer product");
 
     const bool skip_reshape_a = (s_a[0] == 1 && s_a[1] == 1 && s_a[2] >= 1 && s_a[3] == 1 );
     const bool skip_reshape_b = (s_b[0] == 1 && s_b[1] == 1 && s_b[2] == 1 && s_b[3] >= 1 );
@@ -1148,7 +1148,7 @@ Tensor outer(Tensor& a, Tensor& b, const MemoryConfig& output_mem_config) {
 
 // Gated Linear Unit activation: matmul(split[0],sigmoid(split[1]))
 Tensor _glu(const Tensor& input_a, int32_t dim /* = -1 */, const MemoryConfig& output_mem_config /* = operation::DEFAULT_OUTPUT_MEMORY_CONFIG */) {
-    TT_ASSERT( dim == -1 || dim == 3, "last dim GLU only supported at this time ");
+    TT_FATAL( dim == -1 || dim == 3, "last dim GLU only supported at this time ");
     if ( dim == -1 ) dim = 3;
     std::vector<Tensor> ab = split_last_dim_two_chunks_tiled(input_a,output_mem_config);
     Tensor sigmoid_b = sigmoid(ab[1], output_mem_config);
@@ -1161,7 +1161,7 @@ Tensor glu(const Tensor& input_a, int32_t dim /* = -1 */, const MemoryConfig& ou
 
 // ReLU Gated Linear Unit activation: matmul(split[0],relu(split[1]))
 Tensor _reglu(const Tensor& input_a, int32_t dim /* = -1 */, const MemoryConfig& output_mem_config /* = operation::DEFAULT_OUTPUT_MEMORY_CONFIG */) {
-    TT_ASSERT( dim == -1 || dim == 3, "last dim REGLU only supported at this time ");
+    TT_FATAL( dim == -1 || dim == 3, "last dim REGLU only supported at this time ");
     if ( dim == -1 ) dim = 3;
     std::vector<Tensor> ab = split_last_dim_two_chunks_tiled(input_a,output_mem_config);
     Tensor relu_b = relu(ab[1], output_mem_config);
@@ -1174,7 +1174,7 @@ Tensor reglu(const Tensor& input_a, int32_t dim /* = -1 */, const MemoryConfig& 
 
 // Gaussian Error Gated Linear Unit activation: matmul(split[0],gelu(split[1]))
 Tensor _geglu(const Tensor& input_a, int32_t dim /* = -1 */, const MemoryConfig& output_mem_config /* = operation::DEFAULT_OUTPUT_MEMORY_CONFIG */) {
-    TT_ASSERT( dim == -1 || dim == 3, "last dim GEGLU only supported at this time ");
+    TT_FATAL( dim == -1 || dim == 3, "last dim GEGLU only supported at this time ");
     if ( dim == -1 ) dim = 3;
     std::vector<Tensor> ab = split_last_dim_two_chunks_tiled(input_a,output_mem_config);
     constexpr bool fast_appx = true;
@@ -1188,7 +1188,7 @@ Tensor geglu(const Tensor& input_a, int32_t dim /* = -1 */, const MemoryConfig& 
 
 // Swish Gated Linear Unit activation: matmul(split[0],swish(split[1]))
 Tensor _swiglu(const Tensor& input_a, int32_t dim /* = -1 */, const MemoryConfig& output_mem_config /* = operation::DEFAULT_OUTPUT_MEMORY_CONFIG */) {
-    TT_ASSERT( dim == -1 || dim == 3, "last dim SWIGLU only supported at this time ");
+    TT_FATAL( dim == -1 || dim == 3, "last dim SWIGLU only supported at this time ");
     if ( dim == -1 ) dim = 3;
     std::vector<Tensor> ab = split_last_dim_two_chunks_tiled(input_a,output_mem_config);
     Tensor swish_b = swish(ab[1], output_mem_config);

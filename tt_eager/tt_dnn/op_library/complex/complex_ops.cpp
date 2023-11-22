@@ -14,10 +14,7 @@ namespace tt {
 
 namespace tt_metal {
 
-#define CHECK_FOR_COMPLEX(input) do {\
-  TT_ASSERT( utility::is_complex_shape(input), "works for complex shape only"); \
-  /* TT_ASSERT( input.shape()[0] == 1, "tensor should have batch size 1"); */ \
-  } while(0);
+#define CHECK_FOR_COMPLEX(input) TT_FATAL( utility::is_complex_shape(input), "works for complex shape only");
 
 Tensor mk_complex(const Tensor& input_r, const Tensor& input_i, const MemoryConfig& output_mem_config) {
     std::vector<Tensor> inputs = {input_r,input_i};

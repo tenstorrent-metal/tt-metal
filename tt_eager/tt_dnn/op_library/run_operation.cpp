@@ -33,7 +33,7 @@ static Device* get_device(const std::vector<Tensor>& input_tensors, const std::v
         }
     }
     auto device = AutoFormat::GetDefaultDevice();
-    TT_ASSERT(device != nullptr, "Requires setting default device if no inputs to operation are on device");
+    TT_FATAL(device != nullptr, "Requires setting default device if no inputs to operation are on device");
     return device;
 }
 

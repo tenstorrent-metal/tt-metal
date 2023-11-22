@@ -169,7 +169,7 @@ Tensor reduce(const Tensor &input_tensor, ReduceOpMath reduce_math, ReduceOpDim 
         // Get the device
         if (input_tensor.storage_type() == StorageType::OWNED) {
             device = AutoFormat::GetDefaultDevice();
-            TT_ASSERT(device != nullptr, "Requires setting default device if no inputs to op are on device");
+            TT_FATAL(device != nullptr, "Requires setting default device if no inputs to op are on device");
         } else {
             device = input_tensor.device();
         }
@@ -193,7 +193,7 @@ Tensor global_mean(const Tensor& input_tensor, const MemoryConfig& output_mem_co
 Tensor mean(const Tensor& input_tensor,uint aggregate_dims /* = 2 */, const MemoryConfig& output_mem_config) {
     tt::tt_metal::Shape shape = input_tensor.shape();
 
-    TT_ASSERT( aggregate_dims >= 2 && aggregate_dims <= 4, "mean aggregate dimensions should be [HW],[CHW] or [NCHW]");
+    TT_FATAL( aggregate_dims >= 2 && aggregate_dims <= 4, "mean aggregate dimensions should be [HW],[CHW] or [NCHW]");
     switch( aggregate_dims ) {
         case 4:
         case 3:
@@ -211,7 +211,7 @@ Tensor mean(const Tensor& input_tensor,uint aggregate_dims /* = 2 */, const Memo
 }
 
 Tensor sum(const Tensor &input_tensor, uint dim, const MemoryConfig& output_mem_config) {
-    TT_ASSERT( dim >= 0 && dim <= 3, "dimension have to be 0-3 only corresponding to N,C,H,W");
+    TT_FATAL( dim >= 0 && dim <= 3, "dimension have to be 0-3 only corresponding to N,C,H,W");
     constexpr float scaler1 = 1.0;
 
     if ( dim == 3 ) {
@@ -226,7 +226,7 @@ Tensor sum(const Tensor &input_tensor, uint dim, const MemoryConfig& output_mem_
     // Get the device
     if (input_tensor.storage_type() == StorageType::OWNED) {
         device = AutoFormat::GetDefaultDevice();
-        TT_ASSERT(device != nullptr, "Requires setting default device if no inputs to op are on device");
+        TT_FATAL(device != nullptr, "Requires setting default device if no inputs to op are on device");
     } else {
         device = input_tensor.device();
     }

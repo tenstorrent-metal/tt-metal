@@ -811,9 +811,6 @@ operation::ProgramWithCallbacks matmul_multi_core_reuse_mcast_2d_optimized_(cons
     tt::DataFormat bias_data_format = tt::DataFormat::Bfp8_b; // bias; doesn't matter if bias=nullptr
     if (bias.has_value()) {
         auto& c = bias.value();
-        TT_ASSERT(c.storage_type() == StorageType::DEVICE);
-        TT_ASSERT(a.device() == c.device(), "Operands to matmul need to be on the same device!");
-        TT_ASSERT(c.buffer() != nullptr, "Operands to matmul need to be allocated in buffers on device!");
 
         bias_buffer = c.buffer();
 

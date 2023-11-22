@@ -51,7 +51,7 @@ class ComplexTensor {
     public:
 
         ComplexTensor(std::array<Tensor,2> val): m_real_imag(val) {
-            TT_ASSERT( m_real_imag[0].shape() == m_real_imag[1].shape() , "Tensor shapes of real and imag should be identical");
+            TT_FATAL( m_real_imag[0].shape() == m_real_imag[1].shape() , "Tensor shapes of real and imag should be identical");
         }
 
         Tensor operator[](uint32_t index) const {

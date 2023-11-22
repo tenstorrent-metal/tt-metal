@@ -92,9 +92,6 @@ std::vector<std::pair<std::vector<uint32_t>, std::vector<uint32_t> > > get_runti
 
 operation::ProgramWithCallbacks transpose_cn_single_core(const Tensor &a, Tensor &output) {
 
-    TT_ASSERT(a.storage_type() == StorageType::DEVICE, "Operand to transpose_cn needs to be on device!");
-    TT_ASSERT(a.buffer() != nullptr, "Operand to transpose_cn needs to be allocated in a buffer on device!");
-
     tt_metal::Program program = tt_metal::Program();
 
     tt::DataFormat cb_data_format = tt_metal::datatype_to_dataformat_converter(a.dtype());

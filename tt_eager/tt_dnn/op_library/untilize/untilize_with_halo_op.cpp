@@ -1391,7 +1391,7 @@ operation::ProgramWithCallbacks UntilizeWithHalo::create_program(const std::vect
 }
 
 Tensor untilize_with_halo(const Tensor &input_tensor_a, const uint32_t pad_val, const uint32_t &in_b, const uint32_t &in_h, const uint32_t &in_w, const uint32_t stride, const MemoryConfig& mem_config) {
-    TT_ASSERT(input_tensor_a.memory_config().is_sharded()); // TODO: Remove from validate?
+    TT_FATAL(input_tensor_a.memory_config().is_sharded()); // TODO: Remove from validate?
 
     // TODO: Pass these attributes in instead of hardcoding
     uint32_t pad_h = 1;
@@ -1410,8 +1410,8 @@ Tensor untilize_with_halo(const Tensor &input_tensor_a, const uint32_t pad_val, 
     uint32_t halo_out_nsticks = (in_w + window_w / 2 + 2 * pad_w);  // left or right halo
 
     if (input_tensor_a.memory_config().memory_layout == TensorMemoryLayout::BLOCK_SHARDED) {
-        TT_ASSERT(input_tensor_a.shard_spec().value().shard_orientation == ShardOrientation::COL_MAJOR);
-        TT_ASSERT(all_cores.ranges().size() == 1);
+        TT_FATAL(input_tensor_a.shard_spec().value().shard_orientation == ShardOrientation::COL_MAJOR);
+        TT_FATAL(all_cores.ranges().size() == 1);
         auto core_range = *(all_cores.ranges().begin());
         ncores = core_range.end.y - core_range.start.y + 1;
         in_nsticks_per_core = input_tensor_a.shard_spec().value().shard_shape[0];
@@ -1469,7 +1469,7 @@ Tensor untilize_with_halo(const Tensor &input_tensor_a, const uint32_t pad_val, 
 
         case 2:
 
-            TT_ASSERT(pc.in_h * pc.in_w == input_shape[2] || in_b * pc.in_h * pc.in_w == input_shape[2]);
+            TT_FATAL(pc.in_h * pc.in_w == input_shape[2] || in_b * pc.in_h * pc.in_w == input_shape[2]);
 
             // resuting output shape of subsequent pooling op
             pc.out_h = ((pc.in_h + 2 * pc.pad_h - (pc.dilation_h * pc.window_h - 1) - 1) / pc.stride_h) + 1;
@@ -1492,7 +1492,7 @@ Tensor untilize_with_halo(const Tensor &input_tensor_a, const uint32_t pad_val, 
             break;
 
         default:
-            TT_ASSERT(false, "Invalid stride value!");
+            TT_FATAL(false, "Invalid stride value!");
     }
     log_debug("max nsticks across all cores = {}", max_out_nsticks_per_core);
 
