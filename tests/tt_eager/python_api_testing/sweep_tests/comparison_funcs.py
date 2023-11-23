@@ -99,6 +99,116 @@ def get_atol_rtol_pcc(golden, calculated):
     )
 
 
+def get_pcc_robust(golden, calculated):
+    def handle_exception_values(golden, calculated, function):
+        either_nan = torch.logical_or(function(golden), function(calculated))
+        both_nans_count = torch.logical_and(function(golden), function(calculated)).sum().item()
+        either_nan_count = either_nan.sum().item()
+
+        if either_nan_count == 0:
+            similarity = 1
+        else:
+            similarity = both_nans_count / either_nan_count
+
+        golden = golden[torch.logical_not(either_nan)]
+        calculated = calculated[torch.logical_not(either_nan)]
+
+        return either_nan_count, similarity, golden, calculated
+
+    # Compare floats for equality using absolute or relative difference depending on absolute value of float
+    def are_equal_fuzzy(x, y, th=1, eps=0.0001):
+        abs_diff = torch.abs(x - y)
+        max_el = torch.max(torch.abs(x), torch.abs(y))
+
+        # For small floats go with absolute difference
+        # For large floats go with relative difference
+        diff = abs_diff
+        diff[max_el > th] = (abs_diff / max_el)[max_el > th]
+
+        return diff < eps
+
+    # convert complex to real
+    if golden.is_complex() and calculated.is_complex():
+        golden = torch.view_as_real(golden.clone())
+        calculated = torch.view_as_real(calculated.clone())
+
+    # Convert any type to float
+    golden = golden.to(torch.float)
+    calculated = calculated.to(torch.float)
+
+    # if sizes are different cannot calculate correlation
+    if golden.size() != calculated.size():
+        return 0.0
+
+    # Flatten the tensors
+    golden = golden.flatten()
+    calculated = calculated.flatten()
+
+    # Accumulators
+    counts = []
+    similarities = []
+
+    # Handle nans
+    count, similarity, golden, calculated = handle_exception_values(golden, calculated, torch.isnan)
+    counts.append(count)
+    similarities.append(similarity)
+
+    # Handle inf
+    count, similarity, golden, calculated = handle_exception_values(golden, calculated, torch.isinf)
+    counts.append(count)
+    similarities.append(similarity)
+
+    # Handle neginf
+    count, similarity, golden, calculated = handle_exception_values(golden, calculated, torch.isneginf)
+    counts.append(count)
+    similarities.append(similarity)
+
+    # Are tensors empty (at this point tensors have to have same size)
+    if golden.numel() == 0:
+        counts.append(0)
+        similarities.append(1.0)
+    elif (
+        torch.equal(golden, calculated)  # Handle completelly equal case
+        or golden.numel() == 1  # Single element case
+        or torch.max(golden) == torch.min(golden)  # one tensor is constant
+        or torch.max(calculated) == torch.min(calculated)
+    ):  # One tensor is constant (includes "one tensor is all zero" case)
+        count = golden.numel()
+        similarity = are_equal_fuzzy(golden, calculated).sum().item() / count
+
+        counts.append(golden.numel())
+        similarities.append(similarity)
+    else:
+        cal_pcc = np.ma.corrcoef(
+            np.ma.masked_invalid(torch.squeeze(golden).detach().numpy()).flatten(),
+            np.ma.masked_invalid(torch.squeeze(calculated).detach().numpy()).flatten(),
+        )
+
+        # Remove correlation coefficient with self (typically always 1.0)
+        mask = np.ones(cal_pcc.shape, dtype=bool)
+        np.fill_diagonal(mask, 0)
+        cal_pcc = np.min(cal_pcc[mask])
+
+        if isinstance(cal_pcc, np.ma.core.MaskedConstant):
+            return 1.0
+
+        counts.append(golden.numel())
+        similarities.append(cal_pcc)
+
+    # Blend all similarities
+    count = 0
+    similarity = 0
+
+    for i in range(len(counts)):
+        count += counts[i]
+        similarity += similarities[i] * counts[i]
+
+    if count == 0:
+        return 1.0  # Both tensors have no elements
+    else:
+        return similarity / count
+
+
 def comp_equal(golden, calculated):
     if golden.dtype != calculated.dtype:
         calculated = calculated.type(golden.dtype)

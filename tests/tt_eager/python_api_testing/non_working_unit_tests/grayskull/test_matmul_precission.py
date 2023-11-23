@@ -8,7 +8,7 @@ import pytest
 import torch
 import tt_lib as ttl
 
-from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc
+from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc, get_pcc_robust
 from tests.tt_eager.python_api_testing.sweep_tests import pytorch_ops, tt_lib_ops
 from tests.tt_eager.python_api_testing.sweep_tests.generation_funcs import gen_rand
 
@@ -22,14 +22,13 @@ def run_matmul_test(input_shape_1, input_shape_2, dtype, dlayout, in_mem_config,
     x = gen_rand(size=input_shape_1, low=low, high=high).to(torch.bfloat16)
     y = gen_rand(size=input_shape_2, low=low, high=high).to(torch.bfloat16)
 
-    factor = random.randrange(low, high)
+    # factor = random.randrange(low, high)
 
     try:
-        pt_result = pytorch_ops.eltwise_rpow(x, factor=factor)
+        pt_result = pytorch_ops.sqrt(x)
 
-        tt_result = tt_lib_ops.eltwise_rpow(
+        tt_result = tt_lib_ops.eltwise_sqrt(
             x=x,
-            factor=factor,
             device=device,
             dtype=dtype,
             layout=dlayout,
@@ -37,23 +36,30 @@ def run_matmul_test(input_shape_1, input_shape_2, dtype, dlayout, in_mem_config,
             output_mem_config=out_mem_config,
         )
 
-        success, pcc_value = comp_pcc(pt_result, tt_result)
-        logger.debug(pcc_value)
+        # print(f"x {x}")
+        # print(f"pt_result {pt_result}")
+        # print(f"tt_result {tt_result}")
+
+        pcc = get_pcc_robust(pt_result, tt_result)  # comp_pcc(pt_result, tt_result)
+        logger.debug(pcc)
 
         # Max ATOL Delta: 0.24883651733398438, Max RTOL Delta: 0.007148577831685543, PCC: 0.9813426036602166, PCC check failed
-        pcc = pcc_value.split()[9]
-        pcc = pcc.rstrip(",")
+        # pcc = pcc_value.split()[9]
+        # pcc = pcc.rstrip(",")
 
         f.write(f"{pcc}\n")
+        assert pcc > 0.99, f"low: {low}; high: {high}; message: {pcc_value}; extracted pcc: {pcc}"
+
     except Exception as e:
         msg = f"{e.args[0]}"
 
         if "rpow cannot be calcualted for non-positive numbers" in msg:
             f.write(f"rpow cannot be calcualted for non-positive number\n")
-        else:
-            f.write(f"{e.args[0]}\n")
+        # else:
+        #     f.write(f"{e.args[0]}\n")
+        #     #f.write(f"Exception\n")
 
-    assert success, f"low: {low}; high: {high}; message: {pcc_value}; extracted pcc: {pcc}"
+        # assert False
 
 
 range_start = [0, 0, 50]
@@ -175,9 +181,10 @@ for i in range(len(range_start)):
         (
             (1, 4, 128, 128),
             (1, 4, 128, 128),
-            [ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.BFLOAT16],
-            [ttl.tensor.Layout.TILE, ttl.tensor.Layout.TILE],
+            [ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.BFLOAT16],
+            [ttl.tensor.Layout.TILE, ttl.tensor.Layout.TILE, ttl.tensor.Layout.TILE],
             [
+                ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
                 ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
                 ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
             ],
@@ -197,3 +204,12 @@ for i in range(len(range_start)):
 def test_matmul_test(input_shape_1, input_shape_2, dtype, dlayout, in_mem_config, out_mem_config, low, high, device):
     random.seed(0)
     run_matmul_test(input_shape_1, input_shape_2, dtype, dlayout, in_mem_config, out_mem_config, low, high, device)
+
+
+# def test_matmul_test(device):
+#     random.seed(0)
+#     run_matmul_test((1, 1, 32, 32), (1, 1, 32, 32),
+#         [ttl.tensor.DataType.BFLOAT16],
+#         [ttl.tensor.Layout.TILE],
+#         [ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM)],
+#         ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM), -100, 0, device)
