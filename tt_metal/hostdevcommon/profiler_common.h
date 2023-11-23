@@ -7,20 +7,18 @@
 inline __attribute__((always_inline)) uint32_t get_flat_id(uint32_t coreX, uint32_t coreY)
 {
     constexpr uint32_t DRAM_ROW = 6;
-    constexpr uint32_t MULTIPLIER = 12;
     uint32_t coreFlatID = 0;
 
     if (coreY > DRAM_ROW){
         coreX --;
         coreY --;
-        coreY -= DRAM_ROW;
-        coreFlatID = coreY * 24 + (coreX % 3) * 8 + (coreX / 3) + 4;
+        coreY --;
     }
     else{
         coreX --;
         coreY --;
-        coreFlatID = coreY * 24 + (coreX % 3) * 8 + (coreX / 3);
     }
+    coreFlatID = coreY * 3 + (coreX / 3) * 30 + (coreX % 3) ;
     return coreFlatID;
 }
 

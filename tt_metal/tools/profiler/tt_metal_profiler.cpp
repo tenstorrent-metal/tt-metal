@@ -32,7 +32,7 @@ void InitDeviceProfiler(Device *device){
 #if defined(PROFILER)
     ZoneScoped;
 
-    tt_metal_profiler.output_dram_buffer = tt_metal::Buffer(device, PROFILER_FULL_HOST_BUFFER_SIZE, PROFILER_FULL_HOST_BUFFER_SIZE, tt_metal::BufferType::DRAM);
+    tt_metal_profiler.output_dram_buffer = tt_metal::CreateBuffer(device, PROFILER_FULL_HOST_BUFFER_SIZE, PROFILER_FULL_HOST_BUFFER_SIZE_PER_DRAM_BANK, tt_metal::BufferType::DRAM);
 
     CoreCoord compute_with_storage_size = device->logical_grid_size();
     CoreCoord start_core = {0, 0};
@@ -63,9 +63,9 @@ void DumpDeviceProfileResults(Device *device) {
     CoreCoord end_core = {compute_with_storage_size.x - 1, compute_with_storage_size.y - 1};
 
     std::vector<CoreCoord> workerCores;
-    for (size_t x=start_core.x; x <= end_core.x; x++)
+    for (size_t y=start_core.y; y <= end_core.y; y++)
     {
-        for (size_t y=start_core.y; y <= end_core.y; y++)
+        for (size_t x=start_core.x; x <= end_core.x; x++)
         {
             CoreCoord logical_core = {x, y};
             workerCores.push_back(device->worker_core_from_logical_core(logical_core));
@@ -92,7 +92,7 @@ void DumpDeviceProfileResults(Device *device, const vector<CoreCoord>& worker_co
     {
         auto device_id = device->id();
         tt_metal_profiler.setDeviceArchitecture(device->arch());
-        tt_metal_profiler.dumpDeviceResults(device_id, worker_cores);
+        tt_metal_profiler.dumpDeviceResults(device, worker_cores);
         tt_metal_profiler.pushTracyDeviceResults(device_id);
         tt_metal_profiler.device_data.clear();
     }

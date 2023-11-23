@@ -171,11 +171,14 @@ namespace kernel_profiler{
 
         const uint32_t NOC_ID_MASK = (1 << NOC_ADDR_NODE_ID_BITS) - 1;
         uint32_t noc_id = noc_local_node_id() & 0xFFF;
-        uint32_t dram_noc_x = noc_id & NOC_ID_MASK;
-        uint32_t dram_noc_y = (noc_id >> NOC_ADDR_NODE_ID_BITS) & NOC_ID_MASK;
+        uint32_t noc_x = noc_id & NOC_ID_MASK;
+        uint32_t noc_y = (noc_id >> NOC_ADDR_NODE_ID_BITS) & NOC_ID_MASK;
 
-        uint32_t core_flat_id = get_flat_id(dram_noc_x, dram_noc_y);
+        uint32_t core_flat_id = get_flat_id(noc_x, noc_y);
         uint32_t dram_profiler_address = profiler_control_buffer[DRAM_PROFILER_ADDRESS];
+
+        uint32_t dram_noc_x = (core_flat_id / 30) * 3 + 1;
+        uint32_t dram_noc_y = noc_y > 6 ? 6 : 0;
 
         finish();
         int hostIndex;
@@ -190,13 +193,13 @@ namespace kernel_profiler{
 
             uint32_t dram_address =
                 dram_profiler_address +
-                (core_flat_id) * PROFILER_RISC_COUNT * PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC +
+                (core_flat_id % 15) * PROFILER_RISC_COUNT * PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC +
                 hostIndex * PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC +
                 profiler_control_buffer[hostIndex] * sizeof(uint32_t);
 
             if ( currEndIndex < PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC)
             {
-                uint64_t dram_bank_dst_noc_addr = get_noc_addr(1, 0, dram_address);
+                uint64_t dram_bank_dst_noc_addr = get_noc_addr(dram_noc_x, dram_noc_y, dram_address);
                 noc_async_write(
                         PROFILER_L1_BUFFER_BR + hostIndex * PROFILER_L1_BUFFER_SIZE,
                         dram_bank_dst_noc_addr,

@@ -90,6 +90,26 @@ void Profiler::readRiscProfilerResults(
 
     ZoneScoped;
     uint32_t core_flat_id = get_flat_id(worker_core.x, worker_core.y);
+
+
+//#define DEBUG_CORES
+#ifdef DEBUG_CORES
+    uint32_t dram_noc_x = (core_flat_id % 4) * 3 + 1;
+    uint32_t dram_noc_y = worker_core.y > 6 ? 6 : 0;
+
+    static size_t preRow = -1;
+    if (preRow == -1)
+    {
+        preRow = worker_core.y;
+    }
+    else if (preRow != worker_core.y)
+    {
+        std::cout << std::endl;
+        preRow = worker_core.y;
+    }
+    std::cout << worker_core.x << "," << worker_core.y <<  "," << core_flat_id << "," << dram_noc_x << "," << dram_noc_y << " | ";
+#endif
+
     uint32_t startIndex = core_flat_id * PROFILER_RISC_COUNT * PROFILER_FULL_HOST_VECTOR_SIZE_PER_RISC;
 
     vector<std::uint32_t> control_buffer;
@@ -105,6 +125,8 @@ void Profiler::readRiscProfilerResults(
 
 //#define DEBUG_PRINT_L1
 #ifdef DEBUG_PRINT_L1
+    if (core_flat_id < 8)
+    {
     vector<std::uint32_t> profile_buffer_l1;
 
     profile_buffer_l1 = tt::llrt::read_hex_vec_from_core(
@@ -133,6 +155,7 @@ void Profiler::readRiscProfilerResults(
     std::cout << "Control Buffer :" << control_buffer [2] << "," << control_buffer [7] << "," << std::endl;
     std::cout << "Control Buffer :" << control_buffer [3] << "," << control_buffer [8] << "," << std::endl;
     std::cout << "Control Buffer :" << control_buffer [4] << "," << control_buffer [9] << "," << std::endl;
+    }
 #endif
 
     for (int riscNum = 0; riscNum < PROFILER_RISC_COUNT; riscNum++) {
@@ -313,14 +336,38 @@ void Profiler::setDeviceArchitecture(tt::ARCH device_arch)
 }
 
 void Profiler::dumpDeviceResults (
-        int device_id,
+        Device *device,
         const vector<CoreCoord> &worker_cores){
 #if defined(PROFILER)
     ZoneScoped;
+    auto device_id = device->id();
     device_core_frequency = tt::Cluster::instance().get_device_aiclk(device_id);
     std::vector<uint32_t> profile_buffer(PROFILER_FULL_HOST_BUFFER_SIZE/sizeof(uint32_t), 0);
 
     tt_metal::detail::ReadFromBuffer(output_dram_buffer, profile_buffer);
+
+//#define DEBUG_READ_BANKS
+#ifdef DEBUG_READ_BANKS
+    std::vector<uint32_t> profile_buffer_dram(PROFILER_FULL_HOST_BUFFER_SIZE_PER_DRAM_BANK/sizeof(uint32_t), 0);
+    for (int j = 0; j < 8; j ++)
+    {
+        tt_metal::detail::ReadFromDeviceDRAMChannel(device, j, output_dram_buffer.address(), PROFILER_FULL_HOST_BUFFER_SIZE_PER_DRAM_BANK, profile_buffer_dram);
+
+        for (int i =0; i < 36; i++)
+        {
+            cout << profile_buffer_dram [i] << ",";
+        }
+        cout << std::endl;
+
+        for (int i =0; i < 36; i++)
+        {
+            cout << profile_buffer [i + j * PROFILER_FULL_HOST_BUFFER_SIZE_PER_DRAM_BANK/sizeof(uint32_t)] << ",";
+        }
+        cout << std::endl;
+        cout << std::endl;
+    }
+#endif
+
 
     for (const auto &worker_core : worker_cores) {
         readRiscProfilerResults(

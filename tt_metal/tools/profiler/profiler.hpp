@@ -130,7 +130,7 @@ class Profiler {
         void setHostOutputDir(const std::string& new_output_dir);
 
         //Traverse all cores on the device and dump the device profile results
-        void dumpDeviceResults(int device_id, const vector<CoreCoord> &worker_cores);
+        void dumpDeviceResults(Device *device, const vector<CoreCoord> &worker_cores);
 
         //Push device results to tracy
         void pushTracyDeviceResults(int device_id);
