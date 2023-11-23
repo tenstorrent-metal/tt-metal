@@ -13,7 +13,7 @@ bool RunCustomCycle(tt_metal::Device *device, int loop_count)
 
     CoreCoord compute_with_storage_size = device->compute_with_storage_grid_size();
     CoreCoord start_core = {0, 0};
-    //CoreCoord end_core = {0, 0};
+    //CoreCoord end_core = start_core;
     CoreCoord end_core = {compute_with_storage_size.x - 1, compute_with_storage_size.y - 1};
     CoreRange all_cores{.start=start_core, .end=end_core};
 

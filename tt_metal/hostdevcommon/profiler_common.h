@@ -11,10 +11,15 @@ inline __attribute__((always_inline)) uint32_t get_flat_id(uint32_t coreX, uint3
     uint32_t coreFlatID = 0;
 
     if (coreY > DRAM_ROW){
-        coreFlatID = ((coreY - 2) * MULTIPLIER + (coreX - 1));
+        coreX --;
+        coreY --;
+        coreY -= DRAM_ROW;
+        coreFlatID = coreY * 24 + (coreX % 3) * 8 + (coreX / 3) + 4;
     }
     else{
-        coreFlatID = ((coreY - 1) * MULTIPLIER + (coreX - 1));
+        coreX --;
+        coreY --;
+        coreFlatID = coreY * 24 + (coreX % 3) * 8 + (coreX / 3);
     }
     return coreFlatID;
 }
