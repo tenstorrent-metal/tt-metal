@@ -429,7 +429,6 @@ Tensor convert_torch_tensor_to_tt_tensor(
                         )
                 )doc")
             .def(
-<<<<<<< HEAD
                 py::init<>([](std::vector<float> &&data,
                               const std::array<uint32_t, 4> &shape,
                               DataType data_type,
@@ -439,7 +438,6 @@ Tensor convert_torch_tensor_to_tt_tensor(
                     auto tensor = Tensor(OwnedStorage{owned_buffer}, shape, data_type, layout);
                     return tensor.to(device, MemoryConfig{});
                 }),
-=======
                 py::init<>(
                     [](std::vector<float>&& data, const std::array<uint32_t, 4>& shape, DataType data_type, Layout layout, ShardSpec shard_spec) {
                         auto owned_buffer = detail::create_owned_buffer_from_vector_of_floats(std::move(data), data_type);
@@ -484,7 +482,6 @@ Tensor convert_torch_tensor_to_tt_tensor(
                         return tensor.to(device, MemoryConfig{});
                     }
                 ),
->>>>>>> ca081e416... #3493: sharded tensor support
                 py::keep_alive<1, 6>(),
                 py::return_value_policy::move,
                 R"doc(
@@ -602,6 +599,46 @@ Tensor convert_torch_tensor_to_tt_tensor(
                 R"doc(
                     Dellocates all data of a tensor. This either deletes all host data or deallocates tensor data from device memory.
                 )doc")
+            .def(
+                py::init<>(
+                    [](const py::object& torch_tensor, std::optional<DataType> data_type,  Device *device, Layout layout, const MemoryConfig& mem_config,  ShardSpec shard_spec) {
+                        auto tensor = detail::convert_torch_tensor_to_tt_tensor(torch_tensor, data_type);
+                        auto layout_tensor = tensor.to(layout);
+                        return layout_tensor.to(device, mem_config, shard_spec);
+                    }
+                ),
+                py::arg("torch_tensor"),
+                py::arg("data_type") = std::nullopt,
+                py::arg("device").noconvert(),
+                py::arg("layout").noconvert(),
+                py::arg("mem_config").noconvert(),
+                py::arg("shard_spec").noconvert(),
+                py::return_value_policy::move,
+                R"doc(
+                    +--------------+---------------------+
+                    | Argument     | Description         |
+                    +==============+=====================+
+                    | torch_tensor | Pytorch Tensor      |
+                    +--------------+---------------------+
+                    | data_type    | TT Tensor data type |
+                    +--------------+---------------------+
+                    | device       | TT device ptr       |
+                    +--------------+---------------------+
+                    | layout       | TT layout           |
+                    +--------------+---------------------+
+                    | mem_config   | TT memory_config    |
+                    +--------------+---------------------+
+                    | shard_spec   | Shard Spec          |
+                    +--------------+---------------------+
+
+                    Example of creating a TT Tensor that uses torch.Tensor's storage as its own storage:
+
+                    .. code-block:: python
+
+                        py_tensor = torch.randn((1, 1, 32, 32))
+                        tt_lib.tensor.Tensor(py_tensor)
+                )doc"
+            )
             .def(
                 "to",
                 [](const Tensor &self, Device *device, const MemoryConfig &mem_config) {
