@@ -930,9 +930,6 @@ operation::ProgramWithCallbacks layernorm_sharded_(
 
     auto override_runtime_args_callback = [
             writer_kernel_ids,
-            cb_in0,
-            cb_in1,
-            cb_output,
             num_cores,
             grid_size
         ]
@@ -943,22 +940,8 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         const std::vector<std::optional<const Tensor>>& optional_input_tensors,
         const std::vector<Tensor>& output_tensors
     ) {
-        auto src_buffer_a = input_tensors.at(0).buffer();
-        auto b_tensor = optional_input_tensors.at(0);
         auto gamma_tensor = optional_input_tensors.at(1);
         auto beta_tensor = optional_input_tensors.at(2);
-        auto dst_buffer = output_tensors.at(0).buffer();
-
-        auto& in0_cb_config = GetCircularBufferConfig(program, cb_in0);
-            in0_cb_config.set_globally_allocated_address(*src_buffer_a);
-
-        if (b_tensor.has_value()) {
-            auto& in1_cb_config = GetCircularBufferConfig(program, cb_in1);
-                in1_cb_config.set_globally_allocated_address(*b_tensor.value().buffer());
-        }
-
-        auto& output_cb_config = GetCircularBufferConfig(program, cb_output);
-            output_cb_config.set_globally_allocated_address(*dst_buffer);
 
         int index=0;
         for (uint32_t i = 0; i < num_cores; ++i) {
