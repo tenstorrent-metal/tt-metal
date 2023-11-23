@@ -34,14 +34,14 @@ from models.utility_functions import skip_for_wormhole_b0
 )
 @pytest.mark.parametrize(
     "in_dtype",
-    (ttl.tensor.DataType.BFLOAT16,),
+    (ttl.tensor.DataType.BFLOAT8_B,),
     ids=["BFLOAT8_B"],
 )
 def test_softmax(device, in_dtype, cb_dtype, in0_mem_config):
     torch.manual_seed(0)
     sm_op = ttl.operations.primary.transformers.scale_mask_softmax_in_place
 
-    fuse_head = 1
+    fuse_head = 2
 
     grid_size = (12, 8)
     batch = grid_size[0]
@@ -58,7 +58,6 @@ def test_softmax(device, in_dtype, cb_dtype, in0_mem_config):
     attention_mask = torch.rand(batch, 1, 1, 384)
     attention_mask = (attention_mask > 0.5).float()
     attention_mask = attention_mask.reshape(batch, 1, 12, 32)
-
     attention_mask32 = tilize_to_list(pad_weight(attention_mask))
     attention_mask_t = ttl.tensor.Tensor(
         attention_mask32,
@@ -100,38 +99,14 @@ def test_softmax(device, in_dtype, cb_dtype, in0_mem_config):
     for i in range(batch):
         for j in range(num_cores_r):
             golden_output_tensor = (
-                input_tensor[:, :, 768 * j : 768 * (j + 1), 384 * i : 384 * (i + 1)] * scale
+                input_tensor[:, :, 384 * fuse_head * j : 384 * fuse_head * (j + 1), 384 * i : 384 * (i + 1)] * scale
             ) + attention_mask[i]
-            # golden_output_tensor = input_tensor[:,:, 768*j:768*(j+1), 384*i:384*(i+1) ]
+
             golden_output_tensor = torch.softmax(golden_output_tensor, dim=-1)
 
-            print(tt_output_tensor[0][0][0][32:64])
-            print(golden_output_tensor[0][0][0][32:64])
-            print(golden_output_tensor.shape)
-
             allclose, output = comp_pcc(
-                tt_output_tensor[:, :, 768 * j : 768 * (j + 1), 384 * i : 384 * (i + 1)], golden_output_tensor
+                tt_output_tensor[:, :, 384 * fuse_head * j : 384 * fuse_head * (j + 1), 384 * i : 384 * (i + 1)],
+                golden_output_tensor,
             )
             logger.info(output)
             assert allclose, f"FAILED: {output}"
-
-    # for i in range(batch):
-    #     golden_output_tensor = (input_tensor[:,:,:, 384*i:384*(i+1) ] * scale) + attention_mask[i]
-    #     # golden_output_tensor = (input_tensor[:,:,:, 0:384 ] * scale) + attention_mask[0,:,:, 0:384 ]
-    #     golden_output_tensor = torch.softmax(golden_output_tensor, dim=-1)
-
-    #     print(tt_output_tensor[0][0][0][32:64])
-    #     print(golden_output_tensor[0][0][0][32:64])
-    #     print(golden_output_tensor.shape)
-
-    #     allclose, output = comp_pcc(tt_output_tensor[:,:,:, 384*i:384*(i+1) ], golden_output_tensor)
-    #     logger.info(output)
-    #     assert allclose, f"FAILED: {output}"
-
-    # golden_output_tensor = (input_tensor * scale) + attention_mask
-    # golden_output_tensor = torch.softmax(golden_output_tensor, dim=-1)
-    # print_diff_argmax(tt_output_tensor, golden_output_tensor)
-
-    # allclose, output = comp_pcc(tt_output_tensor, golden_output_tensor)
-    # logger.info(output)
-    # assert allclose, f"FAILED: {output}"

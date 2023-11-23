@@ -332,6 +332,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
     tt::DataFormat im_cb_data_format = tt_metal::datatype_to_dataformat_converter(im_data_format);
     tt::DataFormat mask_cb_data_format = mask.has_value() ? tt_metal::datatype_to_dataformat_converter(mask.value().dtype()) : tt::DataFormat::Float16_b;
     tt::DataFormat scale_cb_data_format = tt_metal::datatype_to_dataformat_converter(im_data_format);
+    // tt::DataFormat scale_cb_data_format = tt_metal::datatype_to_dataformat_converter(input_tensor.dtype());
 
     log_info(LogTest, "in0 dtype {}", in0_cb_data_format);
     log_info(LogTest, "im dtype {}", in0_cb_data_format);
@@ -339,7 +340,6 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
         log_info(LogTest, "mask dtype {}", mask_cb_data_format);
         log_info(LogTest, "scale dtype {}", scale_cb_data_format);
     }
-
     log_info(LogTest, "out dtype {}", in0_cb_data_format);
 
     // tensor shape
@@ -508,7 +508,10 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
 
     auto override_runtime_arguments_callback = [
             reader_kernels_id,
-            softmax_kernels_id
+            cb_in0_id,
+            cb_out0_id,
+            num_cores,
+            grid_size
         ]
     (
         const void* operation,
@@ -517,7 +520,24 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
         const std::vector<std::optional<const Tensor>>& optional_input_tensors,
         const std::vector<Tensor>& output_tensors
     ) {
+        auto in0_buffer = input_tensors.at(0).buffer();
+        auto scale_tensor = optional_input_tensors.at(0);
+        auto mask_tensor = optional_input_tensors.at(1);
+        auto out_buffer = output_tensors.at(0).buffer();
 
+        auto& in0_cb_config = GetCircularBufferConfig(program, cb_in0_id);
+            in0_cb_config.set_globally_allocated_address(*in0_buffer);
+        auto& out_cb_config = GetCircularBufferConfig(program, cb_out0_id);
+            out_cb_config.set_globally_allocated_address(*out_buffer);
+
+        for (uint32_t i = 0; i < num_cores; ++i) {
+            CoreCoord core = {i % grid_size.x, i / grid_size.x};
+
+            auto runtime_args = GetRuntimeArgs(program, reader_kernels_id, core);
+            if (mask_tensor.has_value()) {
+                runtime_args[2] = mask_tensor.value().buffer()->address();
+            }
+        }
     };
 
     return {std::move(program), .override_runtime_arguments_callback=override_runtime_arguments_callback};
@@ -536,10 +556,7 @@ void Softmax::validate(const std::vector<Tensor> &input_tensors, const std::vect
             auto& mask = optional_input_tensors.at(0).value();
             TT_FATAL(mask.storage_type() == StorageType::DEVICE, "Operands to softmax need to be on device!");
             TT_FATAL(input_tensor.device() == mask.device());
-            // TT_FATAL(input_tensor.dtype() == mask.dtype());
             TT_FATAL(input_tensor.layout() == mask.layout());
-            // TT_FATAL(input_tensor.shape()[-1] == mask.shape()[-1]);
-            // TT_FATAL(input_tensor.shape()[0] == mask.shape()[0]);
             TT_FATAL(mask.shape()[-2] == TILE_HEIGHT);
             for (uint32_t i = 1; i < input_tensor.shape().rank() - 2; i++) {
                 TT_FATAL(mask.shape()[i] == 1);
@@ -564,10 +581,6 @@ void Softmax::validate(const std::vector<Tensor> &input_tensors, const std::vect
     } else {
         TT_FATAL(not this->scale.has_value());
     }
-
-
-
-
 }
 
 std::vector<Shape> Softmax::compute_output_shapes(const std::vector<Tensor> &input_tensors) const {

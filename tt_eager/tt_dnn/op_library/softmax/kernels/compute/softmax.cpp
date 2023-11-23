@@ -44,7 +44,7 @@ void MAIN {
         #if FUSED_SCALE_MASK
         // fused scale
         unpack_reconfig_data_format(cb_in0, cb_fused_scale);
-        pack_reconfig_data_format(tt::CB::c_intermed0);
+        pack_reconfig_data_format(cb_scale_mask);
         cb_wait_front(cb_fused_scale, 1);
         // UNPACK(( DPRINT  << TSLICE(cb_fused_scale, 0, SliceRange::h0_w0_32()) << ENDL() ));
         mul_tiles_bcast_scalar_init_short();
@@ -66,7 +66,6 @@ void MAIN {
 
         // fused attn
         cb_wait_front(cb_scale_mask, block_w);
-        // UNPACK(( DPRINT  << TSLICE(cb_scale_mask, 0, SliceRange::h0_w0_32()) << ENDL() ));
         cb_wait_front(cb_fused_attn, block_w);
         index_subblock_w_offset = 0;
         for (uint32_t j = 0; j < num_subblocks_w; j++) {
@@ -89,7 +88,6 @@ void MAIN {
         cb_pop_front(cb_scale_mask, block_w);
         #else
         // exp(x)
-        // if (i==0)UNPACK(( DPRINT  << TSLICE(cb_in0, 0, SliceRange::h0_w0_32()) << ENDL() ));
         index_subblock_w_offset = 0;
         for (uint32_t j = 0; j < num_subblocks_w; j++) {
             ACQ();
@@ -115,9 +113,7 @@ void MAIN {
         ACQ();
         reduce_init_delta<false>(REDUCE_OP, REDUCE_DIM);
         cb_wait_front(cb_exps, block_w);
-        // if (i==0)UNPACK(( DPRINT  << TSLICE(cb_exps, 0, SliceRange::h0_w0_32()) << ENDL() ));
         cb_wait_front(cb_bcast_scaler, 1);
-        // if (i==0)UNPACK(( DPRINT  << TSLICE(cb_bcast_scaler, 0, SliceRange::h0_w0_32()) << ENDL() ));
         cb_reserve_back(cb_recipsumexps, 1);
         for (uint32_t w = 0; w < block_w; w++) {
             constexpr uint32_t bcast_scaler0 = 0;
