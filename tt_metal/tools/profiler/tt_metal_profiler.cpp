@@ -78,8 +78,14 @@ void DumpDeviceProfileResults(Device *device) {
 void DumpDeviceProfileResults(Device *device, const Program &program)
 {
 #if defined(PROFILER)
+    vector<CoreCoord> logical_cores;
+    for (auto& it: program.logical_cores()) {
+        for (auto& core: it.second) {
+            logical_cores.push_back(core);
+        }
+    }
     auto worker_cores_used_in_program =\
-                                       device->worker_cores_from_logical_cores(program.logical_cores());
+                                       device->worker_cores_from_logical_cores(logical_cores);
     DumpDeviceProfileResults(device, worker_cores_used_in_program);
 #endif
 }

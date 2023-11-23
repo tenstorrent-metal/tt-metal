@@ -311,9 +311,9 @@ int main() {
         DEBUG_STATUS('G', 'D');
 
         kernel_profiler::init_profiler(
-                mailboxes->launch.programID_size8,
-                mailboxes->launch.programID_size8,
-                mailboxes->launch.programID_size8
+                mailboxes->launch.brisc_watcher_kernel_id,
+                mailboxes->launch.ncrisc_watcher_kernel_id,
+                mailboxes->launch.triscs_watcher_kernel_id
                 );
         kernel_profiler::mark_fw_start();
 
