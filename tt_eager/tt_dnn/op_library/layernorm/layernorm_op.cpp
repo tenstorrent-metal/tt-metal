@@ -930,6 +930,9 @@ operation::ProgramWithCallbacks layernorm_sharded_(
 
     auto override_runtime_args_callback = [
             writer_kernel_ids,
+            cb_in0,
+            cb_in1,
+            cb_output,
             num_cores,
             grid_size
         ]
@@ -940,14 +943,25 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         const std::vector<std::optional<const Tensor>>& optional_input_tensors,
         const std::vector<Tensor>& output_tensors
     ) {
+        auto src_buffer_a = input_tensors.at(0).buffer();
+        auto b_tensor = optional_input_tensors.at(0);
         auto gamma_tensor = optional_input_tensors.at(1);
         auto beta_tensor = optional_input_tensors.at(2);
+        auto dst_buffer = output_tensors.at(0).buffer();
 
-        int index=0;
+        UpdateDynamicCircularBufferAddress(program, cb_in0, *src_buffer_a);
+
+        if (b_tensor.has_value()) {
+            UpdateDynamicCircularBufferAddress(program, cb_in1, *b_tensor.value().buffer());
+        }
+
+        UpdateDynamicCircularBufferAddress(program, cb_output, *dst_buffer);
+
+        int i=0;
         for (uint32_t i = 0; i < num_cores; ++i) {
             CoreCoord core = {i % grid_size.x, i / grid_size.x};
 
-            auto writer_kernel_id = writer_kernel_ids.at(index);
+            auto writer_kernel_id = writer_kernel_ids.at(i);
 
             auto runtime_args = GetRuntimeArgs(program, writer_kernel_id, core);
 
@@ -957,7 +971,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
             if (beta_tensor.has_value()) {
                 runtime_args[4] = beta_tensor.value().buffer()->address();
             }
-            index++;
+            i++;
         }
     };
 

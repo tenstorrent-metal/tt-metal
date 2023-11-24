@@ -508,6 +508,8 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
 
     auto override_runtime_arguments_callback = [
             reader_kernels_id,
+            cb_in0_id,
+            cb_out0_id,
             num_cores,
             grid_size
         ]
@@ -518,7 +520,12 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
         const std::vector<std::optional<const Tensor>>& optional_input_tensors,
         const std::vector<Tensor>& output_tensors
     ) {
-        auto mask_tensor = optional_input_tensors.at(1);
+        auto in0_buffer = input_tensors.at(0).buffer();
+        auto mask_tensor = optional_input_tensors.at(0);
+        auto out_buffer = output_tensors.at(0).buffer();
+
+        UpdateDynamicCircularBufferAddress(program, cb_in0_id, *in0_buffer);
+        UpdateDynamicCircularBufferAddress(program, cb_out0_id, *out_buffer);
 
         for (uint32_t i = 0; i < num_cores; ++i) {
             CoreCoord core = {i % grid_size.x, i / grid_size.x};
