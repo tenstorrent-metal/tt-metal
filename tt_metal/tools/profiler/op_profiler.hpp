@@ -100,7 +100,6 @@ namespace op_profiler {
 
         struct OpData {
             string name;
-            Profiler profiler = Profiler();
             vector<string> metaDataVector = {};
 
             int opCallCount;
@@ -161,34 +160,23 @@ namespace op_profiler {
                 void setup_profiling_folders (
                         string opName,
                         int callCount,
-                        Profiler& opProfiler,
                         bool freshTTmetalLogs = true)
                 {
                     TT_ASSERT (profileFolder != "", "Bad log folder location, folder has been setup wrong");
-                    profileFolder = ".profiler/logs";
-                    tt::tt_metal::detail::SetHostProfilerDir(profileFolder + "/tt_metal");
-                    tt::tt_metal::detail::SetDeviceProfilerDir(profileFolder + "/tt_metal");
-
-                    opProfiler.setHostOutputDir(profileFolder + "/ops");
-                    //If it is the first call to this op, freshen the log
-                    if (globalCallCount > 1)
+                    tt::tt_metal::detail::SetHostProfilerDir(profileFolder + "/" + opName + "/" + to_string(callCount));
+                    if (freshTTmetalLogs)
                     {
-                        opProfiler.setHostNewLogFlag(false);
-                    }
-                    else
-                    {
-                        opProfiler.setHostNewLogFlag(true);
                         tt::tt_metal::detail::FreshProfilerHostLog();
                         tt::tt_metal::detail::FreshProfilerDeviceLog();
                     }
+
                 }
 
                 OpData& get_op_data()
                 {
-#if defined(OP_PROFILER)
-                    //TT_ASSERT (opStack.size() > 0, "Something is wrong, cannot get op data, op stack is empty");
-                    //return opStack.top();
-                    return unknownOp;
+#if defined(PROFILER)
+                    TT_ASSERT (opStack.size() > 0, "Something is wrong, cannot get op data, op stack is empty");
+                    return opStack.top();
 #else
                     return unknownOp;
 #endif
@@ -232,20 +220,19 @@ namespace op_profiler {
                         setup_profiling_folders(
                                 callingOpName,
                                 callingOpCallCount,
-                                callingOp.profiler,
                                 freshTTmetalLogs);
                     }
                     else
                     {
                         unknownOp = OpData(unknownOpName, unknownOp.opCallCount + 1, globalCallCount, 0, OpType::unknown);
-                        setup_profiling_folders(unknownOpName, globalCallCount, unknownOp.profiler);
+                        setup_profiling_folders(unknownOpName, globalCallCount);
                     }
                 }
 
             public:
                 OpProfiler ()
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     delete_logs_location_record();
                     set_profiler_location("ops");
 #endif
@@ -253,14 +240,12 @@ namespace op_profiler {
 
                 void start_profiling(const string& opName, OpType opType)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     auto opNameNoComma = replace_comma(opName);
                     auto callCount = get_call_count_increment(opName);
                     OpData opData = OpData(opNameNoComma, callCount, globalCallCount, opStack.size() + 1, opType);
 
-                    opData.profiler.markStart(opNameNoComma);
-
-                    setup_profiling_folders (opNameNoComma, callCount, opData.profiler);
+                    setup_profiling_folders (opNameNoComma, callCount);
                     opStack.push(opData);
 #endif
                 }
@@ -268,55 +253,54 @@ namespace op_profiler {
 
                 void stop_profiling(const string& opName)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     auto opNameNoComma = replace_comma(opName);
                     auto& opData = get_op_data();
                     TT_ASSERT (opNameNoComma == opData.name, "Something is wrong, op name mismatch");
 
                     auto additionalFields = generate_additional_data();
-                    opData.profiler.markStop(opNameNoComma, additionalFields);
                     clear_profiler();
 #endif
                 }
 
                 void append_input_data (const string& input)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     get_op_data().inputs.push_back(replace_comma(input));
 #endif
                 }
 
                 void append_output_data (const string& output)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     get_op_data().outputs.push_back(replace_comma(output));
 #endif
                 }
 
                 void append_math_fidelity (const string& fidelity)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     get_op_data().mathFidelities.push_back(replace_comma(fidelity));
 #endif
                 }
 
                 void set_parallelization_strategy (const string& strategy)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     get_op_data().parlStrategy = replace_comma(strategy);
 #endif
                 }
 
                 void set_preferred_name (const string& name)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     get_op_data().preferredName = replace_comma(name);
 #endif
                 }
 
                 void append_meta_data(const string& metaData)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     TT_ASSERT (opStack.size() > 0, "Something is wrong, cannot append meta data, op stack is empty");
                     string noDashMetaData = replace_comma(metaData);
                     std::replace( noDashMetaData.begin(), noDashMetaData.end(), '-', '_');
@@ -326,7 +310,7 @@ namespace op_profiler {
 
                 void set_profiler_location(const string& folder)
                 {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
                     string constructedFolder = string(PROFILER_RUNTIME_ROOT_DIR) + string(PROFILER_LOGS_DIR_NAME) + "/" + folder;
                     int noSlashEnd = constructedFolder.find_last_not_of(" /");
                     auto logFolder = (noSlashEnd == std::string::npos) ? "" : constructedFolder.substr(0, noSlashEnd + 1);
@@ -363,14 +347,14 @@ namespace op_profiler {
 
     static void start_profiling (const string& opName, OpType opType)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.start_profiling(opName, opType);
 #endif
     }
 
     static void stop_profiling (const string& opName)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.stop_profiling(opName);
 #endif
     }
@@ -424,14 +408,14 @@ namespace op_profiler {
 
     static void append_input_data (const Tensor& input)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.append_input_data(detail::tensor_to_str(input));
 #endif
     }
 
     static void append_input_optional_data (std::optional<const Tensor> input)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         if (input.has_value()) {
             detail::operationProfiler.append_input_data(detail::tensor_to_str(input.value()));
         }
@@ -444,7 +428,7 @@ namespace op_profiler {
 
     static void append_output_data (const Tensor& output)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.append_output_data(detail::tensor_to_str(output));
 #endif
     }
@@ -454,7 +438,7 @@ namespace op_profiler {
         const std::vector<std::optional<const Tensor>> &optional_input_tensors,
         const std::vector<Tensor> &output_tensors)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
             for (auto& input : input_tensors)
             {
                 append_input_data(input);
@@ -474,7 +458,7 @@ namespace op_profiler {
 
     static void append_meta_data (const string& metaData)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.append_meta_data(metaData);
 #endif
     }
@@ -482,7 +466,7 @@ namespace op_profiler {
     template < typename T, typename std::enable_if< std::is_enum<T>::value,bool>::type = true>
     static void set_preferred_name (const T& name)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.set_preferred_name(fmt::format("{}",magic_enum::enum_name(name)));
 #endif
     }
@@ -490,7 +474,7 @@ namespace op_profiler {
     template < typename T, typename std::enable_if< !std::is_enum<T>::value,bool>::type = true>
     static void set_preferred_name (const T& name)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.set_preferred_name(fmt::format("{}",name));
 #endif
     }
@@ -498,7 +482,7 @@ namespace op_profiler {
     template < typename T, typename std::enable_if< std::is_enum<T>::value,bool>::type = true>
     static void set_parallelization_strategy (const T& strategy)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.set_parallelization_strategy(fmt::format("{}",magic_enum::enum_name(strategy)));
 #endif
     }
@@ -506,14 +490,14 @@ namespace op_profiler {
     template < typename T, typename std::enable_if< !std::is_enum<T>::value,bool>::type = true>
     static void set_parallelization_strategy (const T& strategy)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.set_parallelization_strategy(fmt::format("{}",strategy));
 #endif
     }
 
     static void append_math_fidelities (const Program& program)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         for (size_t kernel_id = 0; kernel_id < program.num_kernels(); kernel_id++) {
             Kernel * kernel = tt::tt_metal::detail::GetKernel(program, kernel_id);
             if (kernel->processor() == RISCV::COMPUTE) {
@@ -527,14 +511,14 @@ namespace op_profiler {
 
     static void set_profiler_location (const string& profilerLocation)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         detail::operationProfiler.set_profiler_location(profilerLocation);
 #endif
     }
 
     static void dump_device_profiler_results (Device *device, Program &program)
     {
-#if defined(OP_PROFILER)
+#if defined(PROFILER)
         if (getDeviceProfilerState())
         {
             tt::tt_metal::DumpDeviceProfileResults(device, program);
@@ -549,15 +533,15 @@ namespace op_profiler {
         public:
             OpProfileScope (const string& scopeNameArg, OpType opType) : scopeName(scopeNameArg)
             {
-#if defined(OP_PROFILER)
-                //start_profiling (scopeName, opType);
+#if defined(PROFILER)
+                start_profiling (scopeName, opType);
 #endif
             }
 
             ~OpProfileScope ()
             {
-#if defined(OP_PROFILER)
-                //stop_profiling (scopeName);
+#if defined(PROFILER)
+                stop_profiling (scopeName);
 #endif
             }
     };

@@ -224,10 +224,6 @@ std::vector<Tensor> run_device_operation(
                     "Program of Operation {:50} finished in {:15} seconds",
                     operation.get_type_name(),
                     elapsed_seconds.count());
-#endif
-                // Only need to dump device data when in dispatch mode
-                // LaunchKernel automatically dumps device data
-                op_profiler::dump_device_profiler_results(device, program);
             } else {
                 ::detail::LaunchProgram(device, program);
             }
