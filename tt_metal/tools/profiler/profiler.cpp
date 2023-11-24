@@ -12,19 +12,17 @@
 #include "tt_metal/detail/tt_metal.hpp"
 #include "tools/profiler/profiler.hpp"
 #include "tools/profiler/profiler_state.hpp"
+#include "tools/profiler/common.hpp"
 #include "hostdevcommon/profiler_common.h"
 #include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
 #include "tt_metal/third_party/tracy/public/tracy/TracyOpenCL.hpp"
-
-#define HOST_SIDE_LOG "profile_log_host.csv"
-#define DEVICE_SIDE_LOG "profile_log_device.csv"
 
 namespace tt {
 
 namespace tt_metal {
 
 
-TimerPeriodInt Profiler::timerToTimerInt(TimerPeriod period)
+TimerPeriodInt HostProfiler::timerToTimerInt(TimerPeriod period)
 {
     TimerPeriodInt ret;
 
@@ -35,7 +33,7 @@ TimerPeriodInt Profiler::timerToTimerInt(TimerPeriod period)
     return ret;
 }
 
-void Profiler::dumpHostResults(const std::string& timer_name, const std::vector<std::pair<std::string,std::string>>& additional_fields)
+void HostProfiler::dumpResults(const std::string& timer_name, const std::vector<std::pair<std::string,std::string>>& additional_fields)
 {
     auto timer = name_to_timer_map[timer_name];
 
@@ -43,10 +41,10 @@ void Profiler::dumpHostResults(const std::string& timer_name, const std::vector<
     TT_FATAL (timer_period_ns.start != 0 , "Timer start cannot be zero on : " + timer_name);
     TT_FATAL (timer_period_ns.stop != 0 , "Timer stop cannot be zero on : " + timer_name);
 
-    std::filesystem::path log_path = host_output_dir / HOST_SIDE_LOG;
+    std::filesystem::path log_path = output_dir / HOST_SIDE_LOG;
     std::ofstream log_file;
 
-    if (host_new_log|| !std::filesystem::exists(log_path))
+    if (new_log|| !std::filesystem::exists(log_path))
     {
         log_file.open(log_path);
 
@@ -61,7 +59,7 @@ void Profiler::dumpHostResults(const std::string& timer_name, const std::vector<
         }
 
         log_file << std::endl;
-        host_new_log = false;
+        new_log = false;
     }
     else
     {
@@ -83,7 +81,46 @@ void Profiler::dumpHostResults(const std::string& timer_name, const std::vector<
     log_file.close();
 }
 
-void Profiler::readRiscProfilerResults(
+HostProfiler::HostProfiler()
+{
+#if defined(PROFILER)
+    ZoneScopedC(tracy::Color::Green);
+    new_log = true;
+    output_dir = std::filesystem::path(string(PROFILER_RUNTIME_ROOT_DIR) + string(PROFILER_LOGS_DIR_NAME));
+    std::filesystem::create_directories(output_dir);
+#endif
+}
+
+void HostProfiler::markStart(const std::string& timer_name)
+{
+#if defined(PROFILER)
+    name_to_timer_map[timer_name].start = steady_clock::now();
+#endif
+}
+
+void HostProfiler::markStop(const std::string& timer_name, const std::vector<std::pair<std::string,std::string>>& additional_fields)
+{
+#if defined(PROFILER)
+    name_to_timer_map[timer_name].stop = steady_clock::now();
+    dumpResults(timer_name, additional_fields);
+#endif
+}
+
+void HostProfiler::setNewLogFlag(bool new_log_flag)
+{
+#if defined(PROFILER)
+    new_log = new_log_flag;
+#endif
+}
+void HostProfiler::setOutputDir(const std::string& new_output_dir)
+{
+#if defined(PROFILER)
+    std::filesystem::create_directories(new_output_dir);
+    output_dir = new_output_dir;
+#endif
+}
+
+void DeviceProfiler::readRiscProfilerResults(
         int device_id,
         vector<std::uint32_t> profile_buffer,
         const CoreCoord &worker_core){
@@ -179,7 +216,7 @@ void Profiler::readRiscProfilerResults(
                     uint32_t time_H = profile_buffer[index] & 0x0000FFFF;
                     uint32_t time_L = profile_buffer[index + 1];
 
-                    dumpDeviceResultToFile(
+                    dumpResultToFile(
                             programID,
                             device_id,
                             worker_core.x,
@@ -205,7 +242,7 @@ void Profiler::readRiscProfilerResults(
             PROFILER_L1_BUFFER_CONTROL);
 }
 
-void Profiler::dumpDeviceResultToFile(
+void DeviceProfiler::dumpResultToFile(
         uint16_t programID,
         int chip_id,
         int core_x,
@@ -214,18 +251,18 @@ void Profiler::dumpDeviceResultToFile(
         uint64_t timestamp,
         uint32_t timer_id){
     ZoneScoped;
-    std::filesystem::path log_path = device_output_dir / DEVICE_SIDE_LOG;
+    std::filesystem::path log_path = output_dir / DEVICE_SIDE_LOG;
     std::ofstream log_file;
 
     std::string riscName[] = {"BRISC", "NCRISC", "TRISC_0", "TRISC_1", "TRISC_2"};
 
 
-    if (device_new_log || !std::filesystem::exists(log_path))
+    if (new_log || !std::filesystem::exists(log_path))
     {
         log_file.open(log_path);
         log_file << "ARCH: " << get_string_lowercase(device_architecture) << ", CHIP_FREQ[MHz]: " << device_core_frequency << std::endl;
         log_file << "Program ID, PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset]" << std::endl;
-        device_new_log = false;
+        new_log = false;
     }
     else
     {
@@ -262,80 +299,50 @@ void Profiler::dumpDeviceResultToFile(
     log_file.close();
 }
 
-Profiler::Profiler()
+DeviceProfiler::DeviceProfiler()
 {
 #if defined(PROFILER)
     ZoneScopedC(tracy::Color::Green);
-    host_new_log = true;
-    device_new_log = true;
-    host_output_dir = std::filesystem::path(string(PROFILER_RUNTIME_ROOT_DIR) + string(PROFILER_LOGS_DIR_NAME));
-    device_output_dir = std::filesystem::path(string(PROFILER_RUNTIME_ROOT_DIR) + string(PROFILER_LOGS_DIR_NAME));
-    std::filesystem::create_directories(host_output_dir);
+    new_log = true;
+    output_dir = std::filesystem::path(string(PROFILER_RUNTIME_ROOT_DIR) + string(PROFILER_LOGS_DIR_NAME));
+    std::filesystem::create_directories(output_dir);
 
     tracyTTCtx = TracyCLContext();
 #endif
 }
 
-Profiler::~Profiler()
+DeviceProfiler::~DeviceProfiler()
 {
 #if defined(PROFILER)
     TracyCLDestroy(tracyTTCtx);
 #endif
 }
 
-void Profiler::markStart(const std::string& timer_name)
+void DeviceProfiler::setNewLogFlag(bool new_log_flag)
 {
 #if defined(PROFILER)
-    name_to_timer_map[timer_name].start = steady_clock::now();
+    new_log = new_log_flag;
 #endif
 }
 
-void Profiler::markStop(const std::string& timer_name, const std::vector<std::pair<std::string,std::string>>& additional_fields)
-{
-#if defined(PROFILER)
-    name_to_timer_map[timer_name].stop = steady_clock::now();
-    dumpHostResults(timer_name, additional_fields);
-#endif
-}
 
-void Profiler::setDeviceNewLogFlag(bool new_log_flag)
-{
-#if defined(PROFILER)
-    device_new_log = new_log_flag;
-#endif
-}
-
-void Profiler::setHostNewLogFlag(bool new_log_flag)
-{
-#if defined(PROFILER)
-    host_new_log = new_log_flag;
-#endif
-}
-
-void Profiler::setDeviceOutputDir(const std::string& new_output_dir)
+void DeviceProfiler::setOutputDir(const std::string& new_output_dir)
 {
 #if defined(PROFILER)
     std::filesystem::create_directories(new_output_dir);
-    device_output_dir = new_output_dir;
+    output_dir = new_output_dir;
 #endif
 }
 
-void Profiler::setHostOutputDir(const std::string& new_output_dir)
-{
-#if defined(PROFILER)
-    std::filesystem::create_directories(new_output_dir);
-    host_output_dir = new_output_dir;
-#endif
-}
 
-void Profiler::setDeviceArchitecture(tt::ARCH device_arch)
+void DeviceProfiler::setDeviceArchitecture(tt::ARCH device_arch)
 {
 #if defined(PROFILER)
     device_architecture = device_arch;
 #endif
 }
 
-void Profiler::dumpDeviceResults (
+void DeviceProfiler::dumpResults (
         Device *device,
         const vector<CoreCoord> &worker_cores){
 #if defined(PROFILER)
@@ -379,7 +386,7 @@ void Profiler::dumpDeviceResults (
 }
 
 
-void Profiler::pushTracyDeviceResults(int device_id)
+void DeviceProfiler::pushTracyDeviceResults(int device_id)
 {
 #if defined(PROFILER)
     tracyTTCtx->PopulateCLContext();

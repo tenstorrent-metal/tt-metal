@@ -38,25 +38,48 @@ struct TimerPeriod {
     steady_clock::time_point stop;
 };
 
-//Struct for holding marker data
-struct markerInfo{
-    uint32_t coreX;
-    uint32_t coreY;
-    uint32_t risc;
-    uint32_t op;
-};
-
-class Profiler {
+class HostProfiler {
     private:
 
         // Holds name to timers
         std::unordered_map <std::string, TimerPeriod> name_to_timer_map;
 
         // Recreate host side log file with header
-        bool host_new_log;
+        bool new_log;
+
+        // Output Dir for Profile Logs
+        std::filesystem::path output_dir;
+
+        // Turn steady clock start and stop into integer start, stop and duration
+        TimerPeriodInt timerToTimerInt(TimerPeriod period);
+
+        //Traverse all timers and dump the results, appending addtional fields
+        void dumpResults(
+                const std::string& timer_name,
+                const std::vector<std::pair<std::string,std::string>>& additional_fields = {});
+
+    public:
+        //Constructor
+        HostProfiler();
+
+        //Mark the steady_clock for the start of the asked name
+        void markStart(const std::string& timer_name);
+
+        //Mark the steady_clock time for the end of the asked name
+        void markStop(const std::string& timer_name, const std::vector<std::pair<std::string,std::string>>& additional_fields = {});
+
+        //Set the host side file flag
+        void setNewLogFlag(bool new_log_flag);
+
+        //Change the output dir of host profile logs
+        void setOutputDir(const std::string& new_output_dir);
+};
+
+class DeviceProfiler {
+    private:
 
         // Recreate device side log file with header
-        bool device_new_log;
+        bool new_log;
 
         // Device architecture
         tt::ARCH device_architecture;
@@ -64,23 +87,12 @@ class Profiler {
         // Device frequency
         int device_core_frequency;
 
-        // Output Dir for Profile Logs
-        std::filesystem::path host_output_dir;
-
         // Output Dir for device Profile Logs
-        std::filesystem::path device_output_dir;
-
-        // Turn steady clock start and stop into integer start, stop and duration
-        TimerPeriodInt timerToTimerInt(TimerPeriod period);
-
-        //Traverse all timers and dump the results, appending addtional fields
-        void dumpHostResults(
-                const std::string& timer_name,
-                const std::vector<std::pair<std::string,std::string>>& additional_fields = {});
+        std::filesystem::path output_dir;
 
         // Dumping profile result to file
-        void dumpDeviceResultToFile(
-                uint16_t kernelID,
+        void dumpResultToFile(
+                uint16_t programID,
                 int chip_id,
                 int core_x,
                 int core_y,
@@ -96,8 +108,8 @@ class Profiler {
 
     public:
         //Constructor
-        Profiler();
-        ~Profiler();
+        DeviceProfiler();
+        ~DeviceProfiler();
 
         // Map for storing dvice data
         std::map<uint64_t,std::list<uint64_t>> device_data;
@@ -108,29 +120,17 @@ class Profiler {
         //DRAM buffer for device side results
         Buffer output_dram_buffer;
 
-        //Mark the steady_clock for the start of the asked name
-        void markStart(const std::string& timer_name);
-
-        //Mark the steady_clock time for the end of the asked name
-        void markStop(const std::string& timer_name, const std::vector<std::pair<std::string,std::string>>& additional_fields = {});
-
-        //Set the host side file flag
-        void setHostNewLogFlag(bool new_log_flag);
-
         //Set the device side file flag
-        void setDeviceNewLogFlag(bool new_log_flag);
+        void setNewLogFlag(bool new_log_flag);
 
         //Set the device architecture
         void setDeviceArchitecture(tt::ARCH device_arch);
 
         //Change the output dir of device profile logs
-        void setDeviceOutputDir(const std::string& new_output_dir);
-
-        //Change the output dir of host profile logs
-        void setHostOutputDir(const std::string& new_output_dir);
+        void setOutputDir(const std::string& new_output_dir);
 
         //Traverse all cores on the device and dump the device profile results
-        void dumpDeviceResults(Device *device, const vector<CoreCoord> &worker_cores);
+        void dumpResults(Device *device, const vector<CoreCoord> &worker_cores);
 
         //Push device results to tracy
         void pushTracyDeviceResults(int device_id);

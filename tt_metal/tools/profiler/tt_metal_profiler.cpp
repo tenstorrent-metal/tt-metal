@@ -26,20 +26,21 @@ void DumpDeviceProfileResults(Device *device, const Program &program) {
 
 namespace detail {
 
-Profiler tt_metal_profiler;
+DeviceProfiler tt_metal_device_profiler;
+HostProfiler tt_metal_host_profiler;
 
 void InitDeviceProfiler(Device *device){
 #if defined(PROFILER)
     ZoneScoped;
 
-    tt_metal_profiler.output_dram_buffer = tt_metal::CreateBuffer(device, PROFILER_FULL_HOST_BUFFER_SIZE, PROFILER_FULL_HOST_BUFFER_SIZE_PER_DRAM_BANK, tt_metal::BufferType::DRAM);
+    tt_metal_device_profiler.output_dram_buffer = tt_metal::CreateBuffer(device, PROFILER_FULL_HOST_BUFFER_SIZE, PROFILER_FULL_HOST_BUFFER_SIZE_PER_DRAM_BANK, tt_metal::BufferType::DRAM);
 
     CoreCoord compute_with_storage_size = device->logical_grid_size();
     CoreCoord start_core = {0, 0};
     CoreCoord end_core = {compute_with_storage_size.x - 1, compute_with_storage_size.y - 1};
 
     std::vector<uint32_t> control_buffer(kernel_profiler::CONTROL_BUFFER_SIZE, 0);
-    control_buffer[kernel_profiler::DRAM_PROFILER_ADDRESS] = tt_metal_profiler.output_dram_buffer.address();
+    control_buffer[kernel_profiler::DRAM_PROFILER_ADDRESS] = tt_metal_device_profiler.output_dram_buffer.address();
 
     for (size_t x=start_core.x; x <= end_core.x; x++)
     {
@@ -51,7 +52,7 @@ void InitDeviceProfiler(Device *device){
     }
 
     std::vector<uint32_t> inputs_DRAM(PROFILER_FULL_HOST_BUFFER_SIZE/sizeof(uint32_t), 0);
-    tt_metal::detail::WriteToBuffer(tt_metal_profiler.output_dram_buffer, inputs_DRAM);
+    tt_metal::detail::WriteToBuffer(tt_metal_device_profiler.output_dram_buffer, inputs_DRAM);
 
 #endif
 }
@@ -97,48 +98,48 @@ void DumpDeviceProfileResults(Device *device, const vector<CoreCoord>& worker_co
     if (getDeviceProfilerState())
     {
         auto device_id = device->id();
-        tt_metal_profiler.setDeviceArchitecture(device->arch());
-        tt_metal_profiler.dumpDeviceResults(device, worker_cores);
-        tt_metal_profiler.pushTracyDeviceResults(device_id);
-        tt_metal_profiler.device_data.clear();
+        tt_metal_device_profiler.setDeviceArchitecture(device->arch());
+        tt_metal_device_profiler.dumpResults(device, worker_cores);
+        tt_metal_device_profiler.pushTracyDeviceResults(device_id);
+        tt_metal_device_profiler.device_data.clear();
     }
 #endif
 }
 
 void SetDeviceProfilerDir(std::string output_dir){
 #if defined(PROFILER)
-     tt_metal_profiler.setDeviceOutputDir(output_dir);
+     tt_metal_device_profiler.setOutputDir(output_dir);
 #endif
 }
 
 void SetHostProfilerDir(std::string output_dir){
 #if defined(PROFILER)
-     tt_metal_profiler.setHostOutputDir(output_dir);
+     tt_metal_host_profiler.setOutputDir(output_dir);
 #endif
 }
 
 void FreshProfilerHostLog(){
 #if defined(PROFILER)
-     tt_metal_profiler.setHostNewLogFlag(true);
+     tt_metal_host_profiler.setNewLogFlag(true);
 #endif
 }
 
 void FreshProfilerDeviceLog(){
 #if defined(PROFILER)
-     tt_metal_profiler.setDeviceNewLogFlag(true);
+     tt_metal_device_profiler.setNewLogFlag(true);
 #endif
 }
 
 ProfileTTMetalScope::ProfileTTMetalScope (const string& scopeNameArg) : scopeName(scopeNameArg){
 #if defined(PROFILER)
-    tt_metal_profiler.markStart(scopeName);
+    tt_metal_host_profiler.markStart(scopeName);
 #endif
 }
 
 ProfileTTMetalScope::~ProfileTTMetalScope ()
 {
 #if defined(PROFILER)
-    tt_metal_profiler.markStop(scopeName);
+    tt_metal_host_profiler.markStop(scopeName);
 #endif
 }
 
