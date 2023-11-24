@@ -264,7 +264,8 @@ operation::ProgramWithCallbacks multi_core_split_fused_qkv_and_split_heads_shard
     ////////////////////////////////////////////////////////////////////////////
     // block size for in0 (tensor a)
     uint32_t in0_CB_size = block_wt * block_ht * single_tile_size;
-    uint32_t im0_CB_size = 2 * single_tile_size;
+    // uint32_t im0_CB_size = 2 * single_tile_size;
+    uint32_t im0_CB_size = 2 * block_ht * single_tile_size;
     uint32_t out_CB_size = out_block_wt * out_block_ht * single_tile_size;
 
     ////////////////////////////////////////////////////////////////////////////
@@ -293,6 +294,22 @@ operation::ProgramWithCallbacks multi_core_split_fused_qkv_and_split_heads_shard
         "tt_eager/tt_dnn/op_library/transformer_tms/dataflow/reader_tm_tile_layout_create_qkv_heads_sharded.cpp",
         all_cores,
         tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_1, .noc = tt_metal::NOC::RISCV_0_default, .compile_args = reader_compile_time_args});
+    // writer
+    std::vector<uint32_t> writer_compile_time_args = {
+        (std::uint32_t) num_heads_per_tensor,
+        (std::uint32_t) block_ht,
+        (std::uint32_t) block_wt,
+        (std::uint32_t) out_block_wt,
+        (std::uint32_t) block_wt * single_tile_size,
+        (std::uint32_t) out_block_wt * single_tile_size,
+        (std::uint32_t) num_tiles_per_tensor,
+        (std::uint32_t) block_wt * single_tile_size / num_tensors
+    };
+    auto writer_kernel_id = tt_metal::CreateKernel(
+        program,
+        "tt_eager/tt_dnn/op_library/transformer_tms/dataflow/writer_tm_tile_layout_create_qkv_heads_sharded.cpp",
+        all_cores,
+        tt_metal::DataMovementConfig{.processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_1_default, .compile_args = writer_compile_time_args});
     // compute kernel
     std::vector<uint32_t> compute_args = {num_tiles_per_tensor};
     auto compute_kernel_id = tt_metal::CreateKernel(

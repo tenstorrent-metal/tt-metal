@@ -44,32 +44,9 @@ void kernel_main() {
     noc_async_read_barrier();
     cb_push_back(cb_out0, num_tiles_per_tensor);
 
-
-
-    // re-order k
-    l1_read_addr += tensor_stride_size_bytes;
-    uint32_t src_noc_addr_offset_outer_most = 0;
-    for (uint32_t j = 0; j < num_heads_per_tensor; j++) { // 2
-        src_noc_addr_offset_outer = 0;
-        for (uint32_t k = 0; k < out_block_wt; k++) { // 2
-            uint32_t l1_read_addr_offset = 0;
-            for (uint32_t i = 0; i < block_ht; i++) { // 12
-                cb_reserve_back(cb_im0, 1);
-                uint64_t src_noc_addr = get_noc_addr(l1_read_addr + l1_read_addr_offset + src_noc_addr_offset_outer + src_noc_addr_offset_outer_most);
-                uint32_t l1_write_addr_out1 = get_write_ptr(cb_im0);
-                noc_async_read(src_noc_addr, l1_write_addr_out1, single_tile_size_bytes);
-                l1_read_addr_offset += block_wt_size_bytes;
-                noc_async_read_barrier();
-                cb_push_back(cb_im0, 1);
-
-            }
-            src_noc_addr_offset_outer += single_tile_size_bytes;
-        }
-        src_noc_addr_offset_outer_most += out_block_wt_size_bytes;
-    }
-
     // re-order v
     cb_reserve_back(cb_out2, num_tiles_per_tensor);
+    l1_read_addr += tensor_stride_size_bytes;
     l1_read_addr += tensor_stride_size_bytes;
     uint32_t l1_write_addr_out2 = get_write_ptr(cb_out2);
     src_noc_addr_offset_outer = 0;
@@ -85,6 +62,4 @@ void kernel_main() {
     }
     noc_async_read_barrier();
     cb_push_back(cb_out2, num_tiles_per_tensor);
-
-
 }
