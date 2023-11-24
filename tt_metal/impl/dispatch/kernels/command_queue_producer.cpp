@@ -148,8 +148,8 @@ void kernel_main() {
 
         db_buf_switch = not db_buf_switch;
 
-        kernel_profiler::mark_fw_end();
         kernel_profiler::mark_kernel_end();
+        kernel_profiler::mark_fw_end();
         kernel_profiler::finish();
         kernel_profiler::send_profiler_data_to_host();
     }

@@ -316,14 +316,21 @@ def extract_device_info(deviceInfo):
 
 def import_device_profile_log(logPath):
     devicesData = {"devices": {}}
+    programsData = {"programs": {}}
     with open(logPath) as csvFile:
         csvReader = csv.reader(csvFile, delimiter=",")
+        arch = ""
+        freq = ""
         for lineCount, row in enumerate(csvReader):
-            if lineCount > 1:
+            if lineCount == 0:
+                arch, freq = extract_device_info(row)
+                devicesData.update(dict(deviceInfo=dict(arch=arch, freq=freq)))
+
+            elif lineCount > 1:
                 chipID = int(row[0])
                 core = (int(row[1]), int(row[2]))
                 risc = row[3].strip()
-                programID = row[4].strip()
+                programID = int(row[4].strip())
                 timerID = int(row[5])
                 timeData = int(row[6])
 
@@ -346,31 +353,68 @@ def import_device_profile_log(logPath):
                         "cores": {core: {"riscs": {risc: {"timeseries": [(timerID, timeData)]}}}}
                     }
 
-            elif lineCount == 0:
-                arch, freq = extract_device_info(row)
-                devicesData.update(dict(deviceInfo=dict(arch=arch, freq=freq)))
+                if programID in programsData["programs"].keys():
+                    if chipID in programsData["programs"][programID]["devices"].keys():
+                        if core in programsData["programs"][programID]["devices"][chipID]["cores"].keys():
+                            if (
+                                risc
+                                in programsData["programs"][programID]["devices"][chipID]["cores"][core]["riscs"].keys()
+                            ):
+                                programsData["programs"][programID]["devices"][chipID]["cores"][core]["riscs"][risc][
+                                    "timeseries"
+                                ].append((timerID, timeData))
+                            else:
+                                programsData["programs"][programID]["devices"][chipID]["cores"][core]["riscs"][risc] = {
+                                    "timeseries": [(timerID, timeData)]
+                                }
+                        else:
+                            programsData["programs"][programID]["devices"][chipID]["cores"][core] = {
+                                "riscs": {risc: {"timeseries": [(timerID, timeData)]}}
+                            }
+                    else:
+                        programsData["programs"][programID]["devices"][chipID] = {
+                            "cores": {core: {"riscs": {risc: {"timeseries": [(timerID, timeData)]}}}}
+                        }
+                else:
+                    programsData["programs"][programID] = {
+                        "devices": {chipID: {"cores": {core: {"riscs": {risc: {"timeseries": [(timerID, timeData)]}}}}}}
+                    }
+                    programsData["programs"][programID].update(dict(deviceInfo=dict(arch=arch, freq=freq)))
+
+    def sort_timeseries_and_find_min(devicesData):
+        globalMinTS = (1 << 64) - 1
+        globalMinRisc = "BRISC"
+        globalMinCore = (0, 0)
+        for chipID, deviceData in devicesData["devices"].items():
+            for core, coreData in deviceData["cores"].items():
+                for risc, riscData in coreData["riscs"].items():
+                    riscData["timeseries"].sort(key=lambda x: x[1])
+                    firstTimeID, firsTimestamp = riscData["timeseries"][0]
+                    if globalMinTS > firsTimestamp:
+                        globalMinTS = firsTimestamp
+                        globalMinCore = core
+                        globalMinRisc = risc
+            deviceData.update(
+                dict(metadata=dict(global_min=dict(ts=globalMinTS, risc=globalMinRisc, core=globalMinCore)))
+            )
+
+    def include_min(devicesData):
+        for chipID, deviceData in devicesData["devices"].items():
+            for core, coreData in deviceData["cores"].items():
+                for risc, riscData in coreData["riscs"].items():
+                    riscData["timeseries"].insert(0, (0, deviceData["metadata"]["global_min"]["ts"]))
+
     # Sort all timeseries and find global min timestamp
-    globalMinTS = (1 << 64) - 1
-    globalMinRisc = "BRISC"
-    globalMinCore = (0, 0)
-    for chipID, deviceData in devicesData["devices"].items():
-        for core, coreData in deviceData["cores"].items():
-            for risc, riscData in coreData["riscs"].items():
-                riscData["timeseries"].sort(key=lambda x: x[1])
-                firstTimeID, firsTimestamp = riscData["timeseries"][0]
-                if globalMinTS > firsTimestamp:
-                    globalMinTS = firsTimestamp
-                    globalMinCore = core
-                    globalMinRisc = risc
-        deviceData.update(dict(metadata=dict(global_min=dict(ts=globalMinTS, risc=globalMinRisc, core=globalMinCore))))
+    sort_timeseries_and_find_min(devicesData)
+    for programID, programData in programsData["programs"].items():
+        sort_timeseries_and_find_min(programData)
 
     # Include global min timestamp in all timeseries
-    for chipID, deviceData in devicesData["devices"].items():
-        for core, coreData in deviceData["cores"].items():
-            for risc, riscData in coreData["riscs"].items():
-                riscData["timeseries"].insert(0, (0, deviceData["metadata"]["global_min"]["ts"]))
+    include_min(devicesData)
+    for programID, programData in programsData["programs"].items():
+        include_min(programData)
 
-    return devicesData
+    return devicesData, programsData
 
 
 def is_new_launch_core(tsRisc):
@@ -848,70 +892,73 @@ def validate_setup(ctx, param, setup):
 
 
 def import_log_run_stats(setup=device_post_proc_config.default_setup()):
-    devicesData = import_device_profile_log(setup.deviceInputLog)
-    risc_to_core_timeseries(devicesData)
-    core_to_device_timeseries(devicesData)
+    devicesData, programsData = import_device_profile_log(setup.deviceInputLog)
+    print(sorted(programsData["programs"].keys()))
+    # devicesData = programsData["programs"]["31"]
+    # risc_to_core_timeseries(devicesData)
+    # core_to_device_timeseries(devicesData)
 
-    for name, analysis in sorted(setup.timerAnalysis.items()):
-        if analysis["across"] == "core":
-            core_analysis(name, analysis, devicesData)
-        elif analysis["across"] == "device":
-            device_analysis(name, analysis, devicesData)
+    # for name, analysis in sorted(setup.timerAnalysis.items()):
+    # if analysis["across"] == "core":
+    # core_analysis(name, analysis, devicesData)
+    # elif analysis["across"] == "device":
+    # device_analysis(name, analysis, devicesData)
 
-    generate_device_level_summary(devicesData)
+    # generate_device_level_summary(devicesData)
     return devicesData
 
 
 def timeline_annotations(yVals, deviceData, fig, setup):
-    annotateLaunches = False
-    for core in yVals:
-        assert core in deviceData["cores"].keys(), "Cores is and y axis labels mismatch"
-        if "launches" in deviceData["cores"][core]["riscs"]["TENSIX"].keys():
-            launches = deviceData["cores"][core]["riscs"]["TENSIX"]["launches"]
-            if len(launches) > 1:
-                annotateLaunches = True
+    # annotateLaunches = False
+    # for core in yVals:
+    # assert core in deviceData["cores"].keys(), "Cores is and y axis labels mismatch"
+    # if "launches" in deviceData["cores"][core]["riscs"]["TENSIX"].keys():
+    # launches = deviceData["cores"][core]["riscs"]["TENSIX"]["launches"]
+    # if len(launches) > 1:
+    # annotateLaunches = True
 
-    if annotateLaunches:
-        for core in yVals:
-            assert core in deviceData["cores"].keys(), "Cores is and y axis labels mismatch"
-            if "launches" in deviceData["cores"][core]["riscs"]["TENSIX"].keys():
-                launches = deviceData["cores"][core]["riscs"]["TENSIX"]["launches"]
-                for i, launch in enumerate(launches):
-                    timerID, tsValueStart, risc = launch[0]
-                    timerID, tsValueEnd, risc = launch[-1]
-                    width = tsValueEnd - tsValueStart
-                    fig.add_annotation(
-                        x=tsValueStart - deviceData["metadata"]["global_min"]["ts"],
-                        y=[core, "BRISC"],
-                        text=f"Launch {i+1}",
-                        xanchor="left",
-                        xshift=-2,
-                        ax=0,
-                        ay=30,
-                    )
-                    # TODO: Annotations are actually pretty slow
-                    # fig.add_annotation(x=tsValueEnd - deviceData["metadata"]["global_min"]["ts"], y=[core, "BRISC"],
-                    # text=f"",
-                    # xanchor="left",
-                    # xshift=2,
-                    # ax=0,
-                    # ay=30)
+    # if annotateLaunches:
+    # for core in yVals:
+    # assert core in deviceData["cores"].keys(), "Cores is and y axis labels mismatch"
+    # if "launches" in deviceData["cores"][core]["riscs"]["TENSIX"].keys():
+    # launches = deviceData["cores"][core]["riscs"]["TENSIX"]["launches"]
+    # for i, launch in enumerate(launches):
+    # timerID, tsValueStart, risc = launch[0]
+    # timerID, tsValueEnd, risc = launch[-1]
+    # width = tsValueEnd - tsValueStart
+    # fig.add_annotation(
+    # x=tsValueStart - deviceData["metadata"]["global_min"]["ts"],
+    # y=[core, "BRISC"],
+    # text=f"Launch {i+1}",
+    # xanchor="left",
+    # xshift=-2,
+    # ax=0,
+    # ay=30,
+    # )
+    # # TODO: Annotations are actually pretty slow
+    # # fig.add_annotation(x=tsValueEnd - deviceData["metadata"]["global_min"]["ts"], y=[core, "BRISC"],
+    # # text=f"",
+    # # xanchor="left",
+    # # xshift=2,
+    # # ax=0,
+    # # ay=30)
 
-    fig.add_annotation(
-        x=0,
-        y=[deviceData["metadata"]["global_min"]["core"], "BRISC"],
-        text=f"T0",
-        xanchor="left",
-        bgcolor="rgba(255,255,0,1)",
-        ax=0,
-        ay=0,
-    )
+    # fig.add_annotation(
+    # x=0,
+    # y=[deviceData["metadata"]["global_min"]["core"], "BRISC"],
+    # text=f"T0",
+    # xanchor="left",
+    # bgcolor="rgba(255,255,0,1)",
+    # ax=0,
+    # ay=0,
+    # )
     return fig
 
 
 def generate_plots(devicesData, setup, saveFigure=True):
     timelineFigs = {}
     for chipID, deviceData in devicesData["devices"].items():
+        print("generating")
         timeseries_to_durations(deviceData)
         yVals = sorted(deviceData["cores"].keys(), key=coreCompare, reverse=True)
         yVals.remove("DEVICE")
@@ -920,6 +967,8 @@ def generate_plots(devicesData, setup, saveFigure=True):
         key = f"Chip {chipID} Cores"
         fig = timeline_plot(yVals, xValsDict, setup)
         timelineFigs[key] = timeline_annotations(yVals, deviceData, fig, setup)
+
+        print("generated")
 
         # TODO: Very inefficient in large datasets. Will need to draw manually if deemed useful
         # xValsDict = plotData_to_timelineXVals(deviceData, ['DEVICE'], setup)
@@ -950,6 +999,7 @@ def run_dashbaord_webapp(devicesData, timelineFigs, setup):
     plotsDiv = []
     for num, item in enumerate(sorted(set(timelineFigs.keys()) | set(statTables.keys()))):
         plotRiscs = set()
+        print(item)
         for marker in timelineFigs[item]["data"]:
             if marker["y"][-1][0] in setup.riscs:
                 plotRiscs.add(marker["y"][-1][0])
@@ -1075,8 +1125,8 @@ def main(setup, device_input_log, output_folder, port, no_print_stats, no_webapp
     # print_rearranged_csv(devicesData, setup)
     # print_json(devicesData, setup)
 
-    if not no_print_stats:
-        print_stats(devicesData, setup)
+    # if not no_print_stats:
+    # print_stats(devicesData, setup)
 
     # timelineFigs = {}
     # if not no_plots:

@@ -289,6 +289,13 @@ namespace op_profiler {
 #endif
                 }
 
+                int get_global_count ()
+                {
+#if defined(PROFILER)
+                    return get_op_data().globalCallCount;
+#endif
+                }
+
                 void append_math_fidelity (const string& fidelity)
                 {
 #if defined(PROFILER)
@@ -504,6 +511,13 @@ namespace op_profiler {
     {
 #if defined(PROFILER)
         detail::operationProfiler.set_parallelization_strategy(fmt::format("{}",strategy));
+#endif
+    }
+
+    static int get_global_op_counter ()
+    {
+#if defined(PROFILER)
+        return detail::operationProfiler.get_global_count();
 #endif
     }
 
