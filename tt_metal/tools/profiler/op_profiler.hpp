@@ -100,6 +100,7 @@ namespace op_profiler {
 
         struct OpData {
             string name;
+            HostProfiler profiler = HostProfiler();
             vector<string> metaDataVector = {};
 
             int opCallCount;
@@ -160,6 +161,7 @@ namespace op_profiler {
                 void setup_profiling_folders (
                         string opName,
                         int callCount,
+                        HostProfiler& opProfiler,
                         bool freshTTmetalLogs = true)
                 {
                     TT_ASSERT (profileFolder != "", "Bad log folder location, folder has been setup wrong");
@@ -170,6 +172,12 @@ namespace op_profiler {
                         tt::tt_metal::detail::FreshProfilerDeviceLog();
                     }
 
+                    opProfiler.setOutputDir(profileFolder + "/" + opName);
+                    //If it is the first call to this op, freshen the log
+                    if (callCount > 1)
+                    {
+                        opProfiler.setNewLogFlag(false);
+                    }
                 }
 
                 OpData& get_op_data()
@@ -220,12 +228,13 @@ namespace op_profiler {
                         setup_profiling_folders(
                                 callingOpName,
                                 callingOpCallCount,
+                                callingOp.profiler,
                                 freshTTmetalLogs);
                     }
                     else
                     {
                         unknownOp = OpData(unknownOpName, unknownOp.opCallCount + 1, globalCallCount, 0, OpType::unknown);
-                        setup_profiling_folders(unknownOpName, globalCallCount);
+                        setup_profiling_folders(unknownOpName, globalCallCount, unknownOp.profiler);
                     }
                 }
 
@@ -245,7 +254,9 @@ namespace op_profiler {
                     auto callCount = get_call_count_increment(opName);
                     OpData opData = OpData(opNameNoComma, callCount, globalCallCount, opStack.size() + 1, opType);
 
-                    setup_profiling_folders (opNameNoComma, callCount);
+                    opData.profiler.markStart(opNameNoComma);
+
+                    setup_profiling_folders (opNameNoComma, callCount, opData.profiler);
                     opStack.push(opData);
 #endif
                 }
@@ -259,6 +270,7 @@ namespace op_profiler {
                     TT_ASSERT (opNameNoComma == opData.name, "Something is wrong, op name mismatch");
 
                     auto additionalFields = generate_additional_data();
+                    opData.profiler.markStop(opNameNoComma, additionalFields);
                     clear_profiler();
 #endif
                 }
