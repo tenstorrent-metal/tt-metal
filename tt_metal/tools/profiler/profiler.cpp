@@ -261,7 +261,7 @@ void DeviceProfiler::dumpResultToFile(
     {
         log_file.open(log_path);
         log_file << "ARCH: " << get_string_lowercase(device_architecture) << ", CHIP_FREQ[MHz]: " << device_core_frequency << std::endl;
-        log_file << "Program ID, PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset]" << std::endl;
+        log_file << "PCIe slot, core_x, core_y, RISC processor type, Program ID, timer_id, time[cycles since reset]" << std::endl;
         new_log = false;
     }
     else
@@ -292,7 +292,7 @@ void DeviceProfiler::dumpResultToFile(
         device_data.emplace(eventID,std::list<uint64_t>{timestamp});
     }
 
-    log_file << programID << ", "  << chip_id << ", " << core_x << ", " << core_y << ", " << riscName[risc] << ", ";
+    log_file << chip_id << ", " << core_x << ", " << core_y << ", " << riscName[risc] << ", " << programID << ", ";
     log_file << timer_id << ", ";
     log_file << timestamp;
     log_file << std::endl;

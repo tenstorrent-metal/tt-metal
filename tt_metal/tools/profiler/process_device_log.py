@@ -323,8 +323,9 @@ def import_device_profile_log(logPath):
                 chipID = int(row[0])
                 core = (int(row[1]), int(row[2]))
                 risc = row[3].strip()
-                timerID = int(row[4])
-                timeData = int(row[5])
+                programID = row[4].strip()
+                timerID = int(row[5])
+                timeData = int(row[6])
 
                 if chipID in devicesData["devices"].keys():
                     if core in devicesData["devices"][chipID]["cores"].keys():
@@ -378,31 +379,33 @@ def is_new_launch_core(tsRisc):
         return True
     return False
 
+
 def is_new_launch_device(tsCore, coreOpMap):
     timerID, tsValue, risc, core = tsCore
     isNewOp = False
     isNewOpFinished = False
-    if risc == "BRISC" and timerID == 1:
-        if not coreOpMap:
-            isNewOp = True
-        #Remove
-        # if core in coreOpMap.keys():
+    if core not in [(6, 9), (0, 9)]:
+        if risc == "BRISC" and timerID == 1:
+            if not coreOpMap:
+                isNewOp = True
+            # Remove
+            # if core in coreOpMap.keys():
             # for opDuration in coreOpMap.items():
-                # print (opDuration)
+            # print (opDuration)
             # print (coreOpMap[core])
             # print (tsCore)
-        assert core not in coreOpMap.keys(), "Unexpected BRISC start"
-        coreOpMap[core] = (tsValue,)
-    elif risc == "BRISC" and timerID == 4:
-        assert core in coreOpMap.keys(), "Unexpected BRISC end"
-        coreOpMap[core] = (coreOpMap[core][0],tsValue)
-        isNewOpFinished = True
-        for opDuration in coreOpMap.values():
-            pairSize = len(opDuration)
-            assert pairSize == 1 or pairSize == 2, "Wrong op duration"
-            if pairSize == 1:
-                isNewOpFinished = False
-                break
+            assert core not in coreOpMap.keys(), f"Unexpected BRISC start in {tsCore} {coreOpMap[core]}"
+            coreOpMap[core] = (tsValue,)
+        elif risc == "BRISC" and timerID == 4:
+            assert core in coreOpMap.keys(), "Unexpected BRISC end"
+            coreOpMap[core] = (coreOpMap[core][0], tsValue)
+            isNewOpFinished = True
+            for opDuration in coreOpMap.values():
+                pairSize = len(opDuration)
+                assert pairSize == 1 or pairSize == 2, "Wrong op duration"
+                if pairSize == 1:
+                    isNewOpFinished = False
+                    break
     return isNewOp, isNewOpFinished
 
 
@@ -448,14 +451,14 @@ def core_to_device_timeseries(devicesData):
 
         launches = [[]]
         coreOpMap = {}
-        for ts in tmpTimeseries['riscs']['TENSIX']["timeseries"]:
+        for ts in tmpTimeseries["riscs"]["TENSIX"]["timeseries"]:
             isNewOp, isNewOpFinished = is_new_launch_device(ts, coreOpMap)
             launches[-1].append(ts)
             if isNewOpFinished:
                 coreOpMap = {}
                 launches.append([])
 
-        tmpTimeseries['riscs']['TENSIX']["launches"]=launches
+        tmpTimeseries["riscs"]["TENSIX"]["launches"] = launches
 
         deviceData["cores"]["DEVICE"] = tmpTimeseries
 
@@ -772,7 +775,7 @@ def timeseries_analysis(riscData, name, analysis):
                 "Sum": tmpDF.loc[:, "diff"].sum(),
                 "First": tmpDF.loc[0, "diff"],
             },
-            "series": tmpList
+            "series": tmpList,
         }
     if tmpDict:
         if "analysis" not in riscData.keys():
@@ -799,6 +802,7 @@ def device_analysis(name, analysis, devicesData):
         assert risc in deviceData["cores"][core]["riscs"].keys()
         riscData = deviceData["cores"][core]["riscs"][risc]
         timeseries_analysis(riscData, name, analysis)
+
 
 def generate_device_level_summary(devicesData):
     for chipID, deviceData in devicesData["devices"].items():
@@ -1071,17 +1075,18 @@ def main(setup, device_input_log, output_folder, port, no_print_stats, no_webapp
     # print_rearranged_csv(devicesData, setup)
     # print_json(devicesData, setup)
 
-    if not no_print_stats: print_stats(devicesData, setup)
+    if not no_print_stats:
+        print_stats(devicesData, setup)
 
     # timelineFigs = {}
     # if not no_plots:
-        # timelineFigs = generate_plots(devicesData, setup)
+    # timelineFigs = generate_plots(devicesData, setup)
 
     # if not no_artifacts:
-        # generate_artifact_tarball(setup)
+    # generate_artifact_tarball(setup)
 
     # if not no_webapp:
-        # run_dashbaord_webapp(devicesData, timelineFigs, setup)
+    # run_dashbaord_webapp(devicesData, timelineFigs, setup)
 
 
 if __name__ == "__main__":
