@@ -41,7 +41,7 @@ extern CQReadInterface cq_read_interface;
 #define NOC_UNICAST_WRITE_VC 1
 #define NOC_MULTICAST_WRITE_VC 4
 
-inline uint32_t align(uint32_t addr, uint32_t alignment) { return ((addr - 1) | (alignment - 1)) + 1; }
+FORCE_INLINE uint32_t align(uint32_t addr, uint32_t alignment) { return ((addr - 1) | (alignment - 1)) + 1; }
 
 constexpr static uint32_t get_arg_addr(int arg_idx) {
     // args are 4B in size
@@ -82,7 +82,7 @@ FORCE_INLINE T get_arg_val(int arg_idx) {
 
 // replicated from ckernels_defs.h, which are currently not included in BRISC / NCRISC builds
 // TODO: look into ckernels_defs.h included in NCRISC/BRISC builds
-inline __attribute__((always_inline)) constexpr static std::int32_t GET_L1_TILE_SIZE(uint format) {
+FORCE_INLINE constexpr static std::int32_t GET_L1_TILE_SIZE(uint format) {
     switch (format & 0x1F) {
         case ((uint8_t)DataFormat::Float16_b): return ((2048 >> 4));
         case ((uint8_t)DataFormat::Float16): return ((2048 >> 4));
@@ -101,7 +101,7 @@ inline __attribute__((always_inline)) constexpr static std::int32_t GET_L1_TILE_
     };
 }
 
-inline __attribute__((always_inline)) constexpr static std::uint32_t MUL_WITH_TILE_SIZE(uint format, uint index) {
+FORCE_INLINE constexpr static std::uint32_t MUL_WITH_TILE_SIZE(uint format, uint index) {
     switch (format & 0x1F) {
         case ((uint8_t)DataFormat::Float16):
         case ((uint8_t)DataFormat::Float16_b): return (index << 11);
@@ -195,7 +195,7 @@ void cb_pop_front(int32_t operand, int32_t num_pages) {
 // this API is used by both the reader and writer side of the CB
 // it uses unpack_src_format, but because unpack_src_format == pack_dst_format, we can use either
 // TODO: this can be made constexpr?
-inline std::int32_t get_tile_size(const std::int32_t operand) {
+FORCE_INLINE constexpr std::int32_t get_tile_size(const std::int32_t operand) {
     std::uint32_t input = operand;
 
     // L1 16B words
@@ -205,7 +205,7 @@ inline std::int32_t get_tile_size(const std::int32_t operand) {
     return num_words << 4;
 }
 
-inline DataFormat get_dataformat(const std::int32_t operand) {
+FORCE_INLINE constexpr DataFormat get_dataformat(const std::int32_t operand) {
     return static_cast<DataFormat>((uint)unpack_src_format[operand]);
 }
 
@@ -225,7 +225,7 @@ inline DataFormat get_dataformat(const std::int32_t operand) {
  * |-----------|--------------------------------------|----------|---------------------------------------------------------------------------------------------------|----------|
  * | operand   | The index of the cirular buffer (CB) | uint32_t | 0 to 31     | True     |
  */
-inline __attribute__((always_inline)) uint32_t get_write_ptr(uint32_t operand) {
+FORCE_INLINE uint32_t get_write_ptr(uint32_t operand) {
     // return byte address (fifo_wr_ptr is 16B address)
     uint32_t wr_ptr_bytes = cb_interface[operand].fifo_wr_ptr << 4;
     return wr_ptr_bytes;
@@ -243,7 +243,7 @@ inline __attribute__((always_inline)) uint32_t get_write_ptr(uint32_t operand) {
  * |-----------|--------------------------------------|----------|---------------------------------------------------------------------------------------------------|----------|
  * | operand   | The index of the cirular buffer (CB) | uint32_t | 0 to 31     | True     |
  */
-inline __attribute__((always_inline)) uint32_t get_read_ptr(uint32_t operand) {
+FORCE_INLINE uint32_t get_read_ptr(uint32_t operand) {
 
     // return byte address (fifo_rd_ptr is 16B address)
     uint32_t rd_ptr_bytes = cb_interface[operand].fifo_rd_ptr << 4;
