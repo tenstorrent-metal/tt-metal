@@ -116,7 +116,7 @@ def get_pcc_robust(golden, calculated):
         return either_nan_count, similarity, golden, calculated
 
     # Compare floats for equality using absolute or relative difference depending on absolute value of float
-    def are_equal_fuzzy(x, y, th=1, eps=0.0001):
+    def are_equal_fuzzy(x, y, th=1, eps=0.00001):
         abs_diff = torch.abs(x - y)
         max_el = torch.max(torch.abs(x), torch.abs(y))
 
