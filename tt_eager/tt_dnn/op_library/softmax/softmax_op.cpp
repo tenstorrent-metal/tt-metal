@@ -345,7 +345,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
     // tensor shape
     const auto shape = input_tensor.shape();
     uint32_t M = shape[2];
-    uint32_t K = shape[3];
+    uint32_t K = shape[3] * shape[0];
     uint32_t Mt = M / TILE_WIDTH;
     uint32_t Kt = K / TILE_WIDTH;
     // block

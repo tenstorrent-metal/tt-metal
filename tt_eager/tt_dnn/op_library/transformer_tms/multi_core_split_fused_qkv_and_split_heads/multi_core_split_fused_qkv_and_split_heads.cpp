@@ -324,19 +324,31 @@ operation::ProgramWithCallbacks multi_core_split_fused_qkv_and_split_heads_shard
         .set_page_size(CB::c_out2, single_tile_size).set_globally_allocated_address(*output[2].buffer());;
     auto cb_out2_id = CreateCircularBuffer( program, all_cores, c_out2_config );
 
-
-
     auto override_runtime_args_callback = [
+        cb_in0_id,
+        cb_out0_id,
+        cb_out1_id,
+        cb_out2_id
         ]
     (
-        const Program &program,
-        const std::vector<Buffer*>& input_buffers,
-        const std::vector<Buffer*>& output_buffers
+        const void* operation,
+        Program& program,
+        const std::vector<Tensor>& input_tensors,
+        const std::vector<std::optional<const Tensor>>& optional_input_tensors,
+        const std::vector<Tensor>& output_tensors
     ) {
+        auto in0_buffer = input_tensors.at(0).buffer();
+        auto out0_buffer = output_tensors.at(0).buffer();
+        auto out1_buffer = output_tensors.at(1).buffer();
+        auto out2_buffer = output_tensors.at(2).buffer();
 
+        UpdateDynamicCircularBufferAddress(program, cb_in0_id, *in0_buffer);
+        UpdateDynamicCircularBufferAddress(program, cb_out0_id, *out0_buffer);
+        UpdateDynamicCircularBufferAddress(program, cb_out1_id, *out1_buffer);
+        UpdateDynamicCircularBufferAddress(program, cb_out2_id, *out2_buffer);
     };
 
-    return {std::move(program), override_runtime_args_callback};
+    return {std::move(program), .override_runtime_arguments_callback=override_runtime_args_callback};
 }
 
 }  // namespace transformers

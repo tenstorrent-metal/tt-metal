@@ -89,8 +89,8 @@ def test_layernorm_sharded(
     epsf = 1e-2
     batch = 12
 
-    in0_shape = (1, 1, batch * 384, 1024)
-    M = in0_shape[2]
+    in0_shape = (batch, 1, 384, 1024)
+    M = in0_shape[2] * batch
     K = in0_shape[3]
 
     in0 = torch.rand(in0_shape) * 2 - 0.95
@@ -250,8 +250,8 @@ def test_layernorm_sharded_mix_precision(
     epsf = 1e-2
     batch = 12
 
-    in0_shape = (1, 1, batch * 384, 1024)
-    M = in0_shape[2]
+    in0_shape = (batch, 1, 384, 1024)
+    M = in0_shape[2] * batch
     K = in0_shape[3]
 
     in0 = torch.rand(in0_shape) * 2 - 0.95

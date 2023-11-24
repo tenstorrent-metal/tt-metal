@@ -46,9 +46,9 @@ def test_softmax(device, in_dtype, cb_dtype, in0_mem_config):
     grid_size = (12, 8)
     batch = grid_size[0]
     num_cores_r = grid_size[1]
-    input_shape = (1, 1, num_cores_r * fuse_head * 384, 384 * batch)
+    input_shape = (batch, 1, num_cores_r * fuse_head * 384, 384)
     M = input_shape[2]
-    K = input_shape[3]
+    K = input_shape[3] * batch
 
     hidden_dim = 1024
     num_heads = 16
@@ -75,7 +75,7 @@ def test_softmax(device, in_dtype, cb_dtype, in0_mem_config):
         grid_size,
         [M // grid_size[1], K // grid_size[0]],
         ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
-        ttl.tensor.ShardOrientation.ROW_MAJOR,
+        ttl.tensor.ShardOrientation.COL_MAJOR,
     )
 
     program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
@@ -97,16 +97,12 @@ def test_softmax(device, in_dtype, cb_dtype, in0_mem_config):
     attention_mask = attention_mask.reshape(batch, 1, 1, 384)
 
     for i in range(batch):
-        for j in range(num_cores_r):
-            golden_output_tensor = (
-                input_tensor[:, :, 384 * fuse_head * j : 384 * fuse_head * (j + 1), 384 * i : 384 * (i + 1)] * scale
-            ) + attention_mask[i]
+        golden_output_tensor = input_tensor[i] * scale + attention_mask[i]
+        golden_output_tensor = torch.softmax(golden_output_tensor, dim=-1)
 
-            golden_output_tensor = torch.softmax(golden_output_tensor, dim=-1)
-
-            allclose, output = comp_pcc(
-                tt_output_tensor[:, :, 384 * fuse_head * j : 384 * fuse_head * (j + 1), 384 * i : 384 * (i + 1)],
-                golden_output_tensor,
-            )
-            logger.info(output)
-            assert allclose, f"FAILED: {output}"
+        allclose, output = comp_pcc(
+            tt_output_tensor[i],
+            golden_output_tensor,
+        )
+        logger.info(output)
+        assert allclose, f"FAILED: {output}"

@@ -523,7 +523,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     uint32_t out_single_tile_size = tt_metal::detail::TileSize(out_data_format);
     // tensor shape
     const auto shape = a.shape();
-    uint32_t M = shape[2];
+    uint32_t M = shape[2] * shape[0];
     uint32_t K = shape[3];
     uint32_t Mt = M / TILE_WIDTH;
     uint32_t Kt = K / TILE_WIDTH;

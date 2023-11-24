@@ -23,7 +23,6 @@ void MAIN {
     // - transpose_wh each tile
     for (uint32_t n = 0; n < num_tiles; n++) {
         cb_wait_front(cb_im0, 1);
-        if (n==0)UNPACK(( DPRINT  << TSLICE(cb_im0, 0, SliceRange::h0_w0_32()) << ENDL() ));
         cb_reserve_back(cb_out1, 1);
 
         acquire_dst(tt::DstMode::Half);

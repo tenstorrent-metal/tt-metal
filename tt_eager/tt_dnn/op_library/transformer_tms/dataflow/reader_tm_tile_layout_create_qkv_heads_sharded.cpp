@@ -60,7 +60,6 @@ void kernel_main() {
                 noc_async_read(src_noc_addr, l1_write_addr_out1, single_tile_size_bytes);
                 l1_read_addr_offset += block_wt_size_bytes;
                 noc_async_read_barrier();
-                if (i==0 and j==0 and k==0) DPRINT  << TSLICE(cb_im0, 0, SliceRange::h0_w0_32()) << ENDL();
                 cb_push_back(cb_im0, 1);
 
             }
