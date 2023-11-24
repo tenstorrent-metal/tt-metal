@@ -146,6 +146,25 @@ Tensor Tensor::cpu() const {
     return tensor_impl::to_host_wrapper(*this);
 }
 
+Tensor Tensor::cpu_sharded() const {
+    ZoneScoped;
+    return tensor_impl::to_host_wrapper_sharded(*this);
+}
+
+
+Tensor Tensor::extract_shard(const CoreCoord & core) const{
+
+    auto buffer= this->buffer();
+    uint32_t core_id = buffer->core_to_core_id().at(core);
+    return this->extract_shard(core_id);
+}
+
+Tensor Tensor::extract_shard(const uint32_t & core_id) const{
+
+    return tensor_impl::to_extract_shard_wrapper(*this, core_id);
+
+}
+
 Tensor Tensor::to(Layout target_layout) const {
     ZoneScoped;
     TT_ASSERT(this->storage_type() != StorageType::DEVICE && "Bring tensor to host before converting to target layout");

@@ -190,11 +190,9 @@ void TensorModule(py::module &m_tensor) {
         .def(py::self == py::self)
         .def(py::self != py::self);
 
-<<<<<<< HEAD
     auto py_owned_buffer_for_uint16_t =
         py::class_<owned_buffer::Buffer<uint16_t>>(m_tensor, "owned_buffer_for_uint16_t", py::buffer_protocol());
     detail::implement_buffer_protocol<owned_buffer::Buffer<uint16_t>, uint16_t>(py_owned_buffer_for_uint16_t);
-=======
 
     auto pyCoreRange = py::class_<CoreRange>(m_tensor, "CoreRange",  R"doc(
         Class defining a range of cores)doc"
@@ -242,7 +240,6 @@ void TensorModule(py::module &m_tensor) {
             )
         );
 
->>>>>>> ca081e416... #3493: sharded tensor support
 
     auto py_owned_buffer_for_uint32_t = py::class_<owned_buffer::Buffer<uint32_t>>(m_tensor, "owned_buffer_for_uint32_t", py::buffer_protocol());
     detail::implement_buffer_protocol<owned_buffer::Buffer<uint32_t>, uint32_t>(py_owned_buffer_for_uint32_t);
