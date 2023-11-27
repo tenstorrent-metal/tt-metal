@@ -30,6 +30,9 @@ void Sharded::validate(const std::vector<Tensor> &input_tensors) const {
             }
         }
     }
+    if (input_tensor.dtype() != this->output_dtype) {
+        TT_FATAL(input_tensor.layout() == Layout::TILE);
+    }
     auto device_grid = input_tensor.device()->compute_with_storage_grid_size();
     TT_FATAL(this->grid_size.x <= device_grid.x && this->grid_size.y <= device_grid.y);
     // Divisibility of num_cores and shard size with tensor shape is done in tensor creation, so no need to assert here
@@ -43,9 +46,9 @@ std::vector<Shape> Sharded::compute_output_shapes(const std::vector<Tensor> &inp
 std::vector<Tensor> Sharded::create_output_tensors(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor = input_tensors.at(0);
     if (this->sharded_op_type == ShardedOpType::InterleavedToSharded) {
-        return {create_sharded_device_tensor(this->compute_output_shapes(input_tensors).at(0), input_tensor.dtype(), input_tensor.layout(), input_tensor.device(), this->output_mem_config, this->shard_spec)};
+        return {create_sharded_device_tensor(this->compute_output_shapes(input_tensors).at(0), this->output_dtype, input_tensor.layout(), input_tensor.device(), this->output_mem_config, this->shard_spec)};
     } else {
-        return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.dtype(), input_tensor.layout(), this->output_mem_config);
+        return operation::generic_create_output_tensors(*this, input_tensors, this->output_dtype, input_tensor.layout(), this->output_mem_config);
     }
 }
 
