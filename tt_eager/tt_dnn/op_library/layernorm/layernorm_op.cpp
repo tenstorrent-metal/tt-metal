@@ -529,7 +529,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     uint32_t Kt = K / TILE_WIDTH;
     // block
     uint32_t block_w = block_wt * TILE_WIDTH;
-    uint32_t block_h = block_ht * TILE_WIDTH;
+    uint32_t block_h = block_ht * TILE_HEIGHT;
     uint32_t num_blocks = grid_size.y;
     uint32_t num_subblocks_w = block_wt / subblock_wt;
     // check dims
@@ -675,16 +675,53 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         (std::uint32_t) is_dram(beta),
         (std::uint32_t) block_wt
     };
+
+    if (gamma.has_value() and gamma.value().layout() == Layout::ROW_MAJOR) {
+        auto gamma_stick_size = gamma.value().shape()[3] * gamma.value().element_size();
+        bool gamma_stick_size_is_power_of_two = is_power_of_two_at_least_32(gamma_stick_size);
+        writer_mcast_sender_compile_time_args.push_back((std::uint32_t) gamma_stick_size_is_power_of_two);
+        writer_mcast_receiver_compile_time_args.push_back((std::uint32_t) gamma_stick_size_is_power_of_two);
+        if (gamma_stick_size_is_power_of_two) {
+            uint32_t gamma_log2_stick_size = gamma_stick_size_is_power_of_two ? (std::uint32_t)log2(gamma_stick_size) : 0;
+            writer_mcast_sender_compile_time_args.push_back((std::uint32_t) gamma_log2_stick_size);
+            writer_mcast_receiver_compile_time_args.push_back((std::uint32_t) gamma_log2_stick_size);
+        } else {
+            writer_mcast_sender_compile_time_args.push_back(gamma_stick_size);
+            writer_mcast_receiver_compile_time_args.push_back(gamma_stick_size);
+        }
+    } else if (beta.has_value() and beta.value().layout() == Layout::ROW_MAJOR) {
+        auto beta_stick_size = beta.value().shape()[3] * beta.value().element_size();
+        bool beta_stick_size_is_power_of_two = is_power_of_two_at_least_32(beta_stick_size);
+        writer_mcast_sender_compile_time_args.push_back((std::uint32_t) beta_stick_size_is_power_of_two);
+        writer_mcast_receiver_compile_time_args.push_back((std::uint32_t) beta_stick_size_is_power_of_two);
+        if (beta_stick_size_is_power_of_two) {
+            uint32_t beta_log2_stick_size = beta_stick_size_is_power_of_two ? (std::uint32_t)log2(beta_stick_size) : 0;
+            writer_mcast_sender_compile_time_args.push_back((std::uint32_t) beta_log2_stick_size);
+            writer_mcast_receiver_compile_time_args.push_back((std::uint32_t) beta_log2_stick_size);
+        } else {
+            writer_mcast_sender_compile_time_args.push_back(beta_stick_size);
+            writer_mcast_receiver_compile_time_args.push_back(beta_stick_size);
+
+        }
+    } else {
+        writer_mcast_sender_compile_time_args.push_back(0);
+        writer_mcast_sender_compile_time_args.push_back(0);
+        writer_mcast_receiver_compile_time_args.push_back(0);
+        writer_mcast_receiver_compile_time_args.push_back(0);
+    }
+
     // writer kernel
+    bool use_row_major_kernel = (gamma.has_value() and gamma.value().layout() == Layout::ROW_MAJOR) or (beta.has_value() and beta.value().layout() == Layout::ROW_MAJOR);
+    std::string writer_kernel = use_row_major_kernel ? "tt_eager/tt_dnn/op_library/layernorm/kernels/dataflow/writer_unary_sharded_ln_rm_gb.cpp" : "tt_eager/tt_dnn/op_library/layernorm/kernels/dataflow/writer_unary_sharded_ln.cpp";
     auto writer_mcast_sender_kernels_id = CreateKernel(
         program,
-        "tt_eager/tt_dnn/op_library/layernorm/kernels/dataflow/writer_unary_sharded_ln.cpp",
+        writer_kernel,
         top_row,
         tt_metal::DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default, .compile_args = writer_mcast_sender_compile_time_args, .defines = writer_defines}
     );
     auto writer_mcast_receiver_kernels_id = CreateKernel(
         program,
-        "tt_eager/tt_dnn/op_library/layernorm/kernels/dataflow/writer_unary_sharded_ln.cpp",
+        writer_kernel,
         all_except_top_row,
         tt_metal::DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default, .compile_args = writer_mcast_receiver_compile_time_args, .defines = writer_defines}
     );
@@ -957,13 +994,12 @@ operation::ProgramWithCallbacks layernorm_sharded_(
 
         UpdateDynamicCircularBufferAddress(program, cb_output, *dst_buffer);
 
-        int i=0;
         for (uint32_t i = 0; i < num_cores; ++i) {
             CoreCoord core = {i % grid_size.x, i / grid_size.x};
 
             auto writer_kernel_id = writer_kernel_ids.at(i);
 
-            auto runtime_args = GetRuntimeArgs(program, writer_kernel_id, core);
+            auto& runtime_args = GetRuntimeArgs(program, writer_kernel_id, core);
 
             if (gamma_tensor.has_value()) {
                 runtime_args[3] = gamma_tensor.value().buffer()->address();
@@ -971,7 +1007,6 @@ operation::ProgramWithCallbacks layernorm_sharded_(
             if (beta_tensor.has_value()) {
                 runtime_args[4] = beta_tensor.value().buffer()->address();
             }
-            i++;
         }
     };
 
@@ -1008,6 +1043,9 @@ void LayerNorm::validate(const std::vector<Tensor> &input_tensors, const std::ve
             TT_ASSERT(a.device() == gamma.value().device());
             TT_ASSERT(gamma.value().buffer() != nullptr, "Operands to layernorm need to be allocated in buffers on device!");
             TT_ASSERT(gamma.value().dtype() == DataType::BFLOAT16);
+        }
+        if (beta.has_value()) {
+            TT_ASSERT(gamma.value().layout() == beta.value().layout());
         }
     }
 
