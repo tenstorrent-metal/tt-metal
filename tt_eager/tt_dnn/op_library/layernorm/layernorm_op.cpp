@@ -566,6 +566,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     //                         Parameters Setup
     ////////////////////////////////////////////////////////////////////////////
     // block size for in0 (tensor a)
+    uint32_t num_rows_per_all_to_all_worker = div_up(block_ht, grid_size.y);
     uint32_t in0_block_tiles = block_wt * block_ht;
     uint32_t in0_CB_tiles = in0_block_tiles;
     uint32_t in0_CB_size = in0_CB_tiles * in_single_tile_size;
@@ -584,6 +585,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     uint32_t xmm_CB_size = in0_block_tiles * single_tile_size;
     uint32_t ex_partial_CB_size = in0_block_tiles * single_tile_size / block_wt;
     uint32_t ex_CB_size = ex_partial_CB_size;
+    uint32_t ex_global_CB_size = ex_partial_CB_size;
     uint32_t ex_external_CB_size = Kt / block_wt * single_tile_size;
     uint32_t xmm2_CB_size = in0_block_tiles * single_tile_size / block_ht;
     uint32_t ex2pe_CB_size = 2 * single_tile_size;
@@ -601,6 +603,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     uint32_t num_cores_c = grid_size.x;
     uint32_t num_cores_r = grid_size.y;
     uint32_t num_cores = num_cores_c * num_cores_r;
+    uint32_t num_cores_all_to_all = block_ht / num_rows_per_all_to_all_worker; // Hardcoded, change later! = 6
     CoreRange all_cores{
         .start={(std::size_t) start_core_x, (std::size_t) start_core_y},
         .end={(std::size_t) start_core_x + num_cores_c - 1, (std::size_t) start_core_y + num_cores_r - 1}};
@@ -609,6 +612,15 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         .end={(std::size_t) start_core_x + num_cores_c - 1, (std::size_t) start_core_y}};
     CoreRange all_except_top_row{
         .start={(std::size_t) start_core_x, (std::size_t) start_core_y + 1},
+        .end={(std::size_t) start_core_x + num_cores_c - 1, (std::size_t) start_core_y + num_cores_r - 1}};
+    CoreRange all_to_all_cores{
+        .start={(std::size_t) start_core_x, (std::size_t) start_core_y},
+        .end={(std::size_t) start_core_x + num_cores_c - 1, (std::size_t) start_core_y + num_cores_all_to_all - 1}};
+    CoreRange all_to_all_workers_except_top_row {
+        .start={(std::size_t) start_core_x, (std::size_t) start_core_y + 1},
+        .end={(std::size_t) start_core_x + num_cores_c - 1, (std::size_t) start_core_y + num_cores_all_to_all - 1}};
+    CoreRange not_all_to_all_workers {
+        .start={(std::size_t) start_core_x, (std::size_t) start_core_y + num_cores_all_to_all},
         .end={(std::size_t) start_core_x + num_cores_c - 1, (std::size_t) start_core_y + num_cores_r - 1}};
     CoreRange mcast_sender = top_row;
     CoreRange mcast_receiver = all_except_top_row;
@@ -636,12 +648,28 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         (std::uint32_t) reduce_sender_semaphore,
         (std::uint32_t) num_blocks,
         (std::uint32_t) block_ht,
-        (std::uint32_t) block_ht * single_tile_size
+        (std::uint32_t) block_ht * single_tile_size,
+        (std::uint32_t) num_cores_all_to_all,
+        (std::uint32_t) num_rows_per_all_to_all_worker,
+        (std::uint32_t) num_rows_per_all_to_all_worker * single_tile_size
+    };
+    std::vector<uint32_t> reader_mcast_receiver_all_to_all_compile_time_args = {
+        (std::uint32_t) reduce_receiver_semaphore,
+        (std::uint32_t) reduce_sender_semaphore,
+        (std::uint32_t) num_blocks,
+        (std::uint32_t) block_ht,
+        (std::uint32_t) 1,
+        (std::uint32_t) num_cores_all_to_all,
+        (std::uint32_t) num_rows_per_all_to_all_worker
     };
     std::vector<uint32_t> reader_mcast_receiver_compile_time_args = {
         (std::uint32_t) reduce_receiver_semaphore,
         (std::uint32_t) reduce_sender_semaphore,
-        (std::uint32_t) block_ht
+        (std::uint32_t) num_blocks,
+        (std::uint32_t) block_ht,
+        (std::uint32_t) 0,
+        (std::uint32_t) num_cores_all_to_all,
+        (std::uint32_t) num_rows_per_all_to_all_worker
     };
     // reader kernel
     auto reader_mcast_sender_kernels_id = CreateKernel(
@@ -650,10 +678,16 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         top_row,
         tt_metal::DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default, .compile_args = reader_mcast_sender_compile_time_args, .defines = reader_mcast_sender_defines}
     );
+    auto reader_mcast_receiver_kernels_id_all_to_all = CreateKernel(
+        program,
+        "tt_eager/tt_dnn/op_library/layernorm/kernels/dataflow/reader_mcast_receiver_unary_sharded_ln.cpp",
+        all_to_all_workers_except_top_row,
+        tt_metal::DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default, .compile_args = reader_mcast_receiver_all_to_all_compile_time_args, .defines = reader_mcast_receiver_defines}
+    );
     auto reader_mcast_receiver_kernels_id = CreateKernel(
         program,
         "tt_eager/tt_dnn/op_library/layernorm/kernels/dataflow/reader_mcast_receiver_unary_sharded_ln.cpp",
-        all_except_top_row,
+        not_all_to_all_workers,
         tt_metal::DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default, .compile_args = reader_mcast_receiver_compile_time_args, .defines = reader_mcast_receiver_defines}
     );
     // writer defines
@@ -679,13 +713,13 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     auto writer_mcast_sender_kernels_id = CreateKernel(
         program,
         "tt_eager/tt_dnn/op_library/layernorm/kernels/dataflow/writer_unary_sharded_ln.cpp",
-        top_row,
+        all_to_all_cores,
         tt_metal::DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default, .compile_args = writer_mcast_sender_compile_time_args, .defines = writer_defines}
     );
     auto writer_mcast_receiver_kernels_id = CreateKernel(
         program,
         "tt_eager/tt_dnn/op_library/layernorm/kernels/dataflow/writer_unary_sharded_ln.cpp",
-        all_except_top_row,
+        not_all_to_all_workers,
         tt_metal::DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default, .compile_args = writer_mcast_receiver_compile_time_args, .defines = writer_defines}
     );
     // defines
@@ -703,8 +737,9 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         block_wt,
         subblock_wt,
         num_subblocks_w,
+        1,
     };
-    std::vector<uint32_t> all_except_top_compute_compile_time_args = {
+    std::vector<uint32_t> all_to_all_except_top_compute_compile_time_args = {
         0,
         gamma.has_value(),
         beta.has_value(),
@@ -713,6 +748,18 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         block_wt,
         subblock_wt,
         num_subblocks_w,
+        1
+    };
+    std::vector<uint32_t> not_all_to_all_compute_compile_time_args = {
+        0,
+        gamma.has_value(),
+        beta.has_value(),
+        num_blocks,
+        block_ht,
+        block_wt,
+        subblock_wt,
+        num_subblocks_w,
+        0
     };
     // compute kernel
     bool fp32_dest_acc_en = false;
@@ -723,11 +770,17 @@ operation::ProgramWithCallbacks layernorm_sharded_(
         top_row,
         tt_metal::ComputeConfig{.math_fidelity = fidelity, .fp32_dest_acc_en = fp32_dest_acc_en, .math_approx_mode = math_approx_mode, .compile_args = top_row_compute_compile_time_args, .defines = eltwise_binary_defines}
     );
+    auto compute_kernels_id_all_to_all = CreateKernel(
+        program,
+        "tt_eager/tt_dnn/op_library/layernorm/kernels/compute/layernorm.cpp",
+        all_to_all_workers_except_top_row,
+        tt_metal::ComputeConfig{.math_fidelity = fidelity, .fp32_dest_acc_en = fp32_dest_acc_en, .math_approx_mode = math_approx_mode, .compile_args = all_to_all_except_top_compute_compile_time_args, .defines = eltwise_binary_defines}
+    );
     auto compute_kernels_id = CreateKernel(
         program,
         "tt_eager/tt_dnn/op_library/layernorm/kernels/compute/layernorm.cpp",
-        all_except_top_row,
-        tt_metal::ComputeConfig{.math_fidelity = fidelity, .fp32_dest_acc_en = fp32_dest_acc_en, .math_approx_mode = math_approx_mode, .compile_args = all_except_top_compute_compile_time_args, .defines = eltwise_binary_defines}
+        not_all_to_all_workers,
+        tt_metal::ComputeConfig{.math_fidelity = fidelity, .fp32_dest_acc_en = fp32_dest_acc_en, .math_approx_mode = math_approx_mode, .compile_args = not_all_to_all_compute_compile_time_args, .defines = eltwise_binary_defines}
     );
     // Create circular buffers
     // in0 sharded
@@ -798,7 +851,7 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     uint32_t ex_cb_external_index = CB::dataflow2;
     tt_metal::CircularBufferConfig ex_cb_external_config = tt_metal::CircularBufferConfig(ex_external_CB_size, {{ex_cb_external_index, cb_data_format}})
 		.set_page_size(ex_cb_external_index, single_tile_size);
-    auto cb_ex_external = tt_metal::CreateCircularBuffer(program, top_row, ex_cb_external_config);
+    auto cb_ex_external = tt_metal::CreateCircularBuffer(program, all_cores, ex_cb_external_config);
     // ex_partial2
     uint32_t ex_cb_partial2_index = CB::dataflow3;
     tt_metal::CircularBufferConfig ex_cb_partial2_config = tt_metal::CircularBufferConfig(ex_partial_CB_size, {{ex_cb_partial2_index, cb_data_format}})
@@ -813,7 +866,12 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     uint32_t ex_cb_external2_index = CB::dataflow5;
     tt_metal::CircularBufferConfig ex_cb_external2_config = tt_metal::CircularBufferConfig(ex_external_CB_size, {{ex_cb_external2_index, cb_data_format}})
 		.set_page_size(ex_cb_external2_index, single_tile_size);
-    auto cb_ex_external2 = tt_metal::CreateCircularBuffer(program, top_row, ex_cb_external2_config);
+    auto cb_ex_external2 = tt_metal::CreateCircularBuffer(program, all_cores, ex_cb_external2_config);
+    // ex_global
+    uint32_t ex_global_cb_index = CB::dataflow7;
+    tt_metal::CircularBufferConfig ex_global_cb_config = tt_metal::CircularBufferConfig(ex_global_CB_size, {{ex_global_cb_index, cb_data_format}})
+		.set_page_size(ex_global_cb_index, single_tile_size);
+    auto cb_ex_global = tt_metal::CreateCircularBuffer(program, all_cores, ex_global_cb_config);
     // xmm2
     uint32_t xmm2_cb_index;
     xmm2_cb_index = CB::c_intermed2;
@@ -837,17 +895,6 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     tt_metal::CircularBufferConfig output_cb_config = tt_metal::CircularBufferConfig(out_CB_size, {{output_cb_index, out_data_format}})
 		.set_page_size(output_cb_index, out_single_tile_size).set_globally_allocated_address(*output.buffer());
     auto cb_output = tt_metal::CreateCircularBuffer(program, all_cores, output_cb_config);
-    // NoC coords
-    uint32_t diff_start_coord;
-    uint32_t diff_end_coord;
-    std::vector<uint32_t> in0_mcast_noc_y;
-    diff_start_coord = device->worker_core_from_logical_core({0, start_core_y}).y;
-    diff_end_coord = device->worker_core_from_logical_core({0, start_core_y + num_cores_r - 1}).y;
-    in0_mcast_noc_y.reserve(num_cores_r);
-    // mcast but not to self
-    for(uint32_t core_idx_y = 0; core_idx_y < num_cores_r; ++core_idx_y) {
-        in0_mcast_noc_y.push_back(device->worker_core_from_logical_core({0, core_idx_y}).y);
-    }
 
     // Runtime Args
     std::vector<KernelID> writer_kernel_ids;
@@ -875,9 +922,19 @@ operation::ProgramWithCallbacks layernorm_sharded_(
             auto mcast_start = bottom_core_physical;
             auto mcast_end = top_core_plus_one_physical;
 
+            uint32_t all_to_all_worker_tile_offset_size_bytes = (core_idx_y * block_ht / num_cores_all_to_all) * single_tile_size;
             uint32_t in1_tile_start_id = (core_idx_x * block_ht * Kt) + (core_idx_y * block_wt);
             uint32_t gamma_tile_start_id = core_idx_y * block_wt;
             uint32_t beta_tile_start_id = core_idx_y * block_wt;
+
+            uint32_t diff_start_coord;
+            uint32_t diff_end_coord;
+            std::vector<uint32_t> in0_mcast_noc_y;
+            diff_start_coord = device->worker_core_from_logical_core({0, start_core_y}).y;
+            diff_end_coord = device->worker_core_from_logical_core({0, start_core_y + num_cores_r - 1}).y;
+            for(uint32_t i = core_idx_y; i < num_cores_r + core_idx_y; ++i) {
+                in0_mcast_noc_y.push_back(device->worker_core_from_logical_core({0, i % num_cores_r}).y);
+            }
 
             // top core reader
             if (core_idx_y == 0) {
@@ -908,10 +965,9 @@ operation::ProgramWithCallbacks layernorm_sharded_(
                 std::vector<uint32_t> mcast_receiver_args;
                 worker_shard_same_coord = device->worker_core_from_logical_core(core).x;
                 worker_shard_diff_coord = device->worker_core_from_logical_core(top_core).y;
-                mcast_receiver_args.push_back(core_physical.x);
-                mcast_receiver_args.push_back(core_physical.y);
+                mcast_receiver_args.push_back(all_to_all_worker_tile_offset_size_bytes);
                 mcast_receiver_args.push_back(worker_shard_same_coord);
-                mcast_receiver_args.push_back(worker_shard_diff_coord);
+                mcast_receiver_args.insert(mcast_receiver_args.end(), in0_mcast_noc_y.begin(), in0_mcast_noc_y.end());
                 tt_metal::SetRuntimeArgs(program, reader_mcast_receiver_kernels_id, core, mcast_receiver_args);
 
                 std::vector<uint32_t> writer_mcast_receiver_args;
