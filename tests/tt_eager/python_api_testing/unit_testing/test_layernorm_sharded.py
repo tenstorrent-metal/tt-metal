@@ -130,7 +130,6 @@ def test_layernorm_sharded_rm(
         cb_dtype,
         ttl.tensor.Layout.ROW_MAJOR,
     ).to(device, gamma_beta_mem_config)
-    print(gamma_t.shape())
 
     beta = beta.reshape(1, 1, -1, 32)
     beta_t = ttl.tensor.Tensor(
