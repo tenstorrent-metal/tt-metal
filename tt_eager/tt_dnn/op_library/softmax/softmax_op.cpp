@@ -545,12 +545,11 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
         UpdateDynamicCircularBufferAddress(program, cb_in0_id, *in0_buffer);
         UpdateDynamicCircularBufferAddress(program, cb_out0_id, *out_buffer);
 
-        for (uint32_t i = 0; i < num_cores; ++i) {
-            CoreCoord core = {i % grid_size.x, i / grid_size.x};
-
-            auto &runtime_args = GetRuntimeArgs(program, reader_kernels_id, core);
-            if (mask_tensor.has_value()) {
-                runtime_args[2] = mask_tensor.value().buffer()->address();
+        if (mask_tensor.has_value()) {
+            for (uint32_t i = 0; i < num_cores; ++i) {
+                CoreCoord core = {i % grid_size.x, i / grid_size.x};
+                auto &runtime_args = GetRuntimeArgs(program, reader_kernels_id, core);
+                    runtime_args[2] = mask_tensor.value().buffer()->address();
             }
         }
     };
