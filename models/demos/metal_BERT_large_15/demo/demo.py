@@ -154,6 +154,10 @@ def run_bert_question_and_answering_inference_squadv2(
                 pred_labels.extend(tt_predictions)
                 cpu_pred_labels.extend(cpu_predictions)
                 true_labels.extend(references)
+                del tt_attention_mask
+                del tt_embedding_inputs
+                del tt_embedding
+                del tt_output
             i += 1
         eval_score = squad_metric.compute(predictions=pred_labels, references=true_labels)
         cpu_eval_score = squad_metric.compute(predictions=cpu_pred_labels, references=true_labels)

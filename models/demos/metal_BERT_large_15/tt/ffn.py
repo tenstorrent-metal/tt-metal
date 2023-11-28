@@ -84,10 +84,8 @@ def feed_forward(
     return feed_forward_
 
 
-class TtFeedForwardModel(torch.nn.Module):
+class TtFeedForwardModel:
     def __init__(self, encoder_idx, state_dict, device, model_config, tt_cache_path):
-        super().__init__()
-
         # FF1 params
         layer_name = f"bert.encoder.layer.{encoder_idx}"
         encoder_ff1_str = f"{layer_name}.intermediate.dense"
@@ -185,5 +183,5 @@ class TtFeedForwardModel(torch.nn.Module):
             model_config,
         )
 
-    def forward(self, activation: tt_lib.tensor.Tensor) -> tt_lib.tensor.Tensor:
+    def __call__(self, activation: tt_lib.tensor.Tensor) -> tt_lib.tensor.Tensor:
         return self.ffn(activation)

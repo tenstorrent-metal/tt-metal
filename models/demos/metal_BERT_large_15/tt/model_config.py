@@ -140,6 +140,7 @@ def get_model_config(model_config_str):
         "DEFAULT_DTYPE": dtype,
         "DEFAULT_MEMCFG": mem_config,
         "MOVE_ENCODER_OUTPUT_BOOL": False,
+        "DEALLOC_INPUT_EMBEDS_AFTER_POSITION_EMBEDS": False,
     }  # DEFAULT_MEMCFG also used to determine banking for tt_lib.device.InitializeDevice
     model_config.update(dict(zip(OP_MEMCFG_KEYS, [mem_config] * len(OP_MEMCFG_KEYS))))
     model_config.update(dict(zip(OP_DTYPE_KEYS, [dtype] * len(OP_DTYPE_KEYS))))
@@ -215,6 +216,7 @@ def get_model_config(model_config_str):
 
     elif model_config_str == "MIXED_PRECISION_BATCH8":
         new_config_values = {
+            "DEALLOC_INPUT_EMBEDS_AFTER_POSITION_EMBEDS": True,
             "MOVE_ENCODER_OUTPUT_BOOL": True,
             # MHA
             "OP1_FUSED_QKV_MM_INPUT_DTYPE": tt_lib.tensor.DataType.BFLOAT16,
@@ -252,6 +254,7 @@ def get_model_config(model_config_str):
             "OP12_LAYERNORM_BETA_MEMCFG": DRAM_MEMCFG,
             "OP15_LAYERNORM_GAMMA_MEMCFG": DRAM_MEMCFG,
             "OP15_LAYERNORM_BETA_MEMCFG": DRAM_MEMCFG,
+            "RESERVE_SPLIT_HEADS_SHAPE": [1, 1, 1, 153 * 1024 // 2],
             "OP1_FUSED_QKV_MM_CONFIG": tt_lib.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
                 compute_with_storage_grid_size=grid_size,
                 in0_block_w=4,
