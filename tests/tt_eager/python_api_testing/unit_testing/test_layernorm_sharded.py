@@ -78,7 +78,7 @@ from models.utility_functions import torch2tt_tensor, tt2torch_tensor, pad_by_ze
         "LN_GB",
     ],
 )
-def test_layernorm_sharded(
+def test_layernorm_sharded_rm(
     test_id, in_dtype, out_dtype, cb_dtype, in0_mem_config, gamma_beta_mem_config, out_mem_config, device
 ):
     torch.manual_seed(1234)
@@ -114,17 +114,31 @@ def test_layernorm_sharded(
     )
 
     if test_id == 0:
-        gamma = torch.ones(1, 1, 32, in0_shape[3])
-        beta = torch.zeros(1, 1, 32, in0_shape[3])
+        gamma = torch.ones(in0_shape[3])
+        beta = torch.zeros(in0_shape[3])
     if test_id == 1:
-        gamma = torch.rand(1, 1, 32, in0_shape[3]) * 2 - 1
-        beta = torch.zeros(1, 1, 32, in0_shape[3])
+        gamma = torch.rand(in0_shape[3]) * 2 - 1
+        beta = torch.zeros(in0_shape[3])
     if test_id == 2:
-        gamma = torch.rand(1, 1, 32, in0_shape[3]) * 2 - 1
-        beta = torch.rand(1, 1, 32, in0_shape[3]) * 2.0 - 1.1
+        gamma = torch.rand(in0_shape[3]) * 2 - 1
+        beta = torch.rand(in0_shape[3]) * 2.0 - 1.1
 
-    gamma_t = torch2tt_tensor(gamma, device, tt_memory_config=gamma_beta_mem_config, tt_dtype=cb_dtype)
-    beta_t = torch2tt_tensor(beta, device, tt_memory_config=gamma_beta_mem_config, tt_dtype=cb_dtype)
+    gamma = gamma.reshape(1, 1, -1, 32)
+    gamma_t = ttl.tensor.Tensor(
+        gamma.reshape(-1).tolist(),
+        gamma.shape,
+        cb_dtype,
+        ttl.tensor.Layout.ROW_MAJOR,
+    ).to(device, gamma_beta_mem_config)
+    print(gamma_t.shape())
+
+    beta = beta.reshape(1, 1, -1, 32)
+    beta_t = ttl.tensor.Tensor(
+        beta.reshape(-1).tolist(),
+        beta.shape,
+        cb_dtype,
+        ttl.tensor.Layout.ROW_MAJOR,
+    ).to(device, gamma_beta_mem_config)
 
     program_config = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
         compute_with_storage_grid_size=grid_size,
@@ -172,9 +186,7 @@ def test_layernorm_sharded(
     tt_got_back = torch.Tensor(t2_data).reshape(in0_shape)
     tt_got_back = untilize(tt_got_back)
 
-    ref_lnorm = torch.nn.functional.layer_norm(
-        in0 + in1, in0.shape[-1:], gamma[:, :, 0:1, :].flatten(), beta[:, :, 0:1, :].flatten(), epsf
-    )
+    ref_lnorm = torch.nn.functional.layer_norm(in0 + in1, in0.shape[-1:], gamma.flatten(), beta.flatten(), epsf)
 
     passing, output = comp_pcc(tt_got_back, ref_lnorm, 0.999)
     logger.info(output)
@@ -239,7 +251,7 @@ def test_layernorm_sharded(
         "add_LN_GB",
     ],
 )
-def test_layernorm_sharded_mix_precision(
+def test_layernorm_sharded_mix_precision_rm(
     test_id, in_dtype, out_dtype, cb_dtype, in0_mem_config, gamma_beta_mem_config, out_mem_config, device
 ):
     torch.manual_seed(1234)
@@ -275,17 +287,30 @@ def test_layernorm_sharded_mix_precision(
     )
 
     if test_id == 0:
-        gamma = torch.ones(1, 1, 32, in0_shape[3])
-        beta = torch.zeros(1, 1, 32, in0_shape[3])
+        gamma = torch.ones(in0_shape[3])
+        beta = torch.zeros(in0_shape[3])
     if test_id == 1:
-        gamma = torch.rand(1, 1, 32, in0_shape[3]) * 2 - 1
-        beta = torch.zeros(1, 1, 32, in0_shape[3])
+        gamma = torch.rand(in0_shape[3]) * 2 - 1
+        beta = torch.zeros(in0_shape[3])
     if test_id == 2:
-        gamma = torch.rand(1, 1, 32, in0_shape[3]) * 2 - 1
-        beta = torch.rand(1, 1, 32, in0_shape[3]) * 2.0 - 1.1
+        gamma = torch.rand(in0_shape[3]) * 2 - 1
+        beta = torch.rand(in0_shape[3]) * 2.0 - 1.1
 
-    gamma_t = torch2tt_tensor(gamma, device, tt_memory_config=gamma_beta_mem_config, tt_dtype=cb_dtype)
-    beta_t = torch2tt_tensor(beta, device, tt_memory_config=gamma_beta_mem_config, tt_dtype=cb_dtype)
+    gamma = gamma.reshape(1, 1, -1, 32)
+    gamma_t = ttl.tensor.Tensor(
+        gamma.reshape(-1).tolist(),
+        gamma.shape,
+        cb_dtype,
+        ttl.tensor.Layout.ROW_MAJOR,
+    ).to(device, gamma_beta_mem_config)
+
+    beta = beta.reshape(1, 1, -1, 32)
+    beta_t = ttl.tensor.Tensor(
+        beta.reshape(-1).tolist(),
+        beta.shape,
+        cb_dtype,
+        ttl.tensor.Layout.ROW_MAJOR,
+    ).to(device, gamma_beta_mem_config)
 
     program_config = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
         compute_with_storage_grid_size=grid_size,
@@ -336,9 +361,7 @@ def test_layernorm_sharded_mix_precision(
     tt_got_back = torch.Tensor(t2_data).reshape(in0_shape)
     tt_got_back = untilize(tt_got_back)
 
-    ref_lnorm = torch.nn.functional.layer_norm(
-        in0 + in1, in0.shape[-1:], gamma[:, :, 0:1, :].flatten(), beta[:, :, 0:1, :].flatten(), epsf
-    )
+    ref_lnorm = torch.nn.functional.layer_norm(in0 + in1, in0.shape[-1:], gamma.flatten(), beta.flatten(), epsf)
 
     passing, output = comp_pcc(tt_got_back, ref_lnorm, 0.999)
     logger.info(output)

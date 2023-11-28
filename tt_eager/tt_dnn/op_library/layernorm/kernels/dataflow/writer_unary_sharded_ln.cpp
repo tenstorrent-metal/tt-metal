@@ -44,7 +44,7 @@ FORCE_INLINE void generate_epsilon() {
 }
 
 void kernel_main() {
-    constexpr bool is_allgather_worker                       = get_compile_time_arg_val(0) == 1;
+    constexpr bool is_all_to_all_worker              = get_compile_time_arg_val(0) == 1;
     constexpr bool fuse_gamma                       = get_compile_time_arg_val(1) == 1;
     constexpr bool fuse_beta                        = get_compile_time_arg_val(2) == 1;
     constexpr bool gamma_is_dram                    = get_compile_time_arg_val(3) == 1;
@@ -61,7 +61,7 @@ void kernel_main() {
 
 
     generate_bcast_scaler_w();
-    if constexpr(is_allgather_worker) {
+    if constexpr(is_all_to_all_worker) {
         generate_bcast_scaler_c();
     }
     generate_epsilon();
