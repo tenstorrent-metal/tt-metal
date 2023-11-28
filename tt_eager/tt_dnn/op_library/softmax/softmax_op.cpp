@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tt_eager/tt_dnn/op_library/softmax/softmax_op.hpp"
+#include "tt_eager/tt_dnn/op_library/math.hpp"
 #include "tt_eager/tt_dnn/op_library/work_split.hpp"
 #include "tt_dnn/op_library/run_operation.hpp"
 
@@ -334,13 +335,13 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
     tt::DataFormat scale_cb_data_format = tt_metal::datatype_to_dataformat_converter(im_data_format);
     // tt::DataFormat scale_cb_data_format = tt_metal::datatype_to_dataformat_converter(input_tensor.dtype());
 
-    log_info(LogTest, "in0 dtype {}", in0_cb_data_format);
-    log_info(LogTest, "im dtype {}", in0_cb_data_format);
-    if (mask.has_value()) {
-        log_info(LogTest, "mask dtype {}", mask_cb_data_format);
-        log_info(LogTest, "scale dtype {}", scale_cb_data_format);
-    }
-    log_info(LogTest, "out dtype {}", in0_cb_data_format);
+    // log_info(LogTest, "in0 dtype {}", in0_cb_data_format);
+    // log_info(LogTest, "im dtype {}", in0_cb_data_format);
+    // if (mask.has_value()) {
+    //     log_info(LogTest, "mask dtype {}", mask_cb_data_format);
+    //     log_info(LogTest, "scale dtype {}", scale_cb_data_format);
+    // }
+    // log_info(LogTest, "out dtype {}", in0_cb_data_format);
 
     // tensor shape
     const auto shape = input_tensor.shape();
@@ -418,11 +419,28 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
         (std::uint32_t) is_dram_mask
     };
     std::map<string, string> softmax_defines;
+    bool use_row_major_kernel = (mask.has_value() and mask.value().layout() == Layout::ROW_MAJOR);
+    if (use_row_major_kernel) {
+        auto mask_stick_size = mask.value().shape()[3] * mask.value().element_size();
+        bool mask_stick_size_is_power_of_two = is_power_of_two_at_least_32(mask_stick_size);
+        reader_compile_time_args.push_back((std::uint32_t) mask_stick_size_is_power_of_two);
+        if (mask_stick_size_is_power_of_two) {
+            uint32_t mask_log2_stick_size = (std::uint32_t)log2(mask_stick_size);
+            reader_compile_time_args.push_back((std::uint32_t) mask_log2_stick_size);
+        } else {
+            reader_compile_time_args.push_back(mask_stick_size);
+        }
+    } else {
+        reader_compile_time_args.push_back(0);
+        reader_compile_time_args.push_back(0);
+    }
     if (mask.has_value()) {
         softmax_defines["FUSED_SCALE_MASK"] = "1";
     }
     auto reader_kernels_id = CreateKernel(
-        program, "tt_eager/tt_dnn/op_library/softmax/kernels/dataflow/reader_unary_sharded_sm.cpp", all_device_cores,
+        program,
+        use_row_major_kernel ? "tt_eager/tt_dnn/op_library/softmax/kernels/dataflow/reader_unary_sharded_sm_rm_mask.cpp" : "tt_eager/tt_dnn/op_library/softmax/kernels/dataflow/reader_unary_sharded_sm.cpp",
+        all_device_cores,
         tt_metal::DataMovementConfig{
             .processor = tt_metal::DataMovementProcessor::RISCV_1,
             .noc = tt_metal::NOC::RISCV_1_default,
@@ -502,7 +520,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
             reader_args.push_back(mask_start_tile_id);
             tt_metal::SetRuntimeArgs(program, reader_kernels_id, core, reader_args);
 
-            mask_start_tile_id += 1;
+            mask_start_tile_id += use_row_major_kernel ? shape[0]: 1;
         }
     }
 
@@ -522,7 +540,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
     ) {
         auto in0_buffer = input_tensors.at(0).buffer();
         auto mask_tensor = optional_input_tensors.at(0);
-        auto out_buffer = output_tensors.at(0).buffer();
+        auto out_buffer = output_tensors.size() == 1 ? output_tensors.at(0).buffer() : in0_buffer;
 
         UpdateDynamicCircularBufferAddress(program, cb_in0_id, *in0_buffer);
         UpdateDynamicCircularBufferAddress(program, cb_out0_id, *out_buffer);
@@ -530,7 +548,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
         for (uint32_t i = 0; i < num_cores; ++i) {
             CoreCoord core = {i % grid_size.x, i / grid_size.x};
 
-            auto runtime_args = GetRuntimeArgs(program, reader_kernels_id, core);
+            auto &runtime_args = GetRuntimeArgs(program, reader_kernels_id, core);
             if (mask_tensor.has_value()) {
                 runtime_args[2] = mask_tensor.value().buffer()->address();
             }
@@ -553,8 +571,10 @@ void Softmax::validate(const std::vector<Tensor> &input_tensors, const std::vect
             auto& mask = optional_input_tensors.at(0).value();
             TT_FATAL(mask.storage_type() == StorageType::DEVICE, "Operands to softmax need to be on device!");
             TT_FATAL(input_tensor.device() == mask.device());
-            TT_FATAL(input_tensor.layout() == mask.layout());
-            TT_FATAL(mask.shape()[-2] == TILE_HEIGHT);
+            if (mask.layout() == Layout::ROW_MAJOR) {
+                Shape expected_shape = {mask.shape()[0], 1, input_tensor.shape()[-1] / TILE_WIDTH, TILE_WIDTH};
+                TT_FATAL(mask.shape() == expected_shape);
+            }
             for (uint32_t i = 1; i < input_tensor.shape().rank() - 2; i++) {
                 TT_FATAL(mask.shape()[i] == 1);
             }

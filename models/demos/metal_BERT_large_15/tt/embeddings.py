@@ -154,6 +154,8 @@ class TtEmbeddings(torch.nn.Module):
             inputs_plus_token_type_embeddings_tt_tensor = ttl.tensor.add(
                 inputs_embeds, token_type_embeddings, output_mem_config=self.model_config["OUTPUT_EMBEDDINGS_MEMCFG"]
             )
+            inputs_embeds.deallocate()
+            token_type_embeddings.deallocate()
 
             position_embeddings_tt_tensor = ttl.tensor.embeddings(
                 position_ids,
@@ -163,8 +165,8 @@ class TtEmbeddings(torch.nn.Module):
                 output_mem_config=self.model_config["OUTPUT_EMBEDDINGS_MEMCFG"],
             )
             # Deallocate inputs_embeds and token_type_embeddings here to avoid having to move final output
-            inputs_embeds.deallocate()
-            token_type_embeddings.deallocate()
+            # inputs_embeds.deallocate()
+            # token_type_embeddings.deallocate()
             position_ids.deallocate()
 
             embeddings_tt_tensor_layerNorm = ttl.operations.primary.add_layernorm(
