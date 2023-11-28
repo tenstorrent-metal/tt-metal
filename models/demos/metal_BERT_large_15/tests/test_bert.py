@@ -178,7 +178,7 @@ def run_bert_question_and_answering_inference(
             True,
             True,
             True,
-            0.96,
+            0.97,
         ),
     ),
     ids=["BERT_LARGE"],

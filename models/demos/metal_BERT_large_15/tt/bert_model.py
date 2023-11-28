@@ -15,9 +15,8 @@ from models.demos.metal_BERT_large_15.tt.bert_encoder import TtBertEncoder
 from tt_lib.utils import pad_activation, pad_weight
 
 
-class TtBertBatchDram(torch.nn.Module):
+class TtBertBatchDram:
     def __init__(self, config, hugging_face_reference_model, device, model_config, tt_cache_path):
-        super().__init__()
         self.device = device
         self.model_config = model_config
 
@@ -37,12 +36,10 @@ class TtBertBatchDram(torch.nn.Module):
 
         self.get_extended_attention_mask = hugging_face_reference_model.get_extended_attention_mask
 
-        self.encoders = torch.nn.ModuleList(
-            [
-                TtBertEncoder(config, encoder_idx, state_dict, device, model_config, tt_cache_path)
-                for encoder_idx in range(config.num_hidden_layers)
-            ]
-        )
+        self.encoders = [
+            TtBertEncoder(config, encoder_idx, state_dict, device, model_config, tt_cache_path)
+            for encoder_idx in range(config.num_hidden_layers)
+        ]
 
         num_classes, hidden_size = state_dict["qa_outputs.weight"].shape
 
@@ -144,7 +141,7 @@ class TtBertBatchDram(torch.nn.Module):
             tt_attention_mask = attention_mask
         return tt_attention_mask
 
-    def forward(self, tt_embeddings, tt_attention_mask=None):
+    def __call__(self, tt_embeddings, tt_attention_mask=None):
         # profiler.start("_run_encoders")
         hidden_states = tt_embeddings
         attention_mask = tt_attention_mask

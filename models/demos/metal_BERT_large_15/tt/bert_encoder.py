@@ -13,9 +13,8 @@ from models.demos.metal_BERT_large_15.tt.ffn import TtFeedForwardModel
 from tt_lib.utils import pad_weight
 
 
-class TtBertEncoder(torch.nn.Module):
+class TtBertEncoder:
     def __init__(self, config, encoder_idx, state_dict, device, model_config, tt_cache_path):
-        super().__init__()
         self.device = device
         self.model_config = model_config
 
@@ -203,7 +202,7 @@ class TtBertEncoder(torch.nn.Module):
         )
         return ffn_out_add_and_norm
 
-    def forward(
+    def __call__(
         self, activation: tt_lib.tensor.Tensor, attention_mask: Optional[tt_lib.tensor.Tensor] = None
     ) -> tt_lib.tensor.Tensor:
         # MHA - OP1 - OP10 ------------------------------->

@@ -18,6 +18,9 @@ def mha(qkv_weight, qkv_bias, hidden_dim, num_heads, device, model_config):
 
     # Used to scale down the input to the softmax
     freciprocal_of_sqrt_hidden_dim = 1 / math.sqrt(hidden_dim // num_heads)
+
+    reserve_split_heads_shape = model_config.get("RESERVE_SPLIT_HEADS_SHAPE", None)
+
     if "OP1_FUSED_QKV_MM_CONFIG" in model_config:
         qkv_matmul = partial(
             tt_lib.operations.primary.matmul,
@@ -129,15 +132,17 @@ def mha(qkv_weight, qkv_bias, hidden_dim, num_heads, device, model_config):
 
     def mha_(activation, attention_mask):
         # TODO: Remove hardcoded shape hack
-        a = tt_lib.tensor.empty(
-            [1, 1, 32, 32 * 128 * 153],
-            tt_lib.tensor.DataType.BFLOAT8_B,
-            tt_lib.tensor.Layout.TILE,
-            activation.device(),
-            tt_lib.tensor.MemoryConfig(tt_lib.tensor.TensorMemoryLayout.INTERLEAVED, tt_lib.tensor.BufferType.L1),
-        )
+        if reserve_split_heads_shape is not None:
+            temp = tt_lib.tensor.empty(
+                reserve_split_heads_shape,
+                tt_lib.tensor.DataType.BFLOAT16,
+                tt_lib.tensor.Layout.ROW_MAJOR,
+                activation.device(),
+                tt_lib.tensor.MemoryConfig(tt_lib.tensor.TensorMemoryLayout.INTERLEAVED, tt_lib.tensor.BufferType.L1),
+            )
         qkv = op1_qkv_fused(activation, qkv_weight, qkv_bias)
-        a.deallocate()
+        if reserve_split_heads_shape is not None:
+            temp.deallocate()
         # activation.deallocate()
 
         Q_heads, K_T_heads, V_heads = op2to6_create_qkv_heads(qkv)
@@ -164,10 +169,8 @@ def mha(qkv_weight, qkv_bias, hidden_dim, num_heads, device, model_config):
     return mha_
 
 
-class TtMultiHeadAttentionModel(torch.nn.Module):
-    def __init__(self, config, encoder_idx, state_dict, device, model_config, tt_cache_path):
-        super().__init__()
-
+class TtMultiHeadAttentionModel:
+    def __init__(self, config, encoder_idx, state_dict, device, model_config=None, tt_cache_path=None):
         layer_name = f"bert.encoder.layer.{encoder_idx}.attention.self"
 
         if tt_cache_path is not None:
@@ -244,7 +247,7 @@ class TtMultiHeadAttentionModel(torch.nn.Module):
             model_config,
         )
 
-    def forward(
+    def __call__(
         self, activation: tt_lib.tensor.Tensor, attention_mask: Optional[tt_lib.tensor.Tensor] = None
     ) -> tt_lib.tensor.Tensor:
         result = self.mha(activation, attention_mask)
