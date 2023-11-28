@@ -150,6 +150,23 @@ class TtFeedForwardModel(torch.nn.Module):
                 .to(ttl.tensor.Layout.TILE)
                 .to(device, model_config["OP14_FF2_MM_BIAS_MEMCFG"])
             )
+            ttl.tensor.dump_tensor(
+                str(tt_cache_path / f"{encoder_ff1_str}.weight_{model_config['OP13_FF1_MM_WEIGHTS_DTYPE'].name}.bin"),
+                encoder0_ff1_weight,
+            )
+            ttl.tensor.dump_tensor(
+                str(tt_cache_path / f"{encoder_ff1_str}.bias_{model_config['OP13_FF1_MM_BIAS_DTYPE'].name}.bin"),
+                encoder0_ff1_bias,
+            )
+
+            ttl.tensor.dump_tensor(
+                str(tt_cache_path / f"{encoder_ff2_str}.weight_{model_config['OP14_FF2_MM_WEIGHTS_DTYPE'].name}.bin"),
+                encoder0_ff2_weight,
+            )
+            ttl.tensor.dump_tensor(
+                str(tt_cache_path / f"{encoder_ff2_str}.bias_{model_config['OP14_FF2_MM_BIAS_DTYPE'].name}.bin"),
+                encoder0_ff2_bias,
+            )
 
         self.ffn = feed_forward(
             *encoder0_ff1_weight_shape[-2:],

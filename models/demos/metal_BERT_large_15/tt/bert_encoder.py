@@ -133,6 +133,48 @@ class TtBertEncoder(torch.nn.Module):
                 tt_lib.tensor.Layout.ROW_MAJOR,
             ).to(device, model_config["OP15_LAYERNORM_BETA_MEMCFG"])
 
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{attn_layer_name}.dense.weight_{self.model_config['OP11_SELFOUT_WEIGHTS_DTYPE'].name}.bin"
+                ),
+                self.attention_output_weight,
+            )
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{attn_layer_name}.dense.bias_{self.model_config['OP11_SELFOUT_BIAS_DTYPE'].name}.bin"
+                ),
+                self.attention_output_bias,
+            )
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{attn_layer_name}.LayerNorm.weight_{self.model_config['OP12_LAYERNORM_GAMMA_DTYPE'].name}.bin"
+                ),
+                self.mha_gamma,
+            )
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{attn_layer_name}.LayerNorm.bias_{self.model_config['OP12_LAYERNORM_BETA_DTYPE'].name}.bin"
+                ),
+                self.mha_beta,
+            )
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{layer_name}.LayerNorm.weight_{self.model_config['OP15_LAYERNORM_GAMMA_DTYPE'].name}.bin"
+                ),
+                self.ffn_gamma,
+            )
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{layer_name}.LayerNorm.bias_{self.model_config['OP15_LAYERNORM_BETA_DTYPE'].name}.bin"
+                ),
+                self.ffn_beta,
+            )
         # FFN sub-graph
         self.ffn = TtFeedForwardModel(encoder_idx, state_dict, device, model_config, tt_cache_path)
 

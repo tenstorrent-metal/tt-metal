@@ -75,6 +75,41 @@ class TtEmbeddings(torch.nn.Module):
                 state_dict[f"{base_address}.LayerNorm.bias"].reshape([1, 1, -1, 32]),
                 model_config["EMBEDDINGS_LAYERNORM_BETA_DTYPE"],
             ).to(device, model_config["EMBEDDINGS_LAYERNORM_BETA_MEMCFG"])
+            ttl.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{base_address}.word_embeddings.weight_{self.model_config['INPUT_EMBEDDINGS_WEIGHTS_DTYPE'].name}.bin"
+                ),
+                self.word_embeddings_weight,
+            )
+            ttl.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{base_address}.position_embeddings.weight_{self.model_config['INPUT_EMBEDDINGS_WEIGHTS_DTYPE'].name}.bin"
+                ),
+                self.position_embeddings_weight,
+            )
+            ttl.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{base_address}.token_type_embeddings.weight_{self.model_config['INPUT_EMBEDDINGS_WEIGHTS_DTYPE'].name}.bin"
+                ),
+                self.token_type_embeddings_weight,
+            )
+            ttl.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{base_address}.LayerNorm.weight_{self.model_config['EMBEDDINGS_LAYERNORM_GAMMA_DTYPE'].name}.bin"
+                ),
+                self.layerNorm_gamma,
+            )
+            ttl.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{base_address}.LayerNorm.beta_{self.model_config['EMBEDDINGS_LAYERNORM_BETA_DTYPE'].name}.bin"
+                ),
+                self.layerNorm_beta,
+            )
 
         self.layerNorm_eps = config.layer_norm_eps
 

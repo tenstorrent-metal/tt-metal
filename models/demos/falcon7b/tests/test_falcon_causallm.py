@@ -69,7 +69,7 @@ def run_test_FalconCausalLM_inference(
     torch.manual_seed(0)
     base_url = ""
     max_position_embeddings = 2048
-    head_dim = configuration.hidden_size // configuration.n_head
+    head_dim = configuration.hidden_size // configuration.num_kv_heads
     use_cache = True
 
     if 1:

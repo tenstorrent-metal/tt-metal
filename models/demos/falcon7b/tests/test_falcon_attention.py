@@ -67,7 +67,7 @@ def run_test_FalconAttention_inference(
     layer_num = 0
     base_url = "transformer.h"
     max_position_embeddings = 2048
-    head_dim = configuration.hidden_size // configuration.n_head
+    head_dim = configuration.hidden_size // configuration.num_kv_heads
 
     # Generate input, attention_mask, and kv_cache --------------------------------------
     # TODO: Generate attention_mask on device
@@ -78,14 +78,12 @@ def run_test_FalconAttention_inference(
         assert kv_cache_len == 0, "For prefill, no kv_cache is passed in!"
 
         attention_input = (torch.rand(batch, q_len, configuration.hidden_size) * 2) - 1
-        attention_mask_bool = torch.ones(batch, 1, q_len, kv_len, dtype=bool).triu(
-            diagonal=1
-        )
+        attention_mask_bool = torch.ones(batch, 1, q_len, kv_len, dtype=bool).triu(diagonal=1)
         layer_past = None
 
         tt_attention_input = torch2tt_tensor(attention_input.unsqueeze(1), device)
         tt_attention_mask = torch2tt_tensor(
-            (attention_mask_bool * -100000).expand(-1, configuration.n_head, -1, -1),
+            (attention_mask_bool * -100000).expand(-1, configuration.num_kv_heads, -1, -1),
             device,
         )
         tt_k_cache = torch.zeros(batch, max_position_embeddings, head_dim)
@@ -107,9 +105,7 @@ def run_test_FalconAttention_inference(
         v_cache = torch.rand(batch, kv_cache_len, head_dim)
         layer_past = (k_cache, v_cache)
 
-        tt_attention_input = torch2tt_tensor(
-            attention_input.unsqueeze(1).transpose(0, 2), device
-        )
+        tt_attention_input = torch2tt_tensor(attention_input.unsqueeze(1).transpose(0, 2), device)
 
         kv_len_padded = (kv_len + 31) // 32 * 32
         attention_mask_bool_padded = torch.cat(
@@ -122,7 +118,7 @@ def run_test_FalconAttention_inference(
         tt_attention_mask = torch2tt_tensor(
             (attention_mask_bool_padded.transpose(0, 2) * -100000).expand(
                 -1,
-                configuration.n_head,
+                configuration.num_kv_heads,
                 -1,
                 -1
                 # -1, 71, -1, -1
@@ -138,14 +134,10 @@ def run_test_FalconAttention_inference(
         tt_layer_past = (tt_k_cache, tt_v_cache)
 
     else:
-        raise NotImplementedError(
-            f"Llm mode {llm_mode} is not supported! Must be one of prefill or decode."
-        )
+        raise NotImplementedError(f"Llm mode {llm_mode} is not supported! Must be one of prefill or decode.")
 
     # PyTorch output --------------------------------------------------------------------
-    pytorch_FalconAttention_model = PytorchFalconAttentionModel(
-        hugging_face_reference_model, layer_num
-    )
+    pytorch_FalconAttention_model = PytorchFalconAttentionModel(hugging_face_reference_model, layer_num)
     pytorch_out, pytorch_layer_present = pytorch_FalconAttention_model(
         attention_input,
         alibi=None,
@@ -162,7 +154,7 @@ def run_test_FalconAttention_inference(
         base_url,
         layer_num,
         configuration.hidden_size,
-        configuration.n_head,
+        configuration.num_kv_heads,
         # 4544,
         # 71,
         max_position_embeddings,
@@ -197,16 +189,12 @@ def run_test_FalconAttention_inference(
     does_pass, output_pcc = comp_pcc(pytorch_out, tt_out, pcc)
     logger.info(f"Output: {output_pcc}")
 
-    does_pass2, output_pcc = comp_pcc(
-        pytorch_layer_present[0], tt_layer_present[0], pcc
-    )
+    does_pass2, output_pcc = comp_pcc(pytorch_layer_present[0], tt_layer_present[0], pcc)
     logger.info(f"K Cache: {output_pcc}")
 
     does_pass = does_pass and does_pass2
 
-    does_pass2, output_pcc = comp_pcc(
-        pytorch_layer_present[1], tt_layer_present[1], pcc
-    )
+    does_pass2, output_pcc = comp_pcc(pytorch_layer_present[1], tt_layer_present[1], pcc)
     logger.info(f"V Cache: {output_pcc}")
 
     does_pass = does_pass and does_pass2

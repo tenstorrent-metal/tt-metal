@@ -62,16 +62,14 @@ def run_test_FalconModel_inference(
     torch.manual_seed(0)
     base_url = "transformer"
     max_position_embeddings = 2048
-    head_dim = configuration.hidden_size // configuration.n_head
+    head_dim = configuration.hidden_size // configuration.num_kv_heads
     use_cache = True
 
     if 1:
         model_input = torch.arange(seq_len * batch).reshape(batch, seq_len)
     else:
         # batch identical sequences for debugging
-        model_input = torch.stack([torch.arange(seq_len)] * batch).reshape(
-            batch, seq_len
-        )
+        model_input = torch.stack([torch.arange(seq_len)] * batch).reshape(batch, seq_len)
 
     # Generate dummy kv_cache --------------------------------------------------------------
     if llm_mode == "prefill":
@@ -109,9 +107,7 @@ def run_test_FalconModel_inference(
             tt_layer_past += ((tt_k_cache, tt_v_cache),)
 
     else:
-        raise NotImplementedError(
-            f"Llm mode {llm_mode} is not supported! Must be one of prefill or decode."
-        )
+        raise NotImplementedError(f"Llm mode {llm_mode} is not supported! Must be one of prefill or decode.")
 
     # Prepare output -----------------------------------------------------------------------
     pytorch_FalconModel = PytorchFalconModel(hugging_face_reference_model, num_layers)

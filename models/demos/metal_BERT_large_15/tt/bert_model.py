@@ -76,6 +76,13 @@ class TtBertBatchDram(torch.nn.Module):
                 .to(tt_lib.tensor.Layout.TILE)
                 .to(device, model_config["QA_LINEAR_BIAS_MEMCFG"])
             )
+            tt_lib.tensor.dump_tensor(
+                str(tt_cache_path / f"qa_outputs.weight_{self.model_config['QA_LINEAR_WEIGHTS_DTYPE'].name}.bin"),
+                weight,
+            )
+            tt_lib.tensor.dump_tensor(
+                str(tt_cache_path / f"qa_outputs.bias_{self.model_config['QA_LINEAR_BIAS_DTYPE'].name}.bin"), bias
+            )
 
         # QA linear
         # TODO: Replace with custom op with fused bias?

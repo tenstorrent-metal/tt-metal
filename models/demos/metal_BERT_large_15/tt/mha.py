@@ -159,6 +159,16 @@ class TtMultiHeadAttentionModel(torch.nn.Module):
                 tt_memory_config=model_config["OP1_FUSED_QKV_MM_BIAS_MEMCFG"],
                 tt_dtype=model_config["OP1_FUSED_QKV_MM_BIAS_DTYPE"],
             )
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path / f"{layer_name}.qkv.weight_{model_config['OP1_FUSED_QKV_MM_WEIGHTS_DTYPE'].name}.bin"
+                ),
+                qkv_weight,
+            )
+            tt_lib.tensor.dump_tensor(
+                str(tt_cache_path / f"{layer_name}.qkv.bias_{model_config['OP1_FUSED_QKV_MM_BIAS_DTYPE'].name}.bin"),
+                qkv_bias,
+            )
 
         # Hidden dim
         hidden_dim = qkv_weight.shape()[-1] // 3

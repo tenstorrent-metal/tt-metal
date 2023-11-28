@@ -66,6 +66,20 @@ class TtFalconMLP(nn.Module):
                 tt_memory_config=self.model_config["DENSE_4H_TO_H_MM_WEIGHTS_MEMCFG"],
                 tt_dtype=self.model_config["DENSE_4H_TO_H_MM_WEIGHTS_DTYPE"],
             )
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{dense_h_to_4h_str}_{self.model_config['DENSE_H_TO_4H_MM_WEIGHTS_DTYPE'].name}.bin"
+                ),
+                self.dense_h_to_4h_weights,
+            )
+            tt_lib.tensor.dump_tensor(
+                str(
+                    tt_cache_path
+                    / f"{dense_4h_to_h_str}_{self.model_config['DENSE_4H_TO_H_MM_WEIGHTS_DTYPE'].name}.bin"
+                ),
+                self.dense_4h_to_h_weights,
+            )
 
     def forward(self, x: tt_lib.tensor.Tensor) -> tt_lib.tensor.Tensor:
         hidden_states = tt_lib.tensor.falcon_dense_h_to_4h_matmul(
