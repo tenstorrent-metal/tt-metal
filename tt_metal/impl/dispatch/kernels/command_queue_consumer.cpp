@@ -40,15 +40,11 @@ void kernel_main() {
         uint32_t producer_consumer_transfer_num_pages = command_ptr[DeviceCommand::producer_consumer_transfer_num_pages_idx];
 
         if (is_program) {
-            kernel_profiler::mark_time(5);
             write_and_launch_program(program_transfer_start_addr, num_pages, command_ptr, producer_noc_encoding, consumer_cb_size, consumer_cb_num_pages, producer_consumer_transfer_num_pages, db_buf_switch);
             wait_for_program_completion(num_workers, tensix_soft_reset_addr);
-            kernel_profiler::mark_time(6);
         } else {
-            kernel_profiler::mark_time(7);
             command_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer_transfer_start_addr);
             write_buffers(command_ptr, num_buffer_transfers, consumer_cb_size, consumer_cb_num_pages, producer_noc_encoding, producer_consumer_transfer_num_pages, db_buf_switch);
-            kernel_profiler::mark_time(8);
         }
 
         if (finish) {
