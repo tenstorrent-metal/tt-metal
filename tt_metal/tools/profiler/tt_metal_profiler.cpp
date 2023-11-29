@@ -59,19 +59,25 @@ void InitDeviceProfiler(Device *device){
 
 void DumpDeviceProfileResults(Device *device) {
 #if defined(PROFILER)
-    CoreCoord compute_with_storage_size = device->logical_grid_size();
-    CoreCoord start_core = {0, 0};
-    CoreCoord end_core = {compute_with_storage_size.x - 1, compute_with_storage_size.y - 1};
+    //CoreCoord compute_with_storage_size = device->logical_grid_size();
+    //CoreCoord start_core = {0, 0};
+    //CoreCoord end_core = {compute_with_storage_size.x - 1, compute_with_storage_size.y - 1};
 
     std::vector<CoreCoord> workerCores;
-    for (size_t y=start_core.y; y <= end_core.y; y++)
-    {
-        for (size_t x=start_core.x; x <= end_core.x; x++)
-        {
-            CoreCoord logical_core = {x, y};
-            workerCores.push_back(device->worker_core_from_logical_core(logical_core));
-        }
-    }
+    //for (size_t y=start_core.y; y <= end_core.y; y++)
+    //{
+        //for (size_t x=start_core.x; x <= end_core.x; x++)
+        //{
+            //CoreCoord logical_core = {x, y};
+            //workerCores.push_back(device->worker_core_from_logical_core(logical_core));
+        //}
+    //}
+    CoreCoord logical_core = {0, 0};
+    workerCores.push_back(logical_core);
+    //logical_core = {6, 9};
+    //workerCores.push_back(logical_core);
+    //logical_core = {0, 0};
+    //workerCores.push_back(logical_core);
     DumpDeviceProfileResults(device, workerCores);
 #endif
 }

@@ -164,7 +164,7 @@ namespace kernel_profiler{
         profiler_control_buffer[kernel_profiler::deviceBufferEndIndex] = wIndex;
 #endif //PROFILE_KERNEL
     }
-    inline __attribute__((always_inline)) void send_profiler_data_to_host()
+    inline __attribute__((always_inline)) void send_profiler_data_to_dram()
     {
 #if defined(PROFILE_KERNEL) && defined(COMPILE_FOR_BRISC)
         volatile uint32_t *profiler_control_buffer = reinterpret_cast<uint32_t*>(PROFILER_L1_BUFFER_CONTROL);
@@ -177,6 +177,7 @@ namespace kernel_profiler{
         uint32_t core_flat_id = get_flat_id(noc_x, noc_y);
         uint32_t dram_profiler_address = profiler_control_buffer[DRAM_PROFILER_ADDRESS];
 
+        //TODO(MO): WORMHOLE SUPPORT :Hardcoded for GS need to make it universal and no magic numbers
         uint32_t dram_noc_x = (core_flat_id / 30) * 3 + 1;
         uint32_t dram_noc_y = noc_y > 6 ? 6 : 0;
 
@@ -193,6 +194,7 @@ namespace kernel_profiler{
 
             uint32_t dram_address =
                 dram_profiler_address +
+                //TODO(MO): WORMHOLE SUPPORT : 15 is only foe GS
                 (core_flat_id % 15) * PROFILER_RISC_COUNT * PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC +
                 hostIndex * PROFILER_FULL_HOST_BUFFER_SIZE_PER_RISC +
                 profiler_control_buffer[hostIndex] * sizeof(uint32_t);
@@ -205,6 +207,7 @@ namespace kernel_profiler{
                         dram_bank_dst_noc_addr,
                         profiler_control_buffer[deviceIndex] * sizeof(uint32_t));
 
+                //TODO(MO): This can go after for loop
                 noc_async_write_barrier();
                 profiler_control_buffer[hostIndex] = currEndIndex;
             }

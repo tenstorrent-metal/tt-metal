@@ -355,7 +355,7 @@ int main() {
             noc_fast_atomic_increment(noc_index, NCRISC_AT_CMD_BUF, dispatch_addr, 1, 31 /*wrap*/, false /*linked*/);
         }
         kernel_profiler::mark_fw_end();
-        kernel_profiler::send_profiler_data_to_host();
+        kernel_profiler::send_profiler_data_to_dram();
     }
 
     return 0;

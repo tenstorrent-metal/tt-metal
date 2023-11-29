@@ -224,6 +224,7 @@ std::vector<Tensor> run_device_operation(
                     "Program of Operation {:50} finished in {:15} seconds",
                     operation.get_type_name(),
                     elapsed_seconds.count());
+#endif
             } else {
                 ::detail::LaunchProgram(device, program);
             }

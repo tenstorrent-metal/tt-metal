@@ -428,28 +428,27 @@ def is_new_launch_device(tsCore, coreOpMap):
     timerID, tsValue, risc, core = tsCore
     isNewOp = False
     isNewOpFinished = False
-    if core not in [(6, 9), (0, 9)]:
-        if risc == "BRISC" and timerID == 1:
-            if not coreOpMap:
-                isNewOp = True
-            # Remove
-            # if core in coreOpMap.keys():
-            # for opDuration in coreOpMap.items():
-            # print (opDuration)
-            # print (coreOpMap[core])
-            # print (tsCore)
-            assert core not in coreOpMap.keys(), f"Unexpected BRISC start in {tsCore} {coreOpMap[core]}"
-            coreOpMap[core] = (tsValue,)
-        elif risc == "BRISC" and timerID == 4:
-            assert core in coreOpMap.keys(), "Unexpected BRISC end"
-            coreOpMap[core] = (coreOpMap[core][0], tsValue)
-            isNewOpFinished = True
-            for opDuration in coreOpMap.values():
-                pairSize = len(opDuration)
-                assert pairSize == 1 or pairSize == 2, "Wrong op duration"
-                if pairSize == 1:
-                    isNewOpFinished = False
-                    break
+    if risc == "BRISC" and timerID == 1:
+        if not coreOpMap:
+            isNewOp = True
+        # Remove
+        # if core in coreOpMap.keys():
+        # for opDuration in coreOpMap.items():
+        # print (opDuration)
+        # print (coreOpMap[core])
+        # print (tsCore)
+        assert core not in coreOpMap.keys(), f"Unexpected BRISC start in {tsCore} {coreOpMap[core]}"
+        coreOpMap[core] = (tsValue,)
+    elif risc == "BRISC" and timerID == 4:
+        assert core in coreOpMap.keys(), "Unexpected BRISC end"
+        coreOpMap[core] = (coreOpMap[core][0], tsValue)
+        isNewOpFinished = True
+        for opDuration in coreOpMap.values():
+            pairSize = len(opDuration)
+            assert pairSize == 1 or pairSize == 2, "Wrong op duration"
+            if pairSize == 1:
+                isNewOpFinished = False
+                break
     return isNewOp, isNewOpFinished
 
 
@@ -893,18 +892,18 @@ def validate_setup(ctx, param, setup):
 
 def import_log_run_stats(setup=device_post_proc_config.default_setup()):
     devicesData, programsData = import_device_profile_log(setup.deviceInputLog)
-    print(sorted(programsData["programs"].keys()))
+    # print(sorted(programsData["programs"].keys()))
     # devicesData = programsData["programs"]["31"]
-    # risc_to_core_timeseries(devicesData)
-    # core_to_device_timeseries(devicesData)
+    risc_to_core_timeseries(devicesData)
+    core_to_device_timeseries(devicesData)
 
-    # for name, analysis in sorted(setup.timerAnalysis.items()):
-    # if analysis["across"] == "core":
-    # core_analysis(name, analysis, devicesData)
-    # elif analysis["across"] == "device":
-    # device_analysis(name, analysis, devicesData)
+    for name, analysis in sorted(setup.timerAnalysis.items()):
+        if analysis["across"] == "core":
+            core_analysis(name, analysis, devicesData)
+        elif analysis["across"] == "device":
+            device_analysis(name, analysis, devicesData)
 
-    # generate_device_level_summary(devicesData)
+    generate_device_level_summary(devicesData)
     return devicesData
 
 
@@ -1125,18 +1124,18 @@ def main(setup, device_input_log, output_folder, port, no_print_stats, no_webapp
     # print_rearranged_csv(devicesData, setup)
     # print_json(devicesData, setup)
 
-    # if not no_print_stats:
-    # print_stats(devicesData, setup)
+    if not no_print_stats:
+        print_stats(devicesData, setup)
 
-    # timelineFigs = {}
-    # if not no_plots:
-    # timelineFigs = generate_plots(devicesData, setup)
+    timelineFigs = {}
+    if not no_plots:
+        timelineFigs = generate_plots(devicesData, setup)
 
     # if not no_artifacts:
     # generate_artifact_tarball(setup)
 
-    # if not no_webapp:
-    # run_dashbaord_webapp(devicesData, timelineFigs, setup)
+    if not no_webapp:
+        run_dashbaord_webapp(devicesData, timelineFigs, setup)
 
 
 if __name__ == "__main__":
