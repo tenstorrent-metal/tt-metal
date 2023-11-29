@@ -32,9 +32,9 @@ class default_setup(metaclass=MergeMetaclass):
         # "start": {"risc": "TRISC_2", "timerID": 2},
         # "end": {"risc": "TRISC_2", "timerID": 3},
         # },
-        "OP - Device time": {
+        "OP time": {
             "across": "device",
-            "type": "launch_first_last",
+            "type": "adjacent",
             "start": {"core": "ANY", "risc": "ANY", "timerID": 1},
             "end": {"core": "ANY", "risc": "ANY", "timerID": 4},
         },

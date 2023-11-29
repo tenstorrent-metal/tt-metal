@@ -22,6 +22,8 @@ from tt_metal.tools.profiler.common import PROFILER_ARTIFACTS_DIR
 import tt_metal.tools.profiler.device_post_proc_config as device_post_proc_config
 import tt_metal.tools.profiler.dummy_refresh as dummy_refresh
 
+intrestingCores = [(0, 0), (6, 9), (0, 9)]
+
 
 def coreCompare(core):
     if type(core) == str:
@@ -329,6 +331,8 @@ def import_device_profile_log(logPath):
             elif lineCount > 1:
                 chipID = int(row[0])
                 core = (int(row[1]), int(row[2]))
+                if intrestingCores and core not in intrestingCores:
+                    continue
                 risc = row[3].strip()
                 programID = int(row[4].strip())
                 timerID = int(row[5])
@@ -492,16 +496,16 @@ def core_to_device_timeseries(devicesData):
         for risc in tmpTimeseries["riscs"].keys():
             tmpTimeseries["riscs"][risc]["timeseries"].sort(key=lambda x: x[1])
 
-        launches = [[]]
-        coreOpMap = {}
-        for ts in tmpTimeseries["riscs"]["TENSIX"]["timeseries"]:
-            isNewOp, isNewOpFinished = is_new_launch_device(ts, coreOpMap)
-            launches[-1].append(ts)
-            if isNewOpFinished:
-                coreOpMap = {}
-                launches.append([])
+        # launches = [[]]
+        # coreOpMap = {}
+        # for ts in tmpTimeseries["riscs"]["TENSIX"]["timeseries"]:
+        # isNewOp, isNewOpFinished = is_new_launch_device(ts, coreOpMap)
+        # launches[-1].append(ts)
+        # if isNewOpFinished:
+        # coreOpMap = {}
+        # launches.append([])
 
-        tmpTimeseries["riscs"]["TENSIX"]["launches"] = launches
+        # tmpTimeseries["riscs"]["TENSIX"]["launches"] = launches
 
         deviceData["cores"]["DEVICE"] = tmpTimeseries
 
@@ -629,7 +633,7 @@ def timeline_plot(yVals, xValsDict, setup):
 
             colors = sns.color_palette(riscsData[risc]["color"], len(durations) + 1).as_hex()
             colorMap = {duration: color for duration, color in zip(durations, colors)}
-            colorMap["TRANSPARENT"] = "rgba(255, 255, 255, 0.0)"
+            colorMap["TRANSPARENT"] = "rgb(135,206,250)"
             colorMap["DARK"] = colors[-1]
 
             for xVals in xValsDict[risc]:
@@ -892,8 +896,6 @@ def validate_setup(ctx, param, setup):
 
 def import_log_run_stats(setup=device_post_proc_config.default_setup()):
     devicesData, programsData = import_device_profile_log(setup.deviceInputLog)
-    # print(sorted(programsData["programs"].keys()))
-    # devicesData = programsData["programs"]["31"]
     risc_to_core_timeseries(devicesData)
     core_to_device_timeseries(devicesData)
 
