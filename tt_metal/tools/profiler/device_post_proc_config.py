@@ -32,11 +32,11 @@ class default_setup(metaclass=MergeMetaclass):
         # "start": {"risc": "TRISC_2", "timerID": 2},
         # "end": {"risc": "TRISC_2", "timerID": 3},
         # },
-        "OP time": {
+        "Core (0,0) OPs": {
             "across": "device",
             "type": "adjacent",
-            "start": {"core": "ANY", "risc": "ANY", "timerID": 1},
-            "end": {"core": "ANY", "risc": "ANY", "timerID": 4},
+            "start": {"core": (0, 0), "risc": "ANY", "timerID": 1},
+            "end": {"core": (0, 0), "risc": "ANY", "timerID": 4},
         },
         # "NCRISC kernel start -> NCRISC kernel end": {
         # "across": "device",
@@ -111,21 +111,24 @@ class default_setup(metaclass=MergeMetaclass):
 
     riscs = [
         "BRISC",
-        "NCRISC",
-        "TRISC_0",
-        "TRISC_1",
-        "TRISC_2",
+        # "NCRISC",
+        # "TRISC_0",
+        # "TRISC_1",
+        # "TRISC_2",
         # "TENSIX",
     ]
 
     timerIDLabels = [(0, "Start"), (1, "Firmware Start"), (2, "Kernel start"), (3, "Kernel End"), (4, "Firmware End")]
 
-    displayStats = ["Count", "Average", "Max", "Median", "Min"]
+    displayStats = ["Count", "Average", "Max", "Median", "Min", "Sum"]
 
     plotBaseHeight = 200
     plotPerCoreHeight = 100
 
     webappPort = 8050
+
+    # cycleRange = None
+    cycleRange = (34.812e9, 34.822e9)
 
     outputFolder = f"output/device"
     deviceInputLog = f"{PROFILER_LOGS_DIR}/{PROFILER_DEVICE_SIDE_LOG}"

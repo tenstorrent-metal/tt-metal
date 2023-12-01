@@ -22,7 +22,8 @@ from tt_metal.tools.profiler.common import PROFILER_ARTIFACTS_DIR
 import tt_metal.tools.profiler.device_post_proc_config as device_post_proc_config
 import tt_metal.tools.profiler.dummy_refresh as dummy_refresh
 
-intrestingCores = [(0, 0), (6, 9), (0, 9)]
+# intrestingCores = [(0,0)]
+intrestingCores = [(0, 0), (0, 9), (6, 9)]
 
 
 def coreCompare(core):
@@ -228,7 +229,10 @@ def print_stats(devicesData, setup):
                     print(f"=================== {analysis} ===================")
                     if stats["Count"] > 1:
                         for stat in setup.displayStats:
-                            print(f"{stat:>12} [cycles] = {stats[stat]:>10,.0f}")
+                            if stat in ["Count"]:
+                                print(f"{stat:>12}          = {stats[stat]:>10,.0f}")
+                            else:
+                                print(f"{stat:>12} [cycles] = {stats[stat]:>10,.0f}")
                     else:
                         print(f"{'Duration':>12} [cycles] = {stats['Max']:>10,.0f}")
                     print()
@@ -316,7 +320,7 @@ def extract_device_info(deviceInfo):
         raise Exception
 
 
-def import_device_profile_log(logPath):
+def import_device_profile_log(logPath, xRange=None):
     devicesData = {"devices": {}}
     programsData = {"programs": {}}
     with open(logPath) as csvFile:
@@ -389,6 +393,8 @@ def import_device_profile_log(logPath):
         globalMinTS = (1 << 64) - 1
         globalMinRisc = "BRISC"
         globalMinCore = (0, 0)
+
+        foundRange = set()
         for chipID, deviceData in devicesData["devices"].items():
             for core, coreData in deviceData["cores"].items():
                 for risc, riscData in coreData["riscs"].items():
@@ -402,21 +408,32 @@ def import_device_profile_log(logPath):
                 dict(metadata=dict(global_min=dict(ts=globalMinTS, risc=globalMinRisc, core=globalMinCore)))
             )
 
-    def include_min(devicesData):
         for chipID, deviceData in devicesData["devices"].items():
             for core, coreData in deviceData["cores"].items():
                 for risc, riscData in coreData["riscs"].items():
-                    riscData["timeseries"].insert(0, (0, deviceData["metadata"]["global_min"]["ts"]))
+                    riscData["timeseries"].sort(key=lambda x: x[1])
+                    newTimeseries = []
+                    for marker, timestamp in riscData["timeseries"]:
+                        shiftedTS = timestamp - globalMinTS
+                        if xRange and xRange[0] < shiftedTS < xRange[1]:
+                            newTimeseries.append((marker, shiftedTS))
+                    if newTimeseries:
+                        riscData["timeseries"] = newTimeseries
+                        foundRange.add((chipID, core, risc))
+                    else:
+                        riscData["timeseries"].insert(0, (0, deviceData["metadata"]["global_min"]["ts"]))
+
+        if foundRange:
+            for chipID, deviceData in devicesData["devices"].items():
+                for core, coreData in deviceData["cores"].items():
+                    for risc, riscData in coreData["riscs"].items():
+                        if (chipID, core, risc) not in foundRange:
+                            riscData["timeseries"] = []
 
     # Sort all timeseries and find global min timestamp
     sort_timeseries_and_find_min(devicesData)
-    for programID, programData in programsData["programs"].items():
-        sort_timeseries_and_find_min(programData)
-
-    # Include global min timestamp in all timeseries
-    include_min(devicesData)
-    for programID, programData in programsData["programs"].items():
-        include_min(programData)
+    # for programID, programData in programsData["programs"].items():
+    # sort_timeseries_and_find_min(programData)
 
     return devicesData, programsData
 
@@ -685,6 +702,13 @@ def timeline_plot(yVals, xValsDict, setup):
                         hovertemplate="<br>".join(["%{customdata}", "%{x} cycles"]),
                     )
                 )
+                fig.update_xaxes(
+                    showspikes=True,
+                    spikecolor="green",
+                    spikesnap="cursor",
+                    spikemode="across",
+                    spikedash="solid",
+                )
     fig.add_trace(
         go.Bar(
             y=[yVals, [""] * len(yVals)],
@@ -876,6 +900,7 @@ def generate_device_level_summary(devicesData):
                         "Min": tmpDF.loc[:, "Min"].min(),
                         "Range": tmpDF.loc[:, "Max"].max() - tmpDF.loc[:, "Min"].min(),
                         "Median": tmpDF.loc[:, "Median"].median(),
+                        "Sum": tmpDF.loc[:, "Sum"].sum(),
                     },
                 }
             if "analysis" in deviceData["cores"]["DEVICE"].keys():
@@ -895,7 +920,7 @@ def validate_setup(ctx, param, setup):
 
 
 def import_log_run_stats(setup=device_post_proc_config.default_setup()):
-    devicesData, programsData = import_device_profile_log(setup.deviceInputLog)
+    devicesData, programsData = import_device_profile_log(setup.deviceInputLog, setup.cycleRange)
     risc_to_core_timeseries(devicesData)
     core_to_device_timeseries(devicesData)
 
@@ -959,7 +984,6 @@ def timeline_annotations(yVals, deviceData, fig, setup):
 def generate_plots(devicesData, setup, saveFigure=True):
     timelineFigs = {}
     for chipID, deviceData in devicesData["devices"].items():
-        print("generating")
         timeseries_to_durations(deviceData)
         yVals = sorted(deviceData["cores"].keys(), key=coreCompare, reverse=True)
         yVals.remove("DEVICE")
@@ -968,8 +992,6 @@ def generate_plots(devicesData, setup, saveFigure=True):
         key = f"Chip {chipID} Cores"
         fig = timeline_plot(yVals, xValsDict, setup)
         timelineFigs[key] = timeline_annotations(yVals, deviceData, fig, setup)
-
-        print("generated")
 
         # TODO: Very inefficient in large datasets. Will need to draw manually if deemed useful
         # xValsDict = plotData_to_timelineXVals(deviceData, ['DEVICE'], setup)
@@ -1000,7 +1022,6 @@ def run_dashbaord_webapp(devicesData, timelineFigs, setup):
     plotsDiv = []
     for num, item in enumerate(sorted(set(timelineFigs.keys()) | set(statTables.keys()))):
         plotRiscs = set()
-        print(item)
         for marker in timelineFigs[item]["data"]:
             if marker["y"][-1][0] in setup.riscs:
                 plotRiscs.add(marker["y"][-1][0])
