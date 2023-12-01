@@ -129,7 +129,9 @@ FORCE_INLINE void program_page_transfer(
     uint32_t l1_consumer_fifo_limit = get_read_ptr(db_buf_switch) + consumer_cb_size - 1;
     for (uint32_t page_idx = 0; page_idx < num_pages_in_transfer;) {
         uint32_t num_to_write = min(num_pages_in_transfer - page_idx, producer_consumer_transfer_num_pages);
+        //kernel_profiler::mark_time(6);
         multicore_cb_wait_front(db_buf_switch, num_to_write);
+        //kernel_profiler::mark_time(7);
         uint32_t src_addr = get_read_ptr(db_buf_switch);
         for (uint32_t i = 0; i < num_to_write; i++) {
             write_program_page<multicast>(src_addr, command_ptr, i == num_to_write - 1);
@@ -188,6 +190,7 @@ void write_and_launch_program(
                 num_pages_in_transfer = command_ptr_fixed[DeviceCommand::num_program_pages_idx];
                 break;
             case (uint32_t) DeviceCommand::TransferType::GO_SIGNALS:
+                continue;
                 num_pages_in_transfer = command_ptr_fixed[DeviceCommand::num_go_signal_pages_idx];
                 break;
         }
@@ -202,6 +205,7 @@ void write_and_launch_program(
 
 FORCE_INLINE void wait_for_program_completion(
     uint32_t num_workers, uint32_t tensix_soft_reset_addr) {
+    return;
     if (not num_workers)
         return;
 

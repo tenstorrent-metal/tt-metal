@@ -22,9 +22,6 @@ from tt_metal.tools.profiler.common import PROFILER_ARTIFACTS_DIR
 import tt_metal.tools.profiler.device_post_proc_config as device_post_proc_config
 import tt_metal.tools.profiler.dummy_refresh as dummy_refresh
 
-# intrestingCores = [(0,0)]
-intrestingCores = [(0, 0), (0, 9), (6, 9)]
-
 
 def coreCompare(core):
     if type(core) == str:
@@ -320,7 +317,12 @@ def extract_device_info(deviceInfo):
         raise Exception
 
 
-def import_device_profile_log(logPath, xRange=None):
+def import_device_profile_log(
+    logPath,
+    xRange=None,
+    intrestingCores=None,
+    ignoreMarkers=None,
+):
     devicesData = {"devices": {}}
     programsData = {"programs": {}}
     with open(logPath) as csvFile:
@@ -340,6 +342,8 @@ def import_device_profile_log(logPath, xRange=None):
                 risc = row[3].strip()
                 programID = int(row[4].strip())
                 timerID = int(row[5])
+                if ignoreMarkers and timerID in ignoreMarkers:
+                    continue
                 timeData = int(row[6])
 
                 if chipID in devicesData["devices"].keys():
@@ -920,7 +924,9 @@ def validate_setup(ctx, param, setup):
 
 
 def import_log_run_stats(setup=device_post_proc_config.default_setup()):
-    devicesData, programsData = import_device_profile_log(setup.deviceInputLog, setup.cycleRange)
+    devicesData, programsData = import_device_profile_log(
+        setup.deviceInputLog, setup.cycleRange, setup.intrestingCores, setup.ignoreMarkers
+    )
     risc_to_core_timeseries(devicesData)
     core_to_device_timeseries(devicesData)
 
@@ -1034,7 +1040,7 @@ def run_dashbaord_webapp(devicesData, timelineFigs, setup):
                     html.Br(),
                     html.Br(),
                     html.P("X Axix select box diff [Cycles]: ", style={"display": "inline"}),
-                    html.P("", id="selected-data", style={"display": "inline"}),
+                    html.P("", id=f"selected-data-{num}", style={"display": "inline"}),
                     dcc.Graph(id=f"figure-{num}", figure=timelineFigs[item])
                     if item in timelineFigs.keys()
                     else html.Div([]),
@@ -1087,23 +1093,23 @@ def run_dashbaord_webapp(devicesData, timelineFigs, setup):
             prevent_initial_call=True,
         )
 
-    app.clientside_callback(
-        """
-        function (selectedData) {
-            if (selectedData !== null && selectedData.hasOwnProperty('range') &&  selectedData.range.hasOwnProperty('x'))
-            {
-                return (selectedData.range.x[1] - selectedData.range.x[0]).toFixed(0)
+        app.clientside_callback(
+            """
+            function (selectedData) {
+                if (selectedData !== null && selectedData.hasOwnProperty('range') &&  selectedData.range.hasOwnProperty('x'))
+                {
+                    return (selectedData.range.x[1] - selectedData.range.x[0]).toFixed(0)
+                }
+                else
+                {
+                    return ""
+                }
             }
-            else
-            {
-                return ""
-            }
-        }
-        """,
-        Output(f"selected-data", "children"),
-        [Input(f"figure-{num}", "selectedData")],  # this triggers the event
-        prevent_initial_call=True,
-    )
+            """,
+            Output(f"selected-data-{num}", "children"),
+            [Input(f"figure-{num}", "selectedData")],  # this triggers the event
+            prevent_initial_call=True,
+        )
 
     # @app.callback(
     # Output('selected-data', 'children'),

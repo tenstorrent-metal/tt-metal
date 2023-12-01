@@ -69,19 +69,23 @@ namespace kernel_profiler{
     inline __attribute__((always_inline)) void mark_time(uint32_t timer_id)
     {
 #if defined(PROFILE_KERNEL)
+        //TODO(MO): Add drop counter to control register
+        if (wIndex < PROFILER_L1_VECTOR_SIZE)
+        {
 #if defined(COMPILE_FOR_NCRISC) | defined(COMPILE_FOR_BRISC)
-        uint32_t time_L = reg_read(RISCV_DEBUG_REG_WALL_CLOCK_L);
-        uint32_t time_H = reg_read(RISCV_DEBUG_REG_WALL_CLOCK_H);
+            uint32_t time_L = reg_read(RISCV_DEBUG_REG_WALL_CLOCK_L);
+            uint32_t time_H = reg_read(RISCV_DEBUG_REG_WALL_CLOCK_H);
 #else
-        uint32_t time_L = ckernel::reg_read(RISCV_DEBUG_REG_WALL_CLOCK_L);
-        uint32_t time_H = ckernel::reg_read(RISCV_DEBUG_REG_WALL_CLOCK_H);
+            uint32_t time_L = ckernel::reg_read(RISCV_DEBUG_REG_WALL_CLOCK_L);
+            uint32_t time_H = ckernel::reg_read(RISCV_DEBUG_REG_WALL_CLOCK_H);
 #endif
-        volatile tt_l1_ptr uint32_t *buffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(profilerBuffer);
-        uint32_t index = wIndex;
-        buffer[index] = ((time_H & 0x0000FFFF) | (timer_id << 16));
-        buffer[index+1] = time_L;
-        wIndex += PROFILER_L1_MARKER_UINT32_SIZE;
+            volatile tt_l1_ptr uint32_t *buffer = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(profilerBuffer);
+            uint32_t index = wIndex;
+            buffer[index] = ((time_H & 0x0000FFFF) | (timer_id << 16));
+            buffer[index+1] = time_L;
+            wIndex += PROFILER_L1_MARKER_UINT32_SIZE;
 #endif //PROFILE_KERNEL
+        }
     }
 
     inline __attribute__((always_inline)) void mark_time_guaranteed_event(uint32_t index)

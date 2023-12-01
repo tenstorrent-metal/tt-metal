@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
         tt_metal::Device *device =
             tt_metal::CreateDevice(device_id);
 
-        int loop_count = 20;
+        int loop_count = 300;
         for (int i = 0; i < 1; i ++)
         {
             pass &= RunCustomCycle(device, loop_count);

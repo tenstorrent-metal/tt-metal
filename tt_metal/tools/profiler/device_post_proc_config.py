@@ -8,96 +8,18 @@ from tt_metal.tools.profiler.common import PROFILER_LOGS_DIR, PROFILER_DEVICE_SI
 
 class default_setup(metaclass=MergeMetaclass):
     timerAnalysis = {
-        # "T0 -> BRISC FW start": {
-        # "across": "core",
-        # "type": "adjacent",
-        # "start": {"risc": "BRISC", "timerID": 0},
-        # "end": {"risc": "BRISC", "timerID": 1},
-        # },
-        # "TRISC0 kernel start -> TRISC0 kernel end": {
-        # "across": "core",
-        # "type": "adjacent",
-        # "start": {"risc": "TRISC_0", "timerID": 2},
-        # "end": {"risc": "TRISC_0", "timerID": 3},
-        # },
-        # "TRISC1 kernel start -> TRISC1 kernel end": {
-        # "across": "core",
-        # "type": "adjacent",
-        # "start": {"risc": "TRISC_1", "timerID": 2},
-        # "end": {"risc": "TRISC_1", "timerID": 3},
-        # },
-        # "TRISC2 kernel start -> TRISC2 kernel end": {
-        # "across": "core",
-        # "type": "adjacent",
-        # "start": {"risc": "TRISC_2", "timerID": 2},
-        # "end": {"risc": "TRISC_2", "timerID": 3},
-        # },
         "Core (0,0) OPs": {
             "across": "device",
             "type": "adjacent",
             "start": {"core": (0, 0), "risc": "ANY", "timerID": 1},
             "end": {"core": (0, 0), "risc": "ANY", "timerID": 4},
         },
-        # "NCRISC kernel start -> NCRISC kernel end": {
-        # "across": "device",
-        # "type": "launch_first_last",
-        # "start": {"core": "ANY", "risc": "NCRISC", "timerID": 1},
-        # "end": {"core": "ANY", "risc": "NCRISC", "timerID": 4},
-        # },
-        # "BRISC kernel start -> BRISC kernel end": {
-        # "across": "device",
-        # "type": "launch_first_last",
-        # "start": {"core": "ANY", "risc": "BRISC", "timerID": 1},
-        # "end": {"core": "ANY", "risc": "BRISC", "timerID": 4},
-        # },
-        # "NCRISC kernel start -> NCRISC kernel end": {
-        # "across": "device",
-        # "type": "launch_first_last",
-        # "start": {"core": "ANY", "risc": "NCRISC", "timerID": 1},
-        # "end": {"core": "ANY", "risc": "NCRISC", "timerID": 4},
-        # },
-        # "BRISC kernel start -> BRISC kernel end": {
-        # "across": "device",
-        # "type": "launch_first_last",
-        # "start": {"core": "ANY", "risc": "BRISC", "timerID": 1},
-        # "end": {"core": "ANY", "risc": "BRISC", "timerID": 4},
-        # },
-        # "NCRISC kernel start -> NCRISC kernel end": {
-        # "across": "device",
-        # "type": "launch_first_last",
-        # "start": {"core": "ANY", "risc": "NCRISC", "timerID": 1},
-        # "end": {"core": "ANY", "risc": "NCRISC", "timerID": 4},
-        # },
-        # "NCRISC kernel start -> NCRISC kernel end": {
-        # "across": "core",
-        # "type": "adjacent",
-        # "start": {"risc": "NCRISC", "timerID": 2},
-        # "end": {"risc": "NCRISC", "timerID": 3},
-        # },
-        # "ANY RISC FW start -> ANY RISC FW end": {
-        # "across": "core",
-        # "type": "launch_first_last",
-        # "start": {"risc": "ANY", "timerID": 0},
-        # "end": {"risc": "ANY", "timerID": 3},
-        # },
-        # "ANY RISC FW end -> BRISC FW start": {
-        # "across": "core",
-        # "type": "adjacent",
-        # "start": {"risc": "ANY", "timerID": 4},
-        # "end": {"risc": "BRISC", "timerID": 1},
-        # },
-        # "T0 -> ANY RISC FW end": {
-        # "across": "core",
-        # "type": "session_first_last",
-        # "start": {"risc": "BRISC", "timerID": 0},
-        # "end": {"risc": "ANY", "timerID": 4},
-        # },
-        # "T0 -> ANY CORE ANY RISC FW end": {
-        # "across": "device",
-        # "type": "session_first_last",
-        # "start": {"core": "ANY", "risc": "ANY", "timerID": 1},
-        # "end": {"core": "ANY", "risc": "ANY", "timerID": 4},
-        # },
+        "Core (6,9) db acquire": {
+            "across": "device",
+            "type": "adjacent",
+            "start": {"core": (6, 9), "risc": "BRISC", "timerID": 2},
+            "end": {"core": (6, 9), "risc": "BRISC", "timerID": 5},
+        },
     }
 
     riscsData = {
@@ -127,9 +49,17 @@ class default_setup(metaclass=MergeMetaclass):
 
     webappPort = 8050
 
-    cycleRange = None
+    # cycleRange = None
     # Example
-    # cycleRange = (34.812e9, 34.822e9)
+    cycleRange = (34.554e9, 34.564e9)
+
+    # intrestingCores = None
+    # Example
+    intrestingCores = [(0, 0), (0, 9), (6, 9)]
+
+    # ignoreMarkers = None
+    # Example
+    ignoreMarkers = [65535]
 
     outputFolder = f"output/device"
     deviceInputLog = f"{PROFILER_LOGS_DIR}/{PROFILER_DEVICE_SIDE_LOG}"

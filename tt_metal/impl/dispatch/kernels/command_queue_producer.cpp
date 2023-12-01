@@ -82,6 +82,7 @@ void kernel_main() {
 
     while (true) {
 
+        kernel_profiler::init_profiler();
         kernel_profiler::mark_fw_start();
         kernel_profiler::mark_kernel_start();
 
@@ -90,8 +91,10 @@ void kernel_main() {
         // Read in command
         uint32_t rd_ptr = (cq_read_interface.fifo_rd_ptr << 4);
         uint64_t src_noc_addr = pcie_core_noc_encoding | rd_ptr;
+        //kernel_profiler::mark_time(8);
         noc_async_read(src_noc_addr, COMMAND_START_ADDR, min(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, DeviceCommand::HUGE_PAGE_SIZE - rd_ptr));
         noc_async_read_barrier();
+        //kernel_profiler::mark_time(9);
 
         // Producer information
         volatile tt_l1_ptr uint32_t* command_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(COMMAND_START_ADDR);
@@ -115,6 +118,7 @@ void kernel_main() {
             continue;
         }
 
+        //kernel_profiler::mark_time(10);
         program_local_cb(producer_cb_num_pages, page_size, producer_cb_size);
         while (db_semaphore_addr[0] == 0)
             ;  // Check that there is space in the consumer
@@ -132,6 +136,7 @@ void kernel_main() {
         noc_semaphore_inc(consumer_noc_encoding | get_semaphore(0), 1);
         noc_async_write_barrier();  // Barrier for now
 
+        //kernel_profiler::mark_time(11);
         // Fetch data and send to the consumer
         produce(
             command_ptr,
@@ -145,6 +150,7 @@ void kernel_main() {
             producer_consumer_transfer_num_pages,
             db_buf_switch);
         cq_pop_front(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + data_size);
+        //kernel_profiler::mark_time(12);
 
         db_buf_switch = not db_buf_switch;
 
