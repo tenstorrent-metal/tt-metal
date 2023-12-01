@@ -64,6 +64,8 @@ constexpr static std::uint32_t PROFILER_L1_BUFFER_NC = PROFILER_L1_BUFFER_BR + P
 constexpr static std::uint32_t PROFILER_L1_BUFFER_T0 = PROFILER_L1_BUFFER_NC + PROFILER_L1_BUFFER_SIZE;
 constexpr static std::uint32_t PROFILER_L1_BUFFER_T1 = PROFILER_L1_BUFFER_T0 + PROFILER_L1_BUFFER_SIZE;
 constexpr static std::uint32_t PROFILER_L1_BUFFER_T2 = PROFILER_L1_BUFFER_T1 + PROFILER_L1_BUFFER_SIZE;
+
+// This is the last address, move my CQ address after this
 constexpr static std::uint32_t PROFILER_L1_BUFFER_CONTROL = PROFILER_L1_BUFFER_T2 + PROFILER_L1_CONTROL_BUFFER_SIZE;
 
 constexpr static std::uint32_t PROFILER_RISC_COUNT = 5;
@@ -124,6 +126,7 @@ constexpr static std::uint32_t DISPATCH_MESSAGE_ADDR = 110816;
 constexpr static std::uint64_t DISPATCH_MESSAGE_REMOTE_SENDER_ADDR = 110848;
 
 // Command queue pointers
+// Andrew: Move these above 119 * 1024 -> 120 * 1024
 constexpr static uint32_t CQ_READ_PTR = 110944;
 constexpr static uint32_t CQ_WRITE_PTR = 110976;
 constexpr static uint32_t CQ_READ_TOGGLE = 111008;
