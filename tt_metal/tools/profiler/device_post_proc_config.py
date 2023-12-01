@@ -49,9 +49,9 @@ class default_setup(metaclass=MergeMetaclass):
 
     webappPort = 8050
 
-    # cycleRange = None
+    cycleRange = None
     # Example
-    cycleRange = (34.676e9, 60e9)
+    # cycleRange = (34.676e9, 60e9)
 
     # intrestingCores = None
     # Example
