@@ -190,7 +190,7 @@ void write_and_launch_program(
                 num_pages_in_transfer = command_ptr_fixed[DeviceCommand::num_program_pages_idx];
                 break;
             case (uint32_t) DeviceCommand::TransferType::GO_SIGNALS:
-                continue;
+                //continue;
                 num_pages_in_transfer = command_ptr_fixed[DeviceCommand::num_go_signal_pages_idx];
                 break;
         }
@@ -205,7 +205,7 @@ void write_and_launch_program(
 
 FORCE_INLINE void wait_for_program_completion(
     uint32_t num_workers, uint32_t tensix_soft_reset_addr) {
-    return;
+    //return;
     if (not num_workers)
         return;
 

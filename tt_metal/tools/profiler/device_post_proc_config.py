@@ -51,7 +51,7 @@ class default_setup(metaclass=MergeMetaclass):
 
     # cycleRange = None
     # Example
-    cycleRange = (34.554e9, 34.564e9)
+    cycleRange = (34.676e9, 60e9)
 
     # intrestingCores = None
     # Example
