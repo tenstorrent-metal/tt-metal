@@ -127,8 +127,9 @@ class default_setup(metaclass=MergeMetaclass):
 
     webappPort = 8050
 
-    # cycleRange = None
-    cycleRange = (34.812e9, 34.822e9)
+    cycleRange = None
+    # Example
+    # cycleRange = (34.812e9, 34.822e9)
 
     outputFolder = f"output/device"
     deviceInputLog = f"{PROFILER_LOGS_DIR}/{PROFILER_DEVICE_SIDE_LOG}"

@@ -707,7 +707,7 @@ def timeline_plot(yVals, xValsDict, setup):
                     spikecolor="green",
                     spikesnap="cursor",
                     spikemode="across",
-                    spikedash="solid",
+                    spikethickness=0.5,
                 )
     fig.add_trace(
         go.Bar(
@@ -1031,6 +1031,10 @@ def run_dashbaord_webapp(devicesData, timelineFigs, setup):
                 [
                     html.H5(f"{item}:"),
                     statTables[item] if item in statTables.keys() else html.Div([]),
+                    html.Br(),
+                    html.Br(),
+                    html.P("X Axix select box diff [Cycles]: ", style={"display": "inline"}),
+                    html.P("", id="selected-data", style={"display": "inline"}),
                     dcc.Graph(id=f"figure-{num}", figure=timelineFigs[item])
                     if item in timelineFigs.keys()
                     else html.Div([]),
@@ -1082,6 +1086,30 @@ def run_dashbaord_webapp(devicesData, timelineFigs, setup):
             [State(f"figure-{num}", "figure"), State(f"figure-height-{num}", "data")],
             prevent_initial_call=True,
         )
+
+    app.clientside_callback(
+        """
+        function (selectedData) {
+            if (selectedData !== null && selectedData.hasOwnProperty('range') &&  selectedData.range.hasOwnProperty('x'))
+            {
+                return (selectedData.range.x[1] - selectedData.range.x[0]).toFixed(0)
+            }
+            else
+            {
+                return ""
+            }
+        }
+        """,
+        Output(f"selected-data", "children"),
+        [Input(f"figure-{num}", "selectedData")],  # this triggers the event
+        prevent_initial_call=True,
+    )
+
+    # @app.callback(
+    # Output('selected-data', 'children'),
+    # Input('basic-interactions', 'selectedData'))
+    # def display_selected_data(selectedData):
+    # return json.dumps(selectedData, indent=2)
 
     @app.callback(Output("btn-refresh", "children"), Input("btn-refresh", "n_clicks"), prevent_initial_call=True)
     def refresh_callback(n_clicks):
