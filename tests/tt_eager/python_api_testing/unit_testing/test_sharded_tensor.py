@@ -58,8 +58,7 @@ def compare_tiles(tiled_tensor_1, tiled_tensor_2, num_tiles_height, num_tiles_wi
     "tt_dtype",
     [
         ttl.tensor.DataType.UINT32,
-        #        ttl.tensor.DataType.BFLOAT16,
-        #        ttl.tensor.DataType.BFLOAT8_B,
+        ttl.tensor.DataType.BFLOAT16,
     ],
 )
 @pytest.mark.parametrize(
@@ -77,15 +76,11 @@ def compare_tiles(tiled_tensor_1, tiled_tensor_2, num_tiles_height, num_tiles_wi
         ([1, 1, 128, 64], ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED, (32, 64), None),
         ([1, 1, 100352, 64], ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED, (2048, 32), None),
         ([1, 1, 2048, 64], ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED, (1024, 64), None),
-        #        ([1, 1, 64, 64], ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED, (32, 64), None),
     ],
 )
 @pytest.mark.parametrize(
     "shard_orientation",
-    [
-        ttl.tensor.ShardOrientation.ROW_MAJOR,
-        #        ttl.tensor.ShardOrientation.COL_MAJOR
-    ],
+    [ttl.tensor.ShardOrientation.ROW_MAJOR, ttl.tensor.ShardOrientation.COL_MAJOR],
 )
 def test_tensor_conversion_between_torch_and_tt_tile(
     tt_dtype, device, tensor_shape, shard_scheme, shard_shape, compute_grid, shard_orientation
@@ -126,23 +121,8 @@ def test_tensor_conversion_between_torch_and_tt_tile(
     mem_config = ttl.tensor.MemoryConfig(shard_scheme, ttl.tensor.BufferType.L1)
     tt_tensor = tt_tensor.to(device, mem_config, shard_spec)
 
-    # tt_tensor_sharded = tt_tensor.cpu_sharded().to(ttl.tensor.Layout.ROW_MAJOR)
-    # torch_tensor_after_round_trip_sharded = tt_tensor_sharded.to_torch()
-
-    # for shard_id in range(0, int(num_shards)):
-    #    print("shard " + str(int(shard_id)))
-    #    shard_torch_tensor = tt_tensor.extract_shard(int(shard_id)).to_torch()
-    #    print(shard_torch_tensor)
-
     tt_tensor = tt_tensor.cpu().to(ttl.tensor.Layout.ROW_MAJOR)
     torch_tensor_after_round_trip = tt_tensor.to_torch()
-    # print_tiles(torch_tensor_after_round_trip, num_tiles_height, num_tiles_width)
-    # compare_tiles(torch_tensor, torch_tensor_after_round_trip, num_tiles_height, num_tiles_width)
-
-    # print("input tensor ")
-    # print_tiles(torch_tensor, num_tiles_height, num_tiles_width)
-    # print("torch_tensor_after_round_trip_sharded")
-    # print_tiles(torch_tensor_after_round_trip_sharded, num_tiles_height, num_tiles_width)
 
     assert torch_tensor.dtype == torch_tensor_after_round_trip.dtype
     assert torch_tensor.shape == torch_tensor_after_round_trip.shape
@@ -163,35 +143,43 @@ def test_tensor_conversion_between_torch_and_tt_tile(
     [
         ttl.tensor.DataType.UINT32,
         ttl.tensor.DataType.UINT16,
-        # ttl.tensor.DataType.BFLOAT16,
+        ttl.tensor.DataType.BFLOAT16,
     ],
 )
 @pytest.mark.parametrize(
-    "tensor_shape, shard_scheme, shard_shape",
+    "tensor_shape, shard_scheme, shard_shape, shard_grid",
     [
-        ([1, 1, 98, 256], ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED, (1, 256)),
-        ([1, 1, 1, 1176], ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED, (1, 12)),
-        #        ([1, 1, 64, 64], ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED, (32, 64), None),
+        (
+            [1, 1, 98, 256],
+            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+            (1, 256),
+            ttl.tensor.CoreRangeSet(
+                {
+                    ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 0), ttl.tensor.CoreCoord(11, 7)),
+                    ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 8), ttl.tensor.CoreCoord(1, 8)),
+                }
+            ),
+        ),
+        (
+            [1, 1, 1, 1176],
+            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+            (1, 12),
+            ttl.tensor.CoreRangeSet(
+                {
+                    ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 0), ttl.tensor.CoreCoord(11, 7)),
+                    ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 8), ttl.tensor.CoreCoord(1, 8)),
+                }
+            ),
+        ),
     ],
 )
-def test_tensor_conversion_between_torch_and_tt_rm(tt_dtype, device, tensor_shape, shard_scheme, shard_shape):
+def test_tensor_conversion_between_torch_and_tt_rm(
+    tt_dtype, device, tensor_shape, shard_scheme, shard_shape, shard_grid
+):
     dtype = tt_dtype_to_torch_dtype[tt_dtype]
     num_pages_width = tensor_shape[2] / shard_shape[0]
     num_pages_height = tensor_shape[3] / shard_shape[1]
 
-    # num_pages_width = 98
-    # num_pages_height = 1
-
-    shard_grid = ttl.tensor.CoreRangeSet(
-        {
-            ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 0), ttl.tensor.CoreCoord(11, 7)),
-            ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 8), ttl.tensor.CoreCoord(1, 8)),
-        }
-    )
-    # shard_shape = (1, 256)
-
-    # tensor_shape = [1, 1, 49000, 32]
-    # tensor_shape = [1, 1, 98, 256]
     shard_orientation = ttl.tensor.ShardOrientation.ROW_MAJOR
     shard_halo = False
     shard_spec = ttl.tensor.ShardSpec(shard_grid, shard_shape, shard_orientation, shard_halo)
