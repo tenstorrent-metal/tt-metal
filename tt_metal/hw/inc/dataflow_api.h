@@ -1574,14 +1574,8 @@ class Buffer {
     }
 
     void noc_async_read_buffer(uint32_t dst, const uint32_t id, const uint32_t num_pages, const uint32_t offset) {
-        //DPRINT << "SYSTEM_BUFFER: IN NOC ASYNC READ BUFFER at page " << id <<  ENDL();
         if (this->type == BufferType::SYSTEM_MEMORY) {
             noc_async_read(this->get_noc_addr(id, offset), dst, this->page_size_ * num_pages);
-            noc_async_read_barrier();
-            uint32_t * ptr = (uint32_t *)dst;
-            for (uint32_t i = 0; i < num_pages; i++) {
-                DPRINT << "SYSTEM_BUFFER: page: " << i+id << " first element of page " << DEC() << ptr[i*this->page_size_/4] << ENDL();
-            }
         } else {
             for (uint32_t i = 0; i < num_pages; i++) {
                 uint64_t address = this->get_noc_addr(id + i, offset);
@@ -1624,12 +1618,6 @@ class ShardedBuffer {
         // will exit early when we have written enough
         uint32_t num_pages_left = num_pages;
 
-        DPRINT << ENDL() << ENDL() << "******************************************" << ENDL() << "IN READ_WRITE HELPER " <<  ENDL();
-        DPRINT << "READ BOOL " <<DEC() <<  (uint32_t)read << ENDL();
-        DPRINT << "NUM PAGES " << DEC() << num_pages << ENDL();
-        DPRINT << "PAGE ID " << DEC() << page_id << ENDL();
-
-
         uint32_t core_id_start = 0;
         uint32_t pages_start = 0;
         uint32_t pages_end = 0;
@@ -1650,22 +1638,8 @@ class ShardedBuffer {
             break;
         }
 
-        uint32_t hack_noc = NOC_XY_ENCODING(6, 11);
-        DPRINT << "BEFORE WRITE HOST PAGES " << ENDL();
-        uint32_t * ptr = (uint32_t *)(addr);
-        uint32_t starting_addr = addr;
-        DPRINT << "HOST_PTR " << HEX() << (uint32_t ) ptr << DEC()  <<ENDL();
-        for (uint32_t i = 0; i < num_pages; i++) {
-            DPRINT << "HOST : PAGE: " << i << " FIRST ELEMENT " << DEC() << ptr[i*this->page_size_/4] << " at addr 0x" << HEX() <<  addr+ (i*this->page_size_/4)<< DEC() <<  ENDL();
-        }
-
-
-        DPRINT << "STARTING CORE " << core_id_start << ENDL();
-        DPRINT << "STARTING START " << pages_start << ENDL();
-        DPRINT << "STARTING END " << pages_end << ENDL();
         uint32_t flattened_page_id = page_id;
 
-        DPRINT << "FLATTENED PAGE ID " << flattened_page_id << ENDL();
         uint32_t host_page_id = 0;
         for(uint32_t core_id = core_id_start;  core_id < this->num_cores_; core_id++){
             uint32_t num_pages_core = this->base_command_addr_[core_id*NUM_ENTRIES_PER_SHARD];
@@ -1677,41 +1651,17 @@ class ShardedBuffer {
             //now curr_page_id pointing to beginning of section we want in this core
             uint32_t num_pages_write_core = min(pages_end - flattened_page_id, num_pages_left);
 
-            DPRINT << ENDL() << "CORE ID " << core_id << ENDL();
-            DPRINT << "NUM_PAGES_CORE " << DEC() << num_pages_core << ENDL();
-            DPRINT << "CORE_ID_X " << DEC() << core_id_x << ENDL();
-            DPRINT << "CORE_ID_y " << DEC() << core_id_y << ENDL();
-            DPRINT << "NUM_PAGES_WRITE_CORE " << DEC() << num_pages_write_core << ENDL();
-            DPRINT << "PAGES START " << DEC() << pages_start <<ENDL();
-            DPRINT << "PAGES END " << DEC() << pages_end <<ENDL();
-            DPRINT << "NUM PAGES LEFT " << DEC() << num_pages_left <<ENDL();
-
             //Writing at beginning of core
             uint32_t core_page_id = (flattened_page_id - pages_start);
             uint32_t core_offset = core_page_id * this->page_size_;
-            DPRINT << "CORE PAGE_ID " << (flattened_page_id - pages_start) << ENDL();
-            DPRINT << "FLATTENED PAGE_ID " << (flattened_page_id) <<  ENDL();
-            DPRINT << "NUM_PAGES_IN_TRANSACTION " << num_pages_write_core <<ENDL();
-            DPRINT << "CORE_OFFSET " << core_offset <<ENDL();
             uint64_t noc_address = this->get_noc_addr_(core_id_x, core_id_y, core_offset);
             uint32_t host_offset = host_page_id*this->page_size_;
 
             if(!read){
-                uint32_t starting_addr = addr + host_offset;
-                uint32_t * ptr = (uint32_t *)starting_addr;
                 noc_async_write(addr + host_offset, noc_address, num_pages_write_core*this->page_size_);
-                for (uint32_t i = 0; i < num_pages_write_core; i++) {
-                    DPRINT << "WRITING TO SHARDED_BUFFER : PAGE: " << i << " FIRST ELEMENT " << DEC() << ptr[i*this->page_size_/4] << " from addr 0x" << HEX() <<  addr+ (i*this->page_size_/4)<< DEC() << ENDL();
-                }
-
             }
             else{
                 noc_async_read(noc_address, addr + host_offset, num_pages_write_core*this->page_size_);
-                uint32_t starting_addr = addr + host_offset;
-                uint32_t * ptr = (uint32_t *)starting_addr;
-                for (uint32_t i = 0; i < num_pages_write_core; i++) {
-                    DPRINT << "READING FROM SHARDED_BUFFER : PAGE: " << i << " FIRST ELEMENT " << DEC() << ptr[i*this->page_size_/4] << " from addr 0x" << HEX() <<  addr+ (i*this->page_size_/4)<< DEC() << ENDL();
-                }
             }
             num_pages_left-= num_pages_write_core;
             host_page_id += num_pages_write_core;

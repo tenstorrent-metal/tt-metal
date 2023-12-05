@@ -134,19 +134,6 @@ void produce(
                 uint64_t dst_noc_addr = consumer_noc_encoding | dst_addr;
                 uint32_t l1_read_ptr = get_read_ptr(0);
                 noc_async_write(l1_read_ptr, dst_noc_addr, page_size * num_to_write);
-                if(num_to_write > 0){
-                    DPRINT << "PRODUCER WRITING " << num_to_write << " PAGES TO MULTICORE_CB " << ENDL();
-                    DPRINT << "PRODUCER:  NUM_WRITES COMPLETED " << num_writes_completed<< ENDL();
-                    uint32_t * ptr = (uint32_t *)l1_read_ptr;
-                    for (uint32_t i = 0; i < num_to_write; i++) {
-                        if((BufferType)src_buf_type == BufferType::SYSTEM_MEMORY || !sharded){
-                            DPRINT << "PRODUCER WRITING TO NOC (EnqueueWrite) : PAGE: " << i << " FIRST ELEMENT " << DEC() << ptr[i*page_size/4] << ENDL();
-                        }else{
-                            DPRINT << "PRODUCER WRITING TO NOC (EnqueueRead) : PAGE: " << i << " FIRST ELEMENT " << DEC() << ptr[i*page_size/4] << ENDL();
-                        }
-                    }
-                }
-
                 multicore_cb_push_back(consumer_noc_encoding, l1_consumer_fifo_limit, consumer_cb_size, db_buf_switch, page_size, num_to_write);
                 noc_async_write_barrier();
                 cb_pop_front(0, num_to_write);

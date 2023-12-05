@@ -396,7 +396,6 @@ std::vector<T> read_data_from_device(const Tensor &tensor, uint32_t size_in_byte
         EnqueueReadBuffer(*tt::tt_metal::detail::GLOBAL_CQ, *device_buffer, device_data.data(), true);
         return device_data;
     } else {
-//        std::cout << "FORCING SLOW DISPATCH " << std::endl;
         std::vector<uint32_t> device_data;
         ::detail::ReadFromBuffer(*device_buffer, device_data);
         return unpack_uint32_vec<T>(device_data);
@@ -841,8 +840,6 @@ Tensor extract_shard(const Tensor & tensor, const uint32_t & core_id){
 
     auto buffer= tensor.buffer();
     auto buffer_shard_shape = buffer->shard_shape();
-    std::cout << "core_id in extract_shard " << core_id << std::endl;
-    std::cout << "buffer_shard_shape[0] " << buffer_shard_shape[0] << " buffer_shard_shape[1] " << buffer_shard_shape[1] << std::endl;
     std::array <uint32_t, 4> shard_shape_array = {1,1,buffer_shard_shape[0],buffer_shard_shape[1]};
     Shape shard_shape(shard_shape_array);
     std::vector<uint32_t> device_data;

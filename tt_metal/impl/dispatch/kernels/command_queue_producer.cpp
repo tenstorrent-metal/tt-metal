@@ -104,8 +104,6 @@ void kernel_main() {
         uint32_t producer_consumer_transfer_num_pages = command_ptr[DeviceCommand::producer_consumer_transfer_num_pages_idx];
         uint32_t num_cores = command_ptr[DeviceCommand::num_cores];
 
-        DPRINT << "PRODUCER CB SIZE: " << producer_cb_size << ENDL();
-
         if (wrap) {
             // Basically popfront without the extra conditional
             cq_read_interface.fifo_rd_ptr = CQ_START >> 4;  // Head to beginning of command queue
@@ -133,40 +131,20 @@ void kernel_main() {
 
 
         // Fetch data and send to the consumer
-        DPRINT << "NUM CORES: " << num_cores << ENDL();
-        DPRINT << "PAGE SIZE: " << page_size << ENDL();
-        DPRINT << "NUM PAGES: " << num_pages << ENDL();
-        DPRINT << "PRODUCER CONSUMER TNP: " << producer_consumer_transfer_num_pages << ENDL();
-        // while(true);
-        // if(num_cores == 1){
-            produce(
-                command_ptr,
-                num_buffer_transfers,
-                num_cores,
-                page_size,
-                producer_cb_size,
-                producer_cb_num_pages,
-                consumer_cb_size,
-                consumer_cb_num_pages,
-                consumer_noc_encoding,
-                producer_consumer_transfer_num_pages,
-                db_buf_switch);
-        // }
-        // else{
-        //     produce_sharded(
-        //         command_ptr,
-        //         num_cores,
-        //         num_buffer_transfers,
-        //         page_size,
-        //         producer_cb_size,
-        //         producer_cb_num_pages,
-        //         consumer_cb_size,
-        //         consumer_cb_num_pages,
-        //         consumer_noc_encoding,
-        //         producer_consumer_transfer_num_pages,
-        //         db_buf_switch
-        //     );
-        // }
+
+        produce(
+            command_ptr,
+            num_buffer_transfers,
+            num_cores,
+            page_size,
+            producer_cb_size,
+            producer_cb_num_pages,
+            consumer_cb_size,
+            consumer_cb_num_pages,
+            consumer_noc_encoding,
+            producer_consumer_transfer_num_pages,
+            db_buf_switch);
+
         cq_pop_front(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + data_size);
 
         db_buf_switch = not db_buf_switch;
