@@ -13,6 +13,7 @@ import tt_lib as ttl
 
 tt_dtype_to_torch_dtype = {
     ttl.tensor.DataType.UINT32: torch.int32,
+    ttl.tensor.DataType.UINT16: torch.int16,
     ttl.tensor.DataType.BFLOAT16: torch.bfloat16,
     ttl.tensor.DataType.BFLOAT8_B: torch.float,
 }
@@ -161,6 +162,7 @@ def test_tensor_conversion_between_torch_and_tt_tile(
     "tt_dtype",
     [
         ttl.tensor.DataType.UINT32,
+        ttl.tensor.DataType.UINT16,
         # ttl.tensor.DataType.BFLOAT16,
     ],
 )
