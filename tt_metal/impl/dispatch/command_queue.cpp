@@ -734,6 +734,8 @@ CommandQueue::CommandQueue(Device* device): sysmem_writer(device) {
 
     send_dispatch_kernel_to_device(device);
     this->device = device;
+
+    std::cout << "EPAddress: " << PROFILER_L1_END_ADDRESS << std::endl;
 }
 
 CommandQueue::~CommandQueue() {}

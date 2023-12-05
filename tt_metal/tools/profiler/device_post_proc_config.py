@@ -51,11 +51,11 @@ class default_setup(metaclass=MergeMetaclass):
 
     cycleRange = None
     # Example
-    # cycleRange = (34.676e9, 60e9)
+    # cycleRange = (34.5e9, 60e9)
 
     # intrestingCores = None
     # Example
-    intrestingCores = [(0, 0), (0, 9), (6, 9)]
+    intrestingCores = [(4, 4), (6, 9)]
 
     # ignoreMarkers = None
     # Example

@@ -23,7 +23,7 @@ void kernel_main() {
 
         // Wait for producer to supply a command
         db_acquire(db_semaphore_addr, consumer_noc_encoding);
-        kernel_profiler::mark_time(5);
+        // kernel_profiler::mark_time(5);
 
         // For each instruction, we need to jump to the relevant part of the device command
         uint32_t command_start_addr = get_command_slot_addr(db_buf_switch);

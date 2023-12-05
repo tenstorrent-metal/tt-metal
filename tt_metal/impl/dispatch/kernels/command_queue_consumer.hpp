@@ -92,7 +92,8 @@ FORCE_INLINE void write_program_page(uint32_t page_addr, volatile tt_l1_ptr uint
     uint32_t num_transfers = command_ptr[0];
     command_ptr++;
     uint32_t src = page_addr;
-
+    kernel_profiler::mark_time(90);
+    kernel_profiler::mark_time(num_transfers);
     for (uint32_t i = 0; i < num_transfers; i++) {
         uint32_t num_bytes = command_ptr[0];
         uint32_t dst = command_ptr[1];
@@ -102,18 +103,25 @@ FORCE_INLINE void write_program_page(uint32_t page_addr, volatile tt_l1_ptr uint
         bool linked = (not (last_page & last_transfer_in_group)) & command_ptr[5];
 
         uint64_t dst_noc_addr = (uint64_t(dst_noc) << 32) | dst;
-
+        // if (i == 0) {
+        //     kernel_profiler::mark_time(num_bytes);
+        // }
         if constexpr (multicast) {
-            noc_async_write_multicast(src, dst_noc_addr, num_bytes, num_recv, linked);
+            noc_async_write_multicast_one_packet(src, dst_noc_addr, num_bytes, num_recv, linked);
         } else {
             noc_async_write_one_packet(src, dst_noc_addr, num_bytes);
         }
+        // if (i == 0) {
+        //     kernel_profiler::mark_time(multicast + 8);
+        // }
 
         command_ptr += 6;
         if (last_transfer_in_group) {
             src = align(src + num_bytes, 16);
         }
     }
+    kernel_profiler::mark_time(num_transfers + 1);
+    kernel_profiler::mark_time(91);
 }
 
 template <bool multicast>
@@ -129,9 +137,7 @@ FORCE_INLINE void program_page_transfer(
     uint32_t l1_consumer_fifo_limit = get_read_ptr(db_buf_switch) + consumer_cb_size - 1;
     for (uint32_t page_idx = 0; page_idx < num_pages_in_transfer;) {
         uint32_t num_to_write = min(num_pages_in_transfer - page_idx, producer_consumer_transfer_num_pages);
-        //kernel_profiler::mark_time(6);
         multicore_cb_wait_front(db_buf_switch, num_to_write);
-        //kernel_profiler::mark_time(7);
         uint32_t src_addr = get_read_ptr(db_buf_switch);
         for (uint32_t i = 0; i < num_to_write; i++) {
             write_program_page<multicast>(src_addr, command_ptr, i == num_to_write - 1);
@@ -146,7 +152,7 @@ FORCE_INLINE void program_page_transfer(
             consumer_cb_size,
             num_to_write,
             DeviceCommand::PROGRAM_PAGE_SIZE);
-        noc_async_write_barrier();  // Flush barrier, not an ack barrier
+        // noc_async_write_barrier();  // Flush barrier, not an ack barrier
     }
 }
 
@@ -164,6 +170,7 @@ void write_and_launch_program(
     if (not num_pages) {
         return;
     }
+    // kernel_profiler::mark_time(6);
 
     // GO signals are just data within pages, so we need to set
     // our local 'recv' address value to 0 before we initiate
@@ -190,7 +197,6 @@ void write_and_launch_program(
                 num_pages_in_transfer = command_ptr_fixed[DeviceCommand::num_program_pages_idx];
                 break;
             case (uint32_t) DeviceCommand::TransferType::GO_SIGNALS:
-                //continue;
                 num_pages_in_transfer = command_ptr_fixed[DeviceCommand::num_go_signal_pages_idx];
                 break;
         }
@@ -201,14 +207,15 @@ void write_and_launch_program(
             program_page_transfer<false>(command_ptr, producer_noc_encoding, consumer_cb_size, consumer_cb_num_pages, producer_consumer_transfer_num_pages, db_buf_switch, num_pages_in_transfer);
         }
     }
+    // kernel_profiler::mark_time(7);
 }
 
 FORCE_INLINE void wait_for_program_completion(
     uint32_t num_workers, uint32_t tensix_soft_reset_addr) {
-    //return;
     if (not num_workers)
         return;
 
+    // kernel_profiler::mark_time(8);
     // Wait on worker cores to notify me that they have completed
     DEBUG_STATUS('Q', 'W');
 
@@ -219,6 +226,7 @@ FORCE_INLINE void wait_for_program_completion(
         ;
 
     DEBUG_STATUS('Q', 'D');
+    // kernel_profiler::mark_time(9);
 }
 
 FORCE_INLINE void notify_host_complete() {

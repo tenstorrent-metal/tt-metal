@@ -124,15 +124,16 @@ constexpr static std::uint32_t OP_INFO_BASE_ADDR = 109628;
 constexpr static std::uint32_t OP_INFO_SIZE      = 280; // So far, holds up to 10 ops
 
 // Dispatch message address
-constexpr static std::uint32_t DISPATCH_MESSAGE_ADDR = 110816;
-constexpr static std::uint64_t DISPATCH_MESSAGE_REMOTE_SENDER_ADDR = 110848;
+constexpr static std::uint32_t HACK_OFFSET = 10064;
+constexpr static std::uint32_t DISPATCH_MESSAGE_ADDR = 110816 + HACK_OFFSET;
+constexpr static std::uint64_t DISPATCH_MESSAGE_REMOTE_SENDER_ADDR = 110848 + HACK_OFFSET;
 
 // Command queue pointers
 // Andrew: Move these above 119 * 1024 -> 120 * 1024
-constexpr static uint32_t CQ_READ_PTR = 110944;
-constexpr static uint32_t CQ_WRITE_PTR = 110976;
-constexpr static uint32_t CQ_READ_TOGGLE = 111008;
-constexpr static uint32_t CQ_WRITE_TOGGLE = 111040;
+constexpr static uint32_t CQ_READ_PTR = 110944 + HACK_OFFSET;
+constexpr static uint32_t CQ_WRITE_PTR = 110976 + HACK_OFFSET;
+constexpr static uint32_t CQ_READ_TOGGLE = 111008 + HACK_OFFSET;
+constexpr static uint32_t CQ_WRITE_TOGGLE = 111040 + HACK_OFFSET;
 
 // Host addresses for dispatch
 static constexpr uint32_t HOST_CQ_READ_PTR = 0;
@@ -140,7 +141,7 @@ static constexpr uint32_t HOST_CQ_READ_TOGGLE_PTR = 32;
 static constexpr uint32_t HOST_CQ_FINISH_PTR = 64;
 static constexpr uint32_t CQ_START = 96;
 
-static constexpr uint32_t CQ_CONSUMER_CB_BASE = 111056;
+static constexpr uint32_t CQ_CONSUMER_CB_BASE = 111056 + HACK_OFFSET;
 // CB0
 static constexpr uint32_t CQ_CONSUMER_CB0_ACK = CQ_CONSUMER_CB_BASE;
 static constexpr uint32_t CQ_CONSUMER_CB0_RECV = CQ_CONSUMER_CB0_ACK + 16;
