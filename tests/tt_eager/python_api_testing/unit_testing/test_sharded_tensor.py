@@ -157,60 +157,69 @@ def test_tensor_conversion_between_torch_and_tt_tile(
     assert passing
 
 
-# @pytest.mark.parametrize(
-#    "tt_dtype",
-#    [
-#        #ttl.tensor.DataType.UINT32,
-#        ttl.tensor.DataType.BFLOAT16,
-#    ],
-# )
-# def test_tensor_conversion_between_torch_and_tt_rm(tt_dtype, device):
-#    dtype = tt_dtype_to_torch_dtype[tt_dtype]
-#
-#    num_pages_width = 4
-#    num_pages_height = 1
-#
-#    shard_grid = ttl.tensor.CoreRangeSet(
-#        {
-#            ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 0), ttl.tensor.CoreCoord(11, 7)),
-#            ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 8), ttl.tensor.CoreCoord(1, 8)),
-#        }
-#    )
-#    shard_shape = (500, 32)
-#
-#    #tensor_shape = [1, 1, 49000, 32]
-#    tensor_shape = [1, 1, 2000, 32]
-#    shard_orientation = ttl.tensor.ShardOrientation.ROW_MAJOR
-#    shard_halo = False
-#    shard_spec = ttl.tensor.ShardSpec(shard_grid, shard_shape, shard_orientation, shard_halo)
-#
-#    torch_tensor = None
-#    for row_idx in range(0, int(num_pages_width)):
-#        page_row = None
-#        for col_idx in range(0, int(num_pages_height)):
-#            page_idx = col_idx + num_pages_height * row_idx
-#            page = torch.full((1, 1, shard_shape[0], shard_shape[1]), page_idx, dtype=dtype)
-#            if page_row == None:
-#                page_row = page
-#            else:
-#                page_row = torch.cat((page_row, page), 3)
-#        if torch_tensor == None:
-#            torch_tensor = page_row
-#        else:
-#            torch_tensor = torch.cat((torch_tensor, page_row), 2)
-#    tt_tensor = ttl.tensor.Tensor(torch_tensor, tt_dtype)
-#
-#    assert list(torch_tensor.size()) == tensor_shape
-#
-#    mem_config = ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED, ttl.tensor.BufferType.L1)
-#    tt_tensor = tt_tensor.to(device, mem_config, shard_spec)
-#    tt_tensor = tt_tensor.cpu().to(ttl.tensor.Layout.ROW_MAJOR)
-#
-#    torch_tensor_after_round_trip = tt_tensor.to_torch()
-#
-#    assert torch_tensor.dtype == torch_tensor_after_round_trip.dtype
-#    assert torch_tensor.shape == torch_tensor_after_round_trip.shape
-#
-#    passing = torch.allclose(torch_tensor, torch_tensor_after_round_trip)
-#    assert passing
-#
+@pytest.mark.parametrize(
+    "tt_dtype",
+    [
+        ttl.tensor.DataType.UINT32,
+        # ttl.tensor.DataType.BFLOAT16,
+    ],
+)
+@pytest.mark.parametrize(
+    "tensor_shape, shard_scheme, shard_shape",
+    [
+        ([1, 1, 98, 256], ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED, (1, 256)),
+        ([1, 1, 1, 1176], ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED, (1, 12)),
+        #        ([1, 1, 64, 64], ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED, (32, 64), None),
+    ],
+)
+def test_tensor_conversion_between_torch_and_tt_rm(tt_dtype, device, tensor_shape, shard_scheme, shard_shape):
+    dtype = tt_dtype_to_torch_dtype[tt_dtype]
+    num_pages_width = tensor_shape[2] / shard_shape[0]
+    num_pages_height = tensor_shape[3] / shard_shape[1]
+
+    # num_pages_width = 98
+    # num_pages_height = 1
+
+    shard_grid = ttl.tensor.CoreRangeSet(
+        {
+            ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 0), ttl.tensor.CoreCoord(11, 7)),
+            ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 8), ttl.tensor.CoreCoord(1, 8)),
+        }
+    )
+    # shard_shape = (1, 256)
+
+    # tensor_shape = [1, 1, 49000, 32]
+    # tensor_shape = [1, 1, 98, 256]
+    shard_orientation = ttl.tensor.ShardOrientation.ROW_MAJOR
+    shard_halo = False
+    shard_spec = ttl.tensor.ShardSpec(shard_grid, shard_shape, shard_orientation, shard_halo)
+
+    torch_tensor = None
+    for row_idx in range(0, int(num_pages_width)):
+        page_row = None
+        for col_idx in range(0, int(num_pages_height)):
+            page_idx = col_idx + num_pages_height * row_idx
+            page = torch.full((1, 1, shard_shape[0], shard_shape[1]), page_idx, dtype=dtype)
+            if page_row == None:
+                page_row = page
+            else:
+                page_row = torch.cat((page_row, page), 3)
+        if torch_tensor == None:
+            torch_tensor = page_row
+        else:
+            torch_tensor = torch.cat((torch_tensor, page_row), 2)
+    tt_tensor = ttl.tensor.Tensor(torch_tensor, tt_dtype)
+
+    assert list(torch_tensor.size()) == tensor_shape
+
+    mem_config = ttl.tensor.MemoryConfig(shard_scheme, ttl.tensor.BufferType.L1)
+    tt_tensor = tt_tensor.to(device, mem_config, shard_spec)
+    tt_tensor = tt_tensor.cpu().to(ttl.tensor.Layout.ROW_MAJOR)
+
+    torch_tensor_after_round_trip = tt_tensor.to_torch()
+
+    assert torch_tensor.dtype == torch_tensor_after_round_trip.dtype
+    assert torch_tensor.shape == torch_tensor_after_round_trip.shape
+
+    passing = torch.allclose(torch_tensor, torch_tensor_after_round_trip)
+    assert passing
