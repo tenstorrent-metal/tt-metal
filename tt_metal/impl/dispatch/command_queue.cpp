@@ -30,7 +30,6 @@ uint32_t get_noc_unicast_encoding(CoreCoord coord) { return NOC_XY_ENCODING(NOC_
 
 uint32_t align(uint32_t addr, uint32_t alignment) { return ((addr - 1) | (alignment - 1)) + 1; }
 
-
 ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     /*
         TODO(agrebenisan): Move this logic to compile program
@@ -366,7 +365,7 @@ void EnqueueReadBufferCommand::process() {
 
     this->writer.cq_reserve_back(cmd_size);
     this->writer.cq_write(cmd.get_desc().data(), DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, write_ptr);
-    this->writer.cq_push_back(cmd_size);
+    this->writer.cq_push_back(cmd_size, not HACK_METAL_GRAPH);
 }
 
 EnqueueCommandType EnqueueReadBufferCommand::type() { return this->type_; }
@@ -447,7 +446,7 @@ void EnqueueWriteBufferCommand::process() {
         this->writer.cq_write(this->src, data_size_in_bytes, system_memory_temporary_storage_address);
     }
 
-    this->writer.cq_push_back(cmd_size);
+    this->writer.cq_push_back(cmd_size, not HACK_METAL_GRAPH);
 }
 
 EnqueueCommandType EnqueueWriteBufferCommand::type() { return this->type_; }
@@ -604,7 +603,7 @@ void EnqueueProgramCommand::process() {
         }
     }
 
-    this->writer.cq_push_back(cmd_size);
+    this->writer.cq_push_back(cmd_size, not HACK_METAL_GRAPH);
 }
 
 EnqueueCommandType EnqueueProgramCommand::type() { return this->type_; }
@@ -651,7 +650,7 @@ void EnqueueWrapCommand::process() {
 
     this->writer.cq_reserve_back(space_left);
     this->writer.cq_write(command_vector.data(), command_vector.size() * sizeof(uint32_t), write_ptr);
-    this->writer.cq_push_back(space_left);
+    this->writer.cq_push_back(space_left, not HACK_METAL_GRAPH);
 }
 
 EnqueueCommandType EnqueueWrapCommand::type() { return this->type_; }

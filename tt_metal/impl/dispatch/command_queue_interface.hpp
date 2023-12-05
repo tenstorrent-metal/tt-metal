@@ -98,7 +98,7 @@ class SystemMemoryWriter {
         tt_driver_atomics::sfence();
     }
 
-    void cq_push_back(uint32_t push_size_B) {
+    void cq_push_back(uint32_t push_size_B, bool notify_device = true) {
         // All data needs to be 32B aligned
         uint32_t push_size_16B =
             (((push_size_B - 1) | 31) + 1) >> 4;  // Terse way to find next multiple of 32 in 16B words
@@ -113,6 +113,8 @@ class SystemMemoryWriter {
         }
 
         // Notify dispatch core
-        this->send_write_ptr();
+        if (notify_device) {
+            this->send_write_ptr();
+        }
     }
 };

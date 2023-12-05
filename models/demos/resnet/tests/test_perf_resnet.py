@@ -81,9 +81,10 @@ def run_perf_resnet(
 
         # enable_persistent_kernel_cache()
 
-        profiler.start(second_key)
         tt_inputs = tt_resnet50.preprocessing(inputs)
-        tt_output = tt_resnet50(tt_inputs).cpu()
+        tt_output_device = tt_resnet50(tt_inputs)
+        profiler.start(second_key)
+        tt_output = tt_output_device.cpu()
         profiler.end(second_key)
 
     first_iter_time = profiler.get(first_key)
