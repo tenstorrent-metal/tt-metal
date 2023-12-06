@@ -80,6 +80,7 @@ def run_perf_resnet(
         profiler.end(first_key)
 
         # enable_persistent_kernel_cache()
+        tt_lib.device.SetHackMetalGraph(True)
 
         tt_inputs = tt_resnet50.preprocessing(inputs)
         tt_output_device = tt_resnet50(tt_inputs)

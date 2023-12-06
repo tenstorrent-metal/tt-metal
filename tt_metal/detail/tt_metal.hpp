@@ -309,6 +309,10 @@ namespace tt::tt_metal{
             }
         }
 
+        inline void SetHackMetalGraph(bool on) {
+            HACK_METAL_GRAPH = on;
+        }
+
         inline void GenerateDeviceHeaders(Device *device,
                                           build_kernel_for_riscv_options_t *build_options,
                                           const std::string &op_path_suffix)

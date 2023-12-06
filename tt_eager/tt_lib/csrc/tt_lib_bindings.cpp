@@ -134,6 +134,10 @@ void DeviceModule(py::module &m_device) {
     m_device.def("ClearCommandQueueProgramCache", &detail::ClearCommandQueueProgramCache, R"doc(
         Deallocate the program cache saved by the command queue
     )doc");
+
+    m_device.def("SetHackMetalGraph", &detail::SetHackMetalGraph, R"doc(
+        Turn on the hack metal graph
+    )doc");
 }
 
 void ProfilerModule(py::module &m_profiler) {

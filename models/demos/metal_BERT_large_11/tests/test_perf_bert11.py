@@ -99,8 +99,8 @@ def run_perf_bert11(
         del tt_output
         enable_persistent_kernel_cache()
 
-        profiler.start(second_run_accum_key)
         # First input to device
+        # tt_lib.device.SetHackMetalGraph(True)
         tt_attention_mask = tt_attention_mask_host.to(device, model_config["OP4_SOFTMAX_ATTENTION_MASK_MEMCFG"])
         tt_embedding_inputs = {
             key: value.to(device, model_config["INPUT_EMBEDDINGS_MEMCFG"])
@@ -119,8 +119,8 @@ def run_perf_bert11(
         # Run last inference iteration
         tt_embedding = tt_model.model_embedding(**tt_embedding_inputs)
         tt_output = tt_model(tt_embedding, tt_attention_mask)
+        profiler.start(second_run_accum_key)
         tt_output = tt_output.cpu()
-
         profiler.end(second_run_accum_key, force_enable=True)
 
         del tt_attention_mask

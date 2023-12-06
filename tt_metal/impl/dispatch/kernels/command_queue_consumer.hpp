@@ -4,15 +4,12 @@
 
 #include "dataflow_api.h"
 
-static constexpr uint32_t PROGRAM_CB_ID = 0;
-
 FORCE_INLINE
 void noc_async_write_multicast_one_packet(
     uint32_t src_local_l1_addr,
     std::uint64_t dst_noc_addr_multicast,
     std::uint32_t size,
     std::uint32_t num_dests,
-    bool linked,
     uint32_t vc,
     uint32_t command_buffer) {
 
@@ -26,8 +23,7 @@ void noc_async_write_multicast_one_packet(
     DEBUG_STATUS('N', 'W', 'P', 'D');
 
     uint32_t noc_cmd_field = NOC_CMD_CPY | NOC_CMD_WR | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(vc) |
-                             (linked ? NOC_CMD_VC_LINKED : 0x0) |
-                             NOC_CMD_PATH_RESERVE | NOC_CMD_BRCST_PACKET |
+                             NOC_CMD_BRCST_PACKET |
                              NOC_CMD_RESP_MARKED;
 
     NOC_CMD_BUF_WRITE_REG(noc_index, command_buffer, NOC_CTRL, noc_cmd_field);
@@ -108,7 +104,7 @@ FORCE_INLINE void write_buffers(
             multicore_cb_wait_front(db_buf_switch, num_to_write);
             uint32_t src_addr = get_read_ptr(db_buf_switch);
             buffer.noc_async_write_buffer(src_addr, id, num_to_write, 0);
-            noc_async_write_barrier();
+            noc_async_writes_flushed();
             multicore_cb_pop_front(
                 producer_noc_encoding,
                 db_buf_switch,
@@ -116,7 +112,6 @@ FORCE_INLINE void write_buffers(
                 consumer_cb_size,
                 num_to_write,
                 page_size);
-            noc_async_write_barrier();
             id += num_to_write;
         }
     }
@@ -127,7 +122,8 @@ FORCE_INLINE void write_program_page(uint32_t page_addr, volatile tt_l1_ptr uint
     uint32_t num_transfers = command_ptr[0];
     command_ptr++;
     uint32_t src = page_addr;
-    uint32_t vc = 5;
+    uint32_t mcast_vc = 5;
+    uint32_t unicast_vc = 1;
     uint32_t command_buffer = NCRISC_WR_REG_CMD_BUF;
     for (uint32_t i = 0; i < num_transfers; i++) {
         uint32_t num_bytes = command_ptr[0];
@@ -135,30 +131,12 @@ FORCE_INLINE void write_program_page(uint32_t page_addr, volatile tt_l1_ptr uint
         uint32_t dst_noc = command_ptr[2];
         uint32_t num_recv = command_ptr[3];
         bool last_transfer_in_group = command_ptr[4];
-        bool linked = (not (last_page & last_transfer_in_group)) & command_ptr[5];
 
         uint64_t dst_noc_addr = (uint64_t(dst_noc) << 32) | dst;
         if constexpr (multicast) {
-            // uint32_t command_buffer;
-            // uint32_t vc;
-
-            // if (i & 1) {
-            //     command_buffer = NCRISC_WR_CMD_BUF;
-            //     // vc = 3;
-            // } else {
-            //     command_buffer = NCRISC_WR_REG_CMD_BUF;
-            //     // vc = 5;
-            // }
-            noc_async_write_multicast_one_packet(src, dst_noc_addr, num_bytes, num_recv, linked, vc, command_buffer);
-            // command_buffer++;
-            // if (command_buffer == 1) {
-            //     command_buffer++;
-            // }
-            // if (command_buffer == 4) {
-            //     command_buffer = 0;
-            // }
+            noc_async_write_multicast_one_packet(src, dst_noc_addr, num_bytes, num_recv, mcast_vc, command_buffer);
         } else {
-            noc_async_write_one_packet(src, dst_noc_addr, num_bytes);
+            noc_async_write_one_packet(src, dst_noc_addr, num_bytes, unicast_vc);
         }
 
         command_ptr += 6;
@@ -216,7 +194,7 @@ void write_and_launch_program(
     if (not num_pages) {
         return;
     }
-    kernel_profiler::mark_time(6);
+    // kernel_profiler::mark_time(6);
 
     // GO signals are just data within pages, so we need to set
     // our local 'recv' address value to 0 before we initiate
@@ -253,7 +231,7 @@ void write_and_launch_program(
             program_page_transfer<false>(command_ptr, producer_noc_encoding, consumer_cb_size, consumer_cb_num_pages, producer_consumer_transfer_num_pages, db_buf_switch, num_pages_in_transfer);
         }
     }
-    kernel_profiler::mark_time(7);
+    // kernel_profiler::mark_time(7);
 }
 
 FORCE_INLINE void wait_for_program_completion(

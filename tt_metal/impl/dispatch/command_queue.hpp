@@ -203,7 +203,7 @@ class CommandQueue {
     friend void ClearProgramCache(CommandQueue& cq);
 };
 
-inline bool HACK_METAL_GRAPH = true;
+inline bool HACK_METAL_GRAPH = false;
 
 
 } // namespace tt::tt_metal

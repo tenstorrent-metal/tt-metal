@@ -1089,7 +1089,7 @@ void noc_async_read_inc_num_issued(std::uint32_t num_issued_reads_inc) {
 // TODO: write docs
 // this issues only a single packet with size <= NOC_MAX_BURST_SIZE (ie maximum packet size)
 FORCE_INLINE
-void noc_async_write_one_packet(std::uint32_t src_local_l1_addr, std::uint64_t dst_noc_addr, std::uint32_t size) {
+void noc_async_write_one_packet(std::uint32_t src_local_l1_addr, std::uint64_t dst_noc_addr, std::uint32_t size, uint32_t vc) {
     DEBUG_STATUS('N', 'W', 'P', 'W');
     DEBUG_SANITIZE_WORKER_ADDR(src_local_l1_addr, size);
     DEBUG_SANITIZE_NOC_ADDR(dst_noc_addr, size);
@@ -1097,7 +1097,7 @@ void noc_async_write_one_packet(std::uint32_t src_local_l1_addr, std::uint64_t d
         ;
     DEBUG_STATUS('N', 'W', 'P', 'D');
 
-    uint32_t noc_cmd_field = NOC_CMD_CPY | NOC_CMD_WR | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(NOC_UNICAST_WRITE_VC) |
+    uint32_t noc_cmd_field = NOC_CMD_CPY | NOC_CMD_WR | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(vc) |
                              0x0 |  // (linked ? NOC_CMD_VC_LINKED : 0x0)
                              0x0 |  // (mcast ? (NOC_CMD_PATH_RESERVE | NOC_CMD_BRCST_PACKET) : 0x0)
                              NOC_CMD_RESP_MARKED;
