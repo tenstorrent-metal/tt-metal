@@ -38,24 +38,28 @@ def closestNumber(n, m):
 
 
 def generate_rest_random_shapes(max_product):
-    while True:
-        x, y = random.sample(range(1, max_product), 2)
-        z = random.choice([num for num in range(2, max_product) if num % 2 == 0])
-        if x * y * z <= max_product:
-            return [x, y, z]
+    logger.info(max_product)
+    # For row major last dim has to be divisible by 2
+    z = random.choice([num for num in range(2, max_product + 1) if num % 2 == 0])
+    max_product = math.floor(max_product / z)
+    print(max_product)
+    if max_product > 1:
+        x, y = random.sample(range(1, max_product + 1), 2)
+    else:
+        x, y = 1, 1
+
+    return [x, y, z]
 
 
 def select_random_input_shapes(max_dim, max_volume, max_dim_position):
     shapes = []
-    rest_max_volume = closestNumber(math.floor(max_volume / max_dim), 2)
-    # print(rest_max_volume)
-    # print(max_dim)
+    rest_max_volume = closestNumber(math.floor(max_volume / (0.8 * max_dim)), 2)
+    logger.info(rest_max_volume)
 
     for i in range(10):
         x, y, z = generate_rest_random_shapes(rest_max_volume)
-        random_max_dim = random.randint(int(0.5 * max_dim), max_dim + 1)
-        # print(int(0.8*max_dim))
-        # print(random_max_dim)
+        random_max_dim = random.randint(int(0.7 * max_dim), int(0.8 * max_dim))
+        print(random_max_dim)
         my_list = [x, y, z]
         my_list.insert(max_dim_position, random_max_dim)
 
@@ -102,9 +106,11 @@ def run_op_test(input_shape_1, input_shape_2, dtype, dlayout, in_mem_config, out
 
 
 test_sweep_args = []
-input_shapes = select_random_input_shapes(1376576, 59651228, 0)
+input_shapes = select_random_input_shapes(1376576, 59651228, 0)  # 2753152
 lowest = -100
 highest = 100
+# input_shapes = [[input_shape[0], input_shape[1], input_shape[2]*2, input_shape[3]] for input_shape in input_shapes]
+logger.info(input_shapes)
 
 for input_shape in input_shapes:
     test_sweep_args.append(
