@@ -22,6 +22,7 @@
 #include "hostdevcommon/common_values.hpp"
 #include "risc_attribs.h"
 #include "third_party/umd/device/tt_silicon_driver_common.hpp"
+#include "tt_metal/tools/profiler/kernel_profiler.hpp"
 
 extern uint8_t noc_index;
 
@@ -1054,35 +1055,36 @@ void noc_async_read_inc_num_issued(std::uint32_t num_issued_reads_inc) {
     noc_reads_num_issued[noc_index] += num_issued_reads_inc;
 }
 
-FORCE_INLINE
-void noc_async_write_multicast_one_packet(
-    uint32_t src_local_l1_addr,
-    std::uint64_t dst_noc_addr_multicast,
-    std::uint32_t size,
-    std::uint32_t num_dests,
-    bool linked = false) {
+// FORCE_INLINE
+// void noc_async_write_multicast_one_packet(
+//     uint32_t src_local_l1_addr,
+//     std::uint64_t dst_noc_addr_multicast,
+//     std::uint32_t size,
+//     std::uint32_t num_dests,
+//     bool linked = false) {
 
-    DEBUG_STATUS('N', 'W', 'P', 'W');
-    DEBUG_SANITIZE_WORKER_ADDR(src_local_l1_addr, size);
-    DEBUG_SANITIZE_NOC_ADDR(dst_noc_addr, size);
-    while (!ncrisc_noc_fast_write_ok(noc_index, NCRISC_WR_REG_CMD_BUF))
-        ;
-    DEBUG_STATUS('N', 'W', 'P', 'D');
+//     DEBUG_STATUS('N', 'W', 'P', 'W');
+//     DEBUG_SANITIZE_WORKER_ADDR(src_local_l1_addr, size);
+//     DEBUG_SANITIZE_NOC_ADDR(dst_noc_addr, size);
 
-    uint32_t noc_cmd_field = NOC_CMD_CPY | NOC_CMD_WR | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(NOC_MULTICAST_WRITE_VC) |
-                             (linked ? NOC_CMD_VC_LINKED : 0x0) |
-                             NOC_CMD_PATH_RESERVE | NOC_CMD_BRCST_PACKET |
-                             NOC_CMD_RESP_MARKED;
+//     while (!ncrisc_noc_fast_write_ok(noc_index, NCRISC_WR_REG_CMD_BUF))
+//         ;
+//     DEBUG_STATUS('N', 'W', 'P', 'D');
 
-    NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_CTRL, noc_cmd_field);
-    NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_TARG_ADDR_LO, src_local_l1_addr);
-    NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_RET_ADDR_LO, (uint32_t)dst_noc_addr_multicast);
-    NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_RET_ADDR_MID, dst_noc_addr_multicast >> 32);
-    NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_AT_LEN_BE, size);
-    NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_CMD_CTRL, NOC_CTRL_SEND_REQ);
-    noc_nonposted_writes_num_issued[noc_index] += 1;
-    noc_nonposted_writes_acked[noc_index] += num_dests;
-}
+//     uint32_t noc_cmd_field = NOC_CMD_CPY | NOC_CMD_WR | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(NOC_MULTICAST_WRITE_VC) |
+//                              (linked ? NOC_CMD_VC_LINKED : 0x0) |
+//                              NOC_CMD_PATH_RESERVE | NOC_CMD_BRCST_PACKET |
+//                              NOC_CMD_RESP_MARKED;
+
+//     NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_CTRL, noc_cmd_field);
+//     NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_TARG_ADDR_LO, src_local_l1_addr);
+//     NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_RET_ADDR_LO, (uint32_t)dst_noc_addr_multicast);
+//     NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_RET_ADDR_MID, dst_noc_addr_multicast >> 32);
+//     NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_AT_LEN_BE, size);
+//     NOC_CMD_BUF_WRITE_REG(noc_index, NCRISC_WR_REG_CMD_BUF, NOC_CMD_CTRL, NOC_CTRL_SEND_REQ);
+//     noc_nonposted_writes_num_issued[noc_index] += 1;
+//     noc_nonposted_writes_acked[noc_index] += num_dests;
+// }
 
 // TODO: write docs
 // this issues only a single packet with size <= NOC_MAX_BURST_SIZE (ie maximum packet size)
@@ -1207,7 +1209,7 @@ void noc_semaphore_set_remote(std::uint32_t src_local_l1_addr, std::uint64_t dst
     DEBUG_SANITIZE_WORKER_ADDR(src_local_l1_addr, 4);
     ncrisc_noc_fast_write_any_len(
         noc_index,
-        NCRISC_WR_REG_CMD_BUF,
+        NCRISC_WR_CMD_BUF,
         src_local_l1_addr,
         dst_noc_addr,
         4 /* size in bytes */,
@@ -1366,6 +1368,14 @@ FORCE_INLINE
 void noc_async_write_barrier() {
     DEBUG_STATUS('N', 'W', 'B', 'W');
     while (!ncrisc_noc_nonposted_writes_flushed(noc_index))
+        ;
+    DEBUG_STATUS('N', 'W', 'B', 'D');
+}
+
+FORCE_INLINE
+void noc_async_writes_flushed() {
+    DEBUG_STATUS('N', 'W', 'B', 'W');
+    while (!ncrisc_noc_nonposted_writes_sent(noc_index))
         ;
     DEBUG_STATUS('N', 'W', 'B', 'D');
 }

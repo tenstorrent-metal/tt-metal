@@ -7,6 +7,41 @@
 static constexpr uint32_t PROGRAM_CB_ID = 0;
 
 FORCE_INLINE
+void noc_async_write_multicast_one_packet(
+    uint32_t src_local_l1_addr,
+    std::uint64_t dst_noc_addr_multicast,
+    std::uint32_t size,
+    std::uint32_t num_dests,
+    bool linked,
+    uint32_t vc,
+    uint32_t command_buffer) {
+
+    DEBUG_STATUS('N', 'W', 'P', 'W');
+    DEBUG_SANITIZE_WORKER_ADDR(src_local_l1_addr, size);
+    DEBUG_SANITIZE_NOC_ADDR(dst_noc_addr, size);
+    // kernel_profiler::mark_time(10);
+    while (!ncrisc_noc_fast_write_ok(noc_index, command_buffer))
+        ;
+    // kernel_profiler::mark_time(11);
+    DEBUG_STATUS('N', 'W', 'P', 'D');
+
+    uint32_t noc_cmd_field = NOC_CMD_CPY | NOC_CMD_WR | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(vc) |
+                             (linked ? NOC_CMD_VC_LINKED : 0x0) |
+                             NOC_CMD_PATH_RESERVE | NOC_CMD_BRCST_PACKET |
+                             NOC_CMD_RESP_MARKED;
+
+    NOC_CMD_BUF_WRITE_REG(noc_index, command_buffer, NOC_CTRL, noc_cmd_field);
+    NOC_CMD_BUF_WRITE_REG(noc_index, command_buffer, NOC_TARG_ADDR_LO, src_local_l1_addr);
+    NOC_CMD_BUF_WRITE_REG(noc_index, command_buffer, NOC_RET_ADDR_LO, (uint32_t)dst_noc_addr_multicast);
+    NOC_CMD_BUF_WRITE_REG(noc_index, command_buffer, NOC_RET_ADDR_MID, dst_noc_addr_multicast >> 32);
+    NOC_CMD_BUF_WRITE_REG(noc_index, command_buffer, NOC_AT_LEN_BE, size);
+    NOC_CMD_BUF_WRITE_REG(noc_index, command_buffer, NOC_CMD_CTRL, NOC_CTRL_SEND_REQ);
+    noc_nonposted_writes_num_issued[noc_index] += 1;
+    noc_nonposted_writes_acked[noc_index] += num_dests;
+}
+
+
+FORCE_INLINE
 void multicore_cb_wait_front(bool db_buf_switch, int32_t num_pages) {
     DEBUG_STATUS('C', 'R', 'B', 'W');
 
@@ -92,8 +127,8 @@ FORCE_INLINE void write_program_page(uint32_t page_addr, volatile tt_l1_ptr uint
     uint32_t num_transfers = command_ptr[0];
     command_ptr++;
     uint32_t src = page_addr;
-    kernel_profiler::mark_time(90);
-    kernel_profiler::mark_time(num_transfers);
+    uint32_t vc = 5;
+    uint32_t command_buffer = NCRISC_WR_REG_CMD_BUF;
     for (uint32_t i = 0; i < num_transfers; i++) {
         uint32_t num_bytes = command_ptr[0];
         uint32_t dst = command_ptr[1];
@@ -103,25 +138,34 @@ FORCE_INLINE void write_program_page(uint32_t page_addr, volatile tt_l1_ptr uint
         bool linked = (not (last_page & last_transfer_in_group)) & command_ptr[5];
 
         uint64_t dst_noc_addr = (uint64_t(dst_noc) << 32) | dst;
-        // if (i == 0) {
-        //     kernel_profiler::mark_time(num_bytes);
-        // }
         if constexpr (multicast) {
-            noc_async_write_multicast_one_packet(src, dst_noc_addr, num_bytes, num_recv, linked);
+            // uint32_t command_buffer;
+            // uint32_t vc;
+
+            // if (i & 1) {
+            //     command_buffer = NCRISC_WR_CMD_BUF;
+            //     // vc = 3;
+            // } else {
+            //     command_buffer = NCRISC_WR_REG_CMD_BUF;
+            //     // vc = 5;
+            // }
+            noc_async_write_multicast_one_packet(src, dst_noc_addr, num_bytes, num_recv, linked, vc, command_buffer);
+            // command_buffer++;
+            // if (command_buffer == 1) {
+            //     command_buffer++;
+            // }
+            // if (command_buffer == 4) {
+            //     command_buffer = 0;
+            // }
         } else {
             noc_async_write_one_packet(src, dst_noc_addr, num_bytes);
         }
-        // if (i == 0) {
-        //     kernel_profiler::mark_time(multicast + 8);
-        // }
 
         command_ptr += 6;
         if (last_transfer_in_group) {
             src = align(src + num_bytes, 16);
         }
     }
-    kernel_profiler::mark_time(num_transfers + 1);
-    kernel_profiler::mark_time(91);
 }
 
 template <bool multicast>
@@ -139,12 +183,15 @@ FORCE_INLINE void program_page_transfer(
         uint32_t num_to_write = min(num_pages_in_transfer - page_idx, producer_consumer_transfer_num_pages);
         multicore_cb_wait_front(db_buf_switch, num_to_write);
         uint32_t src_addr = get_read_ptr(db_buf_switch);
-        for (uint32_t i = 0; i < num_to_write; i++) {
-            write_program_page<multicast>(src_addr, command_ptr, i == num_to_write - 1);
+        // kernel_profiler::mark_time(8);
+        for (uint32_t i = 0; i < num_to_write - 1; i++) {
+            write_program_page<multicast>(src_addr, command_ptr, false);
             src_addr += DeviceCommand::PROGRAM_PAGE_SIZE;
         }
+        write_program_page<multicast>(src_addr, command_ptr, true);
+        // kernel_profiler::mark_time(9);
         page_idx += num_to_write;
-        noc_async_write_barrier();
+        noc_async_writes_flushed();
         multicore_cb_pop_front(
             producer_noc_encoding,
             db_buf_switch,
@@ -152,7 +199,6 @@ FORCE_INLINE void program_page_transfer(
             consumer_cb_size,
             num_to_write,
             DeviceCommand::PROGRAM_PAGE_SIZE);
-        // noc_async_write_barrier();  // Flush barrier, not an ack barrier
     }
 }
 
@@ -170,7 +216,7 @@ void write_and_launch_program(
     if (not num_pages) {
         return;
     }
-    // kernel_profiler::mark_time(6);
+    kernel_profiler::mark_time(6);
 
     // GO signals are just data within pages, so we need to set
     // our local 'recv' address value to 0 before we initiate
@@ -207,7 +253,7 @@ void write_and_launch_program(
             program_page_transfer<false>(command_ptr, producer_noc_encoding, consumer_cb_size, consumer_cb_num_pages, producer_consumer_transfer_num_pages, db_buf_switch, num_pages_in_transfer);
         }
     }
-    // kernel_profiler::mark_time(7);
+    kernel_profiler::mark_time(7);
 }
 
 FORCE_INLINE void wait_for_program_completion(
