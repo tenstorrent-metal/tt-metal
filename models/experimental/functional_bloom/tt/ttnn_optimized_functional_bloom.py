@@ -286,10 +286,14 @@ def bloom_for_causal_lm(input_ids, alibi, casual_mask, parameters, num_heads):
     hidden_states = bloom(input_ids, alibi, casual_mask, parameters, num_heads)
 
     # Unfortuntely we do not have the ability to handle large tensors yet. So running final matmul ising torch is a workaround.
-    hidden_states = ttnn.from_device(hidden_states)
-    hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
-    hidden_states = ttnn.to_torch(hidden_states).to(torch.float32)
     output = hidden_states @ parameters.lm_head.weight
+    ttnn.deallocate(hidden_states)
+    output = ttnn.reallocate(output)
+
+    assert output.layout == ttnn.TILE_LAYOUT
+    output = ttnn.from_device(output)
+    output = ttnn.to_layout(output, ttnn.ROW_MAJOR_LAYOUT)
+    output = ttnn.to_torch(output)
 
     return output
 

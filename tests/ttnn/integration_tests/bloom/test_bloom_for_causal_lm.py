@@ -116,7 +116,6 @@ def test_ttnn_bloom_for_causal_lm(device, batch_size=8):
         initialize_model=lambda: BloomForCausalLM.from_pretrained(model_name).eval(),
         device=device,
         custom_preprocessor=ttnn_optimized_functional_bloom.custom_preprocessor,
-        convert_to_ttnn=lambda model, name: name != "lm_head",
     )
 
     # Initialize logits processor based on the model's configuration
