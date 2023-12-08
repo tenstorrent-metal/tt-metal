@@ -25,31 +25,8 @@ namespace tt {
 
 namespace tt_metal {
 
-Tensor::Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout)
-    : storage_(storage), shape_(shape), dtype_(dtype), layout_(layout), shard_spec_(std::nullopt) {
-    std::visit(
-        [&] (auto&& storage) {
-            using StorageType = std::decay_t<decltype(storage)>;
-            if constexpr (std::is_same_v<StorageType, OwnedStorage>) {
-                // do nothing
-            }
-            else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
-                TT_ASSERT(storage.device != nullptr);
-                tensor_impl::validate_on_device_dtype_and_layout(storage.device, dtype, layout);
-            }
-            else if constexpr (std::is_same_v<StorageType, BorrowedStorage>) {
-                // do nothing
-            }
-            else {
-                raise_unsupported_storage<StorageType>();
-            }
-        },
-        this->storage_
-    );
-}
-
-Tensor::Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout, ShardSpec shard_spec)
-    : storage_(storage), shape_(shape), dtype_(dtype), layout_(layout), shard_spec_(std::make_optional<ShardSpec>(shard_spec)) {
+Tensor::Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout, std::optional<ShardSpec> shard_spec)
+    : storage_(storage), shape_(shape), dtype_(dtype), layout_(layout), shard_spec_(shard_spec) {
     std::visit(
         [&] (auto&& storage) {
             using StorageType = std::decay_t<decltype(storage)>;
@@ -372,19 +349,20 @@ Tensor create_sharded_device_tensor(const Shape& shape, DataType data_type, Layo
         TT_ASSERT(shard_shape[1] * tensor_impl::element_size_bytes_wrapper(data_type) % 32 == 0);
     }
 
-    shard_spec.element_size = tensor_impl::element_size_bytes_wrapper(data_type);
-    shard_spec.page_shape = tensor_impl::get_sharded_page_shape(layout, shape, data_type, shard_spec.num_cores(), shard_spec.shard_shape);
-    shard_spec.tensor2d_size = {shape[0]*shape[1] * shape[2]/ shard_spec.page_shape.value()[0],
-                                                shape[3]/shard_spec.page_shape.value()[1]
+    auto element_size = tensor_impl::element_size_bytes_wrapper(data_type);
+    auto page_shape = tensor_impl::get_sharded_page_shape(layout, shape, data_type, shard_spec.num_cores(), shard_spec.shard_shape);
+    std::array<uint32_t,2> tensor2d_size = {shape[0]*shape[1] * shape[2]/page_shape[0],
+                                                shape[3]/page_shape[1]
                                             };
 
-    uint32_t shard_size = shard_shape[0] * shard_shape[1] * shard_spec.element_size.value();
+    ShardSpecBuffer shard_spec_buffer(shard_spec, page_shape, tensor2d_size);
+    uint32_t shard_size = shard_shape[0] * shard_shape[1] * element_size;
     if(layout == Layout::TILE)
         shard_size = tensor_impl::packed_buffer_size_bytes_wrapper(data_type, compute_buffer_size(Shape({shard_shape[0], shard_shape[1]}), data_type));
     uint32_t packed_size_in_bytes = shard_size * num_cores;
     auto device_buffer = tensor_impl::allocate_buffer_on_device(packed_size_in_bytes, device, shape,
                                                             data_type, layout, memory_config,
-                                                            std::make_optional<ShardSpec>(shard_spec)
+                                                            std::make_optional<ShardSpecBuffer>(shard_spec_buffer)
                                                             );
     return Tensor(DeviceStorage{device_buffer, device, memory_config}, shape, data_type, layout, shard_spec);
 }

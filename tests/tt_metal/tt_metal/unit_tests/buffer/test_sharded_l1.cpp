@@ -33,25 +33,26 @@ struct L1Config {
     uint32_t page_size_bytes = tt::constants::TILE_HW * element_size;
     tt::DataFormat l1_data_format = tt::DataFormat::Float16_b;
     TensorMemoryLayout buffer_layout = TensorMemoryLayout::HEIGHT_SHARDED;
-    std::optional<ShardSpec> shard_spec = ShardSpec{CoreRangeSet(
-                            std::set<CoreRange>(
-                                    {
-                                        CoreRange(CoreCoord(0, 0),
-                                        CoreCoord(0, num_cores_height * num_cores_width - 1))
-                                    })
-                            ),
-                            std::array<uint32_t, 2>{{(uint32_t)num_tiles_per_core_height * tt::constants::TILE_HEIGHT,
-                                                    (uint32_t)num_tiles_per_core_width * tt::constants::TILE_HEIGHT}},
-                            ShardOrientation::ROW_MAJOR,
-                            false,
-                            std::make_optional<uint32_t>(element_size),
-                            std::make_optional<std::array<uint32_t, 2> >
-                                (std::array<uint32_t, 2>{{num_cores_height * num_tiles_per_core_height,
-                                                            num_cores_width * num_tiles_per_core_width
-                                                            }
-                                                        }
-                                )
-                            };
+
+    bool sharded = true;
+    std::optional<ShardSpecBuffer> shard_spec() const{
+        if(sharded){
+            return std::make_optional<ShardSpecBuffer>(ShardSpecBuffer(
+                        CoreRangeSet(std::set<CoreRange>(
+                            { CoreRange(CoreCoord(0,0), CoreCoord(0, num_cores_height*num_cores_width - 1))}
+                            )),
+                        {(uint32_t)num_tiles_per_core_height * tt::constants::TILE_HEIGHT,
+                            (uint32_t)num_tiles_per_core_width * tt::constants::TILE_WIDTH},
+                        ShardOrientation::ROW_MAJOR,
+                        false,
+                        {tt::constants::TILE_HEIGHT, tt::constants::TILE_WIDTH},
+                        {1* num_cores_height * num_tiles_per_core_height * num_cores_height,
+                            num_tiles_per_core_width * tt::constants::TILE_WIDTH}));
+        }
+        else{
+            return std::nullopt;
+        }
+    }
 };
 
 namespace local_test_functions {
@@ -70,7 +71,7 @@ bool l1_buffer_read_write(Device* device, const L1Config& test_config) {
                                 test_config.page_size_bytes,
                                 BufferType::L1,
                                 test_config.buffer_layout,
-                                test_config.shard_spec);
+                                test_config.shard_spec());
 
 
     auto input = tt::test_utils::generate_uniform_random_vector<uint32_t>(0, 100, test_config.size_bytes / sizeof(uint32_t));
@@ -107,7 +108,7 @@ TEST_F(DeviceFixture, TestInterleavedReadWrite)
     for (unsigned int id = 0; id < num_devices_; id++) {
         L1Config test_config;
         test_config.buffer_layout = TensorMemoryLayout::INTERLEAVED;
-        test_config.shard_spec = std::nullopt;
+        test_config.sharded = false;
         EXPECT_TRUE(local_test_functions::l1_buffer_read_write(this->devices_.at(id), test_config));
     }
 

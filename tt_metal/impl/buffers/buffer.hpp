@@ -44,48 +44,47 @@ enum class ShardOrientation {
 struct ShardSpec {
     CoreRangeSet shard_grid;
     std::array<uint32_t, 2> shard_shape;
-    ShardOrientation shard_orientation;
+    ShardOrientation shard_orientation = ShardOrientation::ROW_MAJOR;
     bool halo = false;
-    std::optional< std::array<uint32_t, 2> > page_shape;
-    std::optional<uint32_t> element_size;
-    std::optional< std::array<uint32_t, 2 > > tensor2d_size;
-
 
     ShardSpec(const CoreRangeSet & core_sets_,
-                const std::array<uint32_t,2> & shard_shape_,
-                const ShardOrientation & shard_orientation_,
-                const bool & halo_):
-                shard_grid(core_sets_), shard_shape(shard_shape_),
-                shard_orientation(shard_orientation_), halo(halo_),
-                element_size(std::nullopt),
-                tensor2d_size(std::nullopt){;}
-    ShardSpec(const CoreRangeSet & core_sets_,
-                const std::array<uint32_t,2> & shard_shape_,
-                const ShardOrientation & shard_orientation_):
-                shard_grid(core_sets_), shard_shape(shard_shape_),
-                shard_orientation(shard_orientation_), halo(false),
-                element_size(std::nullopt),
-                tensor2d_size(std::nullopt){;}
-    ShardSpec(const CoreRangeSet & core_sets_,
-                const std::array<uint32_t,2> & shard_shape_):
-                shard_grid(core_sets_), shard_shape(shard_shape_),
-                shard_orientation(ShardOrientation::ROW_MAJOR), halo(false),
-                element_size(std::nullopt),
-                tensor2d_size(std::nullopt){;}
-    ShardSpec(const CoreRangeSet & core_sets_,
-                const std::array<uint32_t,2> & shard_shape_,
-                const ShardOrientation & shard_orientation_,
-                const bool & halo_,
-                const std::optional<uint32_t> & element_size_,
-                const std::optional<std::array<uint32_t,2> > & tensor2d_size_
-                ):
-                shard_grid(core_sets_), shard_shape(shard_shape_),
-                shard_orientation(shard_orientation_), halo(false),
-                element_size(element_size_),
-                tensor2d_size(tensor2d_size_){;}
+                    const std::array<uint32_t,2> & shard_shape_,
+                    const ShardOrientation & shard_orientation_ = ShardOrientation::ROW_MAJOR,
+                    const bool & halo_ = false):
+                    shard_grid(core_sets_), shard_shape(shard_shape_),
+                    shard_orientation(shard_orientation_), halo(halo_)
+                    {;}
+
     const uint32_t num_cores() const { return this->shard_grid.num_cores(); }
     const uint32_t numel() const { return this->shard_shape[0] * this->shard_shape[1]; }
     tt::stl::reflection::Attributes attributes() const;
+
+};
+
+
+struct ShardSpecBuffer:  ShardSpec {
+    std::array<uint32_t, 2> page_shape;
+    std::array<uint32_t, 2 > tensor2d_size;
+    ShardSpecBuffer(const CoreRangeSet & core_sets_,
+                const std::array<uint32_t,2> & shard_shape_,
+                const ShardOrientation & shard_orientation_,
+                const bool & halo_,
+                const std::array<uint32_t, 2> & page_shape,
+                const std::array<uint32_t, 2> & tensor2d_shape
+                ): ShardSpec(core_sets_, shard_shape_, shard_orientation_, halo_)
+                {
+                    this->page_shape = page_shape;
+                    this-> tensor2d_size = tensor2d_shape;
+                }
+    ShardSpecBuffer(
+            const ShardSpec & shard_spec,
+            const std::array<uint32_t, 2> & page_shape,
+            const std::array<uint32_t, 2> & tensor2d_shape
+            ): ShardSpec(shard_spec)
+            {
+                this->page_shape = page_shape;
+                this-> tensor2d_size = tensor2d_shape;
+            }
 };
 
 
@@ -96,7 +95,7 @@ class Buffer {
 
     Buffer(Device *device, uint64_t size, uint64_t page_size, const BufferType buffer_type,
         const TensorMemoryLayout buffer_layout=TensorMemoryLayout::INTERLEAVED,
-        std::optional<ShardSpec> shard_parameter = std::nullopt);
+        std::optional<ShardSpecBuffer> shard_parameter = std::nullopt);
 
     Buffer(const Buffer &other);
     Buffer& operator=(const Buffer &other);
@@ -156,7 +155,7 @@ class Buffer {
 
     std::array<uint32_t, 2> page_shape() const {
         TT_ASSERT(is_sharded(this->buffer_layout_) , "Buffer not sharded");
-        return {shard_parameters_.value().page_shape.value()[0], shard_parameters_.value().page_shape.value()[1]};
+        return {shard_parameters_.value().page_shape[0], shard_parameters_.value().page_shape[1]};
     }
 
 
@@ -169,7 +168,7 @@ class Buffer {
 
     std::array<uint32_t, 2> tensor2d_size() const {
         TT_ASSERT(is_sharded(this->buffer_layout_) , "Buffer not sharded");
-        return {shard_parameters_.value().tensor2d_size.value()[0], shard_parameters_.value().tensor2d_size.value()[1]};
+        return {shard_parameters_.value().tensor2d_size[0], shard_parameters_.value().tensor2d_size[1]};
     }
 
 
@@ -262,7 +261,7 @@ class Buffer {
     uint64_t page_size_;            // Size of unit being interleaved. For non-interleaved buffers: size == page_size
     BufferType buffer_type_;
     TensorMemoryLayout buffer_layout_;
-    std::optional<ShardSpec> shard_parameters_;
+    std::optional<ShardSpecBuffer> shard_parameters_;
     std::vector< CoreCoord> all_cores_;
     std::vector< uint32_t> core_bank_indices_;
     std::vector< std::vector<uint32_t> > core_host_page_indices_;

@@ -922,8 +922,8 @@ void convert_interleaved_to_sharded_on_host(const void * host, const int num_pag
     // std::cout << "PAGE SIZE: " << page_size << ", NUM PAGES: " << num_pages << std::endl;
     const uint32_t size_in_bytes = num_pages * page_size;
 
-    std::vector<char> temp_array(size_in_bytes);
-    memcpy((char *)temp_array.data(), (char*)host, size_in_bytes);
+    void * temp = malloc(size_in_bytes);
+    memcpy(temp, host, size_in_bytes);
 
     const void * dst = host;
     std::set<uint32_t> pages_seen;
@@ -935,19 +935,22 @@ void convert_interleaved_to_sharded_on_host(const void * host, const int num_pag
         // Can this not be determined prior?
         TT_ASSERT(pages_seen.count(dev_page_id) == 0);
         pages_seen.insert(dev_page_id);
+
+        TT_ASSERT(dev_page_id < num_pages && dev_page_id >= 0);
         if (read) {
             memcpy((char* )dst + dev_page_id*page_size,
-                temp_array.data() + host_page_id*page_size,
+                (char *)temp + host_page_id*page_size,
                 page_size
                 );
         }
         else {
             memcpy((char* )dst + host_page_id*page_size,
-                temp_array.data() + dev_page_id*page_size,
+                (char *)temp + dev_page_id*page_size,
                 page_size
                 );
         }
     }
+    free(temp);
 }
 
 void CommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blocking) {

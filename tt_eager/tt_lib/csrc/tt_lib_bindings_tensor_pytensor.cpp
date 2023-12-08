@@ -499,9 +499,9 @@ Tensor convert_torch_tensor_to_tt_tensor(
                     +---------------+---------------+
                     | arg3          | layout        |
                     +---------------+---------------+
-                    | arg3          | device        |
+                    | arg4          | device        |
                     +---------------+---------------+
-                    | arg3          | mem_config    |
+                    | arg5          | mem_config    |
                     +---------------+---------------+
 
                     Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B (in TILE layout) are supported on device.

@@ -23,7 +23,7 @@ bool is_sharded(const TensorMemoryLayout & layout){
 }
 
 
-void validate_buffer_size_and_page_size(uint64_t size, uint64_t page_size, const BufferType &buffer_type, const TensorMemoryLayout &buffer_layout, std::optional<ShardSpec > shard_parameters) {
+void validate_buffer_size_and_page_size(uint64_t size, uint64_t page_size, const BufferType &buffer_type, const TensorMemoryLayout &buffer_layout, std::optional<ShardSpecBuffer> shard_parameters) {
     TT_FATAL(size != 0 and page_size != 0, "Buffer size and page size should be larger than 0 bytes!");
     bool valid_page_size = (size % page_size == 0);
     TT_FATAL(valid_page_size, "For valid non-interleaved buffers page size {} must equal buffer size {}. For interleaved-buffers page size should be divisible by buffer size", page_size, size);
@@ -33,19 +33,6 @@ void validate_buffer_size_and_page_size(uint64_t size, uint64_t page_size, const
     }
     else if(is_sharded(buffer_layout)){
         TT_ASSERT(shard_parameters != std::nullopt , "Sharded buffers must have a core grid assigned");
-        TT_ASSERT(shard_parameters.value().element_size != std::nullopt, "Sharded buffers must specifiy element size");
-        TT_ASSERT(shard_parameters.value().tensor2d_size != std::nullopt, "Sharded buffers must specifiy tensor size in pages");
-//        if(buffer_layout == TensorMemoryLayout::HEIGHT_SHARDED){
-//            TT_ASSERT(shard_parameters.value().shard_shape[0] == shard_parameters.value().page_shape[0],
-//            "Height sharded buffer requires shard_shape's height to be page_height"
-//            );
-//        }
-//        else if(buffer_layout == TensorMemoryLayout::WIDTH_SHARDED){
-//            TT_ASSERT(shard_parameters.value().shard_shape[1] == shard_parameters.value().page_shape[1],
-//            "Width sharded buffer requires shard_shape's width to be page_width"
-//            );
-//        }
-
     }
 }
 
@@ -160,7 +147,7 @@ void Buffer::log_shard_info() const {
 
 Buffer::Buffer(Device *device, uint64_t size, uint64_t page_size, const BufferType buffer_type,
                 const TensorMemoryLayout buffer_layout,
-                std::optional< ShardSpec> shard_parameters
+                std::optional< ShardSpecBuffer> shard_parameters
                 )
     : device_(device), size_(size), page_size_(page_size), buffer_type_(buffer_type), buffer_layout_(buffer_layout), shard_parameters_(shard_parameters) {
     TT_FATAL(this->device_ != nullptr and this->device_->allocator_ != nullptr);

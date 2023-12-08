@@ -29,8 +29,7 @@ class Tensor {
         // ======================================================================================
         //                                  Hi Level APIs
         // ======================================================================================
-        Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout);
-        Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout, ShardSpec shard_spec);
+        Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layout layout, std::optional<ShardSpec> shard_spec = std::nullopt);
 
         Tensor(const Tensor &other) = default;
         Tensor& operator=(const Tensor &other) = default;

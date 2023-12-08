@@ -184,7 +184,7 @@ uint32_t CreateSemaphore(Program &program, const std::variant<CoreRange,CoreRang
 *  | buffer_layout   | layout, default is INTERLEAVED          | TensorMemoryLayout       |             | No       |
 *  | shard_parameter | parameters required for sharding        | std::optional<ShardSpec> |             | No       |
 */
-Buffer CreateBuffer(Device *device, std::uint64_t size, std::uint64_t page_size, const BufferType buffer_type, const TensorMemoryLayout buffer_layout = TensorMemoryLayout::INTERLEAVED, std::optional<ShardSpec> shard_parameter= std::nullopt);
+Buffer CreateBuffer(Device *device, std::uint64_t size, std::uint64_t page_size, const BufferType buffer_type, const TensorMemoryLayout buffer_layout = TensorMemoryLayout::INTERLEAVED, std::optional<ShardSpecBuffer> shard_parameter= std::nullopt);
 
 /**
 *  Deallocates buffer from device by marking its memory as free.

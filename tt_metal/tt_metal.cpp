@@ -656,7 +656,7 @@ uint32_t CreateSemaphore(Program &program, const std::variant<CoreRange,CoreRang
 
 
 Buffer CreateBuffer(Device *device, std::uint64_t size, std::uint64_t page_size, const BufferType buffer_type,
-            const TensorMemoryLayout buffer_layout, std::optional<ShardSpec> shard_parameter)
+            const TensorMemoryLayout buffer_layout, std::optional<ShardSpecBuffer> shard_parameter)
 {
     return Buffer(device, size, page_size, buffer_type, buffer_layout, shard_parameter);
 }

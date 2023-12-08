@@ -143,9 +143,9 @@ DeviceBuffer allocate_contiguous_buffer_on_device(uint32_t buffer_size_bytes, De
 
 DeviceBuffer allocate_sharded_buffer_on_device(uint32_t buffer_size_bytes, Device *device,
                                             const Shape& shape, DataType data_type, Layout layout,
-                                            std::optional<ShardSpec> shard_params,
+                                            std::optional<ShardSpecBuffer> shard_params,
                                             const MemoryConfig& memory_config) {
-    auto page_shape = get_sharded_page_shape(layout, shape, data_type, shard_params.value().num_cores(), shard_params.value().shard_shape);
+    auto page_shape = shard_params.value().page_shape;
     uint32_t size_of_element = element_size_bytes_wrapper(data_type);
     uint32_t page_size = page_shape[0] * page_shape[1] * size_of_element;
     if(layout == Layout::TILE){
@@ -164,7 +164,7 @@ DeviceBuffer allocate_sharded_buffer_on_device(uint32_t buffer_size_bytes, Devic
 
 
 
-DeviceBuffer allocate_buffer_on_device(uint32_t buffer_size_bytes, Device *device, const Shape& shape, DataType data_type, Layout layout, const MemoryConfig& memory_config, std::optional<ShardSpec> shard_spec) {
+DeviceBuffer allocate_buffer_on_device(uint32_t buffer_size_bytes, Device *device, const Shape& shape, DataType data_type, Layout layout, const MemoryConfig& memory_config, std::optional<ShardSpecBuffer> shard_spec) {
     if (memory_config.memory_layout == tt::tt_metal::TensorMemoryLayout::INTERLEAVED) {
         return detail::allocate_interleaved_buffer_on_device(buffer_size_bytes, device, shape, data_type, layout, memory_config);
     }

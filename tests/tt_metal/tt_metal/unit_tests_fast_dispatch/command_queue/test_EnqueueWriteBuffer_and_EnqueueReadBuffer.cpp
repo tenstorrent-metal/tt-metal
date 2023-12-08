@@ -26,6 +26,68 @@ struct BufferStressTestConfig {
     uint32_t num_unique_vectors;
 };
 
+class BufferStressTestConfigSharded{
+    public:
+        uint32_t seed;
+        uint32_t num_iterations = 100;
+
+        const std::array<uint32_t,2> max_num_pages_per_core;
+        const std::array<uint32_t,2> max_num_cores;
+
+        std::array<uint32_t,2> num_pages_per_core;
+        std::array<uint32_t,2> num_cores;
+        std::array<uint32_t, 2> page_shape = {32,32};
+        uint32_t element_size = 1;
+        TensorMemoryLayout mem_config = TensorMemoryLayout::HEIGHT_SHARDED;
+        ShardOrientation shard_orientation = ShardOrientation::ROW_MAJOR;
+        bool halo = false;
+
+        BufferStressTestConfigSharded(std::array<uint32_t,2> pages_per_core,
+                        std::array<uint32_t, 2> cores):
+                        max_num_pages_per_core(pages_per_core), max_num_cores(cores)
+                        {
+                            this->num_pages_per_core = pages_per_core;
+                            this->num_cores = cores;
+                        }
+
+        std::array<uint32_t, 2> tensor2d_shape(){
+            return {num_pages_per_core[0]*num_cores[0],
+                    num_pages_per_core[1]*num_cores[1]};
+        }
+
+        uint32_t num_pages(){
+            return tensor2d_shape()[0] * tensor2d_shape()[1];
+        }
+
+        std::array<uint32_t, 2> shard_shape(){
+            return {num_pages_per_core[0]*page_shape[0], num_pages_per_core[1]*page_shape[1]};
+        }
+
+        CoreRangeSet shard_grid(){
+            return CoreRangeSet(std::set<CoreRange>(
+            {
+                CoreRange(CoreCoord(0, 0),
+                CoreCoord(this->num_cores[0] -1, this->num_cores[1] - 1))
+            }));
+
+        }
+
+        ShardSpecBuffer shard_parameters(){
+            return ShardSpecBuffer(
+                        this->shard_grid(),
+                        this->shard_shape(),
+                        this->shard_orientation,
+                        this->halo,
+                        this->page_shape,
+                        this->tensor2d_shape()
+                        );
+        }
+
+        uint32_t page_size(){
+            return page_shape[0] * page_shape[1] * element_size;
+        }
+};
+
 namespace local_test_functions {
 
 vector<uint32_t> generate_arange_vector(uint32_t size_bytes) {
@@ -95,6 +157,41 @@ bool stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer(
     }
     return pass;
 }
+
+bool stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer_sharded(
+    Device* device, CommandQueue& cq, BufferStressTestConfigSharded config) {
+    srand(config.seed);
+    bool pass = true;
+
+    // first keep num_pages_per_core consistent and increase num_cores
+    for(uint32_t iteration_id = 0; iteration_id < config.num_iterations; iteration_id++){
+        uint32_t num_cores_outer = rand() % (config.max_num_cores[1]) + 1;
+
+        config.num_cores[1] = num_cores_outer;
+        auto shard_spec = config.shard_parameters();
+
+        // explore a tensor_shape , keeping inner pages constant
+        uint32_t num_pages = config.num_pages();
+
+        uint32_t buf_size = num_pages * config.page_size();
+        vector<uint32_t> src(buf_size / sizeof(uint32_t), 0);
+
+        for (uint32_t i = 0; i < src.size(); i++) {
+            src.at(i) = i;
+        }
+
+        BufferType buftype = BufferType::L1;
+
+        Buffer buf(device, buf_size, config.page_size(), buftype, config.mem_config, shard_spec);
+        EnqueueWriteBuffer(cq, buf, src, false);
+
+        vector<uint32_t> res;
+        EnqueueReadBuffer(cq, buf, res, true);
+        pass &= src == res;
+    }
+    return pass;
+}
+
 
 bool test_EnqueueWrap_on_EnqueueReadBuffer(Device* device, CommandQueue& cq, const BufferConfig& config) {
     auto [buffer, src] = EnqueueWriteBuffer_prior_to_wrap(device, cq, config);
@@ -290,6 +387,17 @@ TEST_F(CommandQueueFixture, WritesToRandomBufferTypeAndThenReads) {
         .seed = 0, .num_pages_total = 50000, .page_size = 2048, .max_num_pages_per_buffer = 16};
     EXPECT_TRUE(
         local_test_functions::stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer(this->device_, *tt::tt_metal::detail::GLOBAL_CQ, config));
+}
+
+
+TEST_F(CommandQueueFixture, ShardedBufferReadWrites) {
+    BufferStressTestConfigSharded config({2,2}, {8,2});
+    config.seed = 0;
+    config.num_iterations = 100;
+    config.element_size = 2;
+
+    EXPECT_TRUE(
+        local_test_functions::stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer_sharded(this->device_, *tt::tt_metal::detail::GLOBAL_CQ, config));
 }
 
 TEST_F(CommandQueueFixture, StressWrapTest) {
