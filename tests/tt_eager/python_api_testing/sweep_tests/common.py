@@ -169,6 +169,48 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
         method = shape_dict.get("method", "default")
         num_samples = shape_dict.get("num-samples", "all")
 
+        # Max shape sweeps test generator args
+        max_dim = shape_dict.get("max-dim", None)
+        max_dim_value = shape_dict.get("max-dim-value", None)
+
+        # Max shape sweeps test generator
+        def _gen_max_shapes_by_dim_and_args(max_dim, max_dim_value, shape_transformator):
+            max_dim_value = int(0.95 * max_dim_value)
+            max_dim_input_shapes = [
+                # Dim / 2 #int(dim_max / 2),
+                [
+                    [1, 1, 2],
+                ],
+                # Dim / 4 , int(dim_max / 4),
+                [
+                    [1, 2, 2],
+                    [2, 1, 2],
+                    [1, 1, 4],
+                ],
+                # Dim / 8 int(dim_max / 8),
+                [
+                    [2, 2, 2],
+                    [1, 2, 4],
+                    [1, 4, 2],
+                    [4, 1, 2],
+                    [2, 1, 4],
+                    [1, 1, 8],
+                ],
+            ]
+
+            [x.insert(max_dim, int(max_dim_value / 2)) for x in max_dim_input_shapes[0]]
+            [x.insert(max_dim, int(max_dim_value / 4)) for x in max_dim_input_shapes[1]]
+            [x.insert(max_dim, int(max_dim_value / 8)) for x in max_dim_input_shapes[2]]
+
+            max_dim_input_shapes = [input_shape for dim_list in max_dim_input_shapes for input_shape in dim_list]
+            logger.info(max_dim_input_shapes)
+
+            for shape in max_dim_input_shapes:
+                trsansformed_shapes = shape_transformator(shape)
+                logger.info(trsansformed_shapes)
+                for generated_test_args in _gen_args(trsansformed_shapes):
+                    yield trsansformed_shapes, datagen_funcs, generated_test_args
+
         # Helper method. Generates shapes and arguments. Used in various methods.
         def _gen_shapes_and_args(start_shape, end_shape, interval, shape_transformator):
             num_dims = len(start_shape)
@@ -218,6 +260,20 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
 
             for shapes, datagen_funcs, test_args in _gen_shapes_and_args(
                 start_shape, end_shape, interval, _default_shape_tr
+            ):
+                yield shapes, datagen_funcs, test_args
+
+        elif method == "max_shape_sweeps":
+            assert max_dim != None, "Max-dim and max-dim-value args have to be provided for max-shape sweeps to run"
+            assert (
+                max_dim_value != None
+            ), "Max-dim and max-dim-value args have to be provided for max-shape sweeps to run"
+
+            def _default_shape_tr(shape):
+                return [shape] * num_shapes
+
+            for shapes, datagen_funcs, test_args in _gen_max_shapes_by_dim_and_args(
+                max_dim, max_dim_value, _default_shape_tr
             ):
                 yield shapes, datagen_funcs, test_args
 
