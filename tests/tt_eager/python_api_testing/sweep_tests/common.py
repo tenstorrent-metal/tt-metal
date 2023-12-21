@@ -12,6 +12,8 @@ import operator
 from collections import deque
 from loguru import logger
 import time
+import copy
+
 from tests.tt_eager.python_api_testing.sweep_tests import generation_funcs
 import pytest
 
@@ -254,8 +256,6 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                 ],
             ]
             # Create list of copied test-cases for each dim
-            import copy
-
             possible_shapes_by_dim = [copy.deepcopy(max_dim_input_shapes) for x in range(len(max_dims))]
 
             for i, (max_dim, max_dim_value) in enumerate(zip(max_dims, max_dim_values), 0):
@@ -263,6 +263,64 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                 [x.insert(max_dim, int(max_dim_value / 2)) for x in possible_shapes_by_dim[i][1]]
                 [x.insert(max_dim, int(max_dim_value / 4)) for x in possible_shapes_by_dim[i][2]]
                 [x.insert(max_dim, int(max_dim_value / 8)) for x in possible_shapes_by_dim[i][3]]
+
+            # Merge all sublists into one list
+            possible_shapes_by_dim = [input_shape for x in possible_shapes_by_dim for y in x for input_shape in y]
+            logger.info(possible_shapes_by_dim)
+
+            for shape in possible_shapes_by_dim:
+                transformed_shapes = shape_transformator(shape)
+                logger.info(transformed_shapes)
+                for generated_test_args in _gen_args(transformed_shapes):
+                    yield transformed_shapes, datagen_funcs, generated_test_args
+
+        # Max shape sweeps test generator for eltwise_add tile
+        def _gen_max_shapes_for_add_and_tile(max_dims, max_dim_values, shape_transformator):
+            assert len(max_dims) == len(
+                max_dim_values
+            ), "Number of max-dims must match the number of maximum values per dim"
+
+            max_dim_values = [int(0.95 * max_dim_value) for max_dim_value in max_dim_values]
+
+            max_dim_input_shapes = [
+                # Dim / 32 #int(dim_max / 32),
+                [
+                    [1 * 32, 32, 32],
+                    [1, 32 * 32, 32],
+                    [1, 32, 32 * 32],
+                ],
+                # Dim / 64 , int(dim_max / 64),
+                [
+                    [1 * 64, 32, 32],
+                    [1, 32 * 64, 32],
+                    [1, 32, 32 * 64],
+                    [1, 32 * 2, 32 * 32],
+                    [1, 32 * 32, 32 * 2],
+                    [1 * 2, 32, 32 * 2],
+                ],
+                # Dim / 96 int(dim_max / 98),
+                [
+                    [1, 32 * 96, 32],
+                    [1, 32, 32 * 96],
+                    [1 * 96, 32, 32],
+                    [1, 32 * 32, 32 * 3],
+                    [1, 32 * 3, 32 * 32],
+                    [1 * 32, 32, 32 * 3],
+                ],
+                # Original shape no division
+                [
+                    [1, 32, 32],
+                ],
+            ]
+
+            # Merge all sublists into one list
+            possible_shapes_by_dim = [copy.deepcopy(max_dim_input_shapes) for x in range(len(max_dims))]
+
+            for i, (max_dim, max_dim_value) in enumerate(zip(max_dims, max_dim_values), 0):
+                [x.insert(max_dim, int(max_dim_value / 32)) for x in possible_shapes_by_dim[i][0]]
+                [x.insert(max_dim, int(max_dim_value / 4)) for x in possible_shapes_by_dim[i][1]]
+                [x.insert(max_dim, int(max_dim_value / 8)) for x in possible_shapes_by_dim[i][2]]
+                [x.insert(max_dim, int(max_dim_value)) for x in possible_shapes_by_dim[i][3]]
 
             # Merge all sublists into one list
             possible_shapes_by_dim = [input_shape for x in possible_shapes_by_dim for y in x for input_shape in y]
@@ -336,6 +394,20 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                 return [shape] * num_shapes
 
             for shapes, datagen_funcs, test_args in _gen_max_shapes_by_dim_and_args(
+                max_dims, max_dim_values, _default_shape_tr
+            ):
+                yield shapes, datagen_funcs, test_args
+
+        elif method == "max_shape_sweeps_tile":
+            assert max_dims != None, "Max-dim and max-dim-value args have to be provided for max-shape sweeps to run"
+            assert (
+                max_dim_values != None
+            ), "Max-dim and max-dim-value args have to be provided for max-shape sweeps to run"
+
+            def _default_shape_tr(shape):
+                return [shape] * num_shapes
+
+            for shapes, datagen_funcs, test_args in _gen_max_shapes_for_add_and_tile(
                 max_dims, max_dim_values, _default_shape_tr
             ):
                 yield shapes, datagen_funcs, test_args
