@@ -177,6 +177,10 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
         def _gen_max_shapes_by_dim_and_args(max_dim, max_dim_value, shape_transformator):
             max_dim_value = int(0.95 * max_dim_value)
             max_dim_input_shapes = [
+                # Original shape no division
+                [
+                    [1, 1, 2],
+                ],
                 # Dim / 2 #int(dim_max / 2),
                 [
                     [1, 1, 2],
@@ -197,10 +201,10 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                     [1, 1, 8],
                 ],
             ]
-
-            [x.insert(max_dim, int(max_dim_value / 2)) for x in max_dim_input_shapes[0]]
-            [x.insert(max_dim, int(max_dim_value / 4)) for x in max_dim_input_shapes[1]]
-            [x.insert(max_dim, int(max_dim_value / 8)) for x in max_dim_input_shapes[2]]
+            [x.insert(max_dim, int(max_dim_value)) for x in max_dim_input_shapes[0]]
+            [x.insert(max_dim, int(max_dim_value / 2)) for x in max_dim_input_shapes[1]]
+            [x.insert(max_dim, int(max_dim_value / 4)) for x in max_dim_input_shapes[2]]
+            [x.insert(max_dim, int(max_dim_value / 8)) for x in max_dim_input_shapes[3]]
 
             max_dim_input_shapes = [input_shape for dim_list in max_dim_input_shapes for input_shape in dim_list]
             logger.info(max_dim_input_shapes)
