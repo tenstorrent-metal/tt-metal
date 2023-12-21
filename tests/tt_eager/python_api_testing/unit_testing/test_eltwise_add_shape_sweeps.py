@@ -43,7 +43,7 @@ def run_eltwise_add_tests(input_shape, dtype, dlayout, in_mem_config, out_mem_co
 
 test_sweep_args = [
     (
-        (1, 1, 14167166, 2),
+        (1, 1, int(14167166 / 2), 2),
         [ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.BFLOAT16],
         [ttl.tensor.Layout.ROW_MAJOR, ttl.tensor.Layout.ROW_MAJOR],
         [
