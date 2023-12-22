@@ -11,7 +11,7 @@ import functools
 import operator
 from collections import deque
 from loguru import logger
-
+import time
 from tests.tt_eager.python_api_testing.sweep_tests import generation_funcs
 import pytest
 
@@ -113,6 +113,23 @@ def align_to_interval(x, start_val, interval):
     return start_val + dx
 
 
+def randomize_large_shape(shape, reduction, volume_fx):
+    max_id = shape.index(max(shape))
+    volume = volume_fx(shape)
+    new_shape = shape.copy()
+    new_shape[max_id] = int(1 * new_shape[max_id]) // reduction
+
+    while volume_fx(new_shape) < volume:
+        random_id = random.randint(0, len(shape) - 1)
+        tmp_shape = new_shape.copy()
+        tmp_shape[random_id] += 1
+        if volume_fx(tmp_shape) > volume:
+            break
+        new_shape = tmp_shape
+
+    return new_shape
+
+
 def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, test_tt_layouts, test_buffer_types):
     num_shapes = shape_dict["num-shapes"]
 
@@ -172,6 +189,35 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
         # Max shape sweeps test generator args
         max_dims = shape_dict.get("max-dims", None)
         max_dim_values = shape_dict.get("max-dim-values", None)
+
+        def _gen_large_shapes_and_args(start_shape, end_shape, shape_transformator, volume_fx):
+            num_dims = len(start_shape)
+            shapes = []
+
+            # Foreach dim
+            start_time = time.time()
+
+            for i in range(num_dims):
+                shape = start_shape.copy()
+                shape[i] = end_shape[i]
+
+                for reduction in [1, 2, 4, 8]:
+                    # Generate more samples when reduction is larger
+                    reduced_samples = pow(2, reduction - 1)
+                    logger.info(f"reduced_samples {reduced_samples}")
+
+                    for j in range(reduced_samples):
+                        shapes.append(randomize_large_shape(shape, reduction, volume_fx))
+
+            duration = time.time() - start_time
+            logger.info(f"Generated large shapes in {duration:.2f}s")
+
+            for shape in shapes:
+                input_shapes = shape_transformator(shape)
+                logger.info(f"Large input shapes {input_shapes}")
+
+                for generated_test_args in _gen_args(input_shapes):
+                    yield input_shapes, datagen_funcs, generated_test_args
 
         # Max shape sweeps test generator
         def _gen_max_shapes_by_dim_and_args(max_dims, max_dim_values, shape_transformator):
@@ -347,6 +393,24 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
 
             for shapes, datagen_funcs, test_args in _gen_shapes_and_args(
                 shape1_start, shape1_end, interval, _gen_matmul_shapes
+            ):
+                yield shapes, datagen_funcs, test_args
+
+        elif method == "matmul_max_shape_sweeps":
+            assert len(start_shape) == len(end_shape) == 5
+            assert num_shapes == 2
+
+            def _matmul_volume(shape):
+                a, b, c, d, e = shape
+                return a * b * c * d + a * b * d * e + a * b * c * e
+
+            def _gen_matmul_shapes(shape):
+                shape1 = [shape[0], shape[1], shape[2], shape[3]]
+                shape2 = [shape[0], shape[1], shape[3], shape[4]]
+                return [shape1, shape2]
+
+            for shapes, datagen_funcs, test_args in _gen_large_shapes_and_args(
+                start_shape, end_shape, _gen_matmul_shapes, _matmul_volume
             ):
                 yield shapes, datagen_funcs, test_args
 
