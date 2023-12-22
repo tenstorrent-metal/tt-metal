@@ -280,9 +280,13 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                 max_dim_values
             ), "Number of max-dims must match the number of maximum values per dim"
 
-            max_dim_values = [int(0.95 * max_dim_value) for max_dim_value in max_dim_values]
+            max_dim_values = [int(0.50 * max_dim_value) for max_dim_value in max_dim_values]
 
             max_dim_input_shapes = [
+                # Original shape no division
+                [
+                    [1, 32, 32],
+                ],
                 # Dim / 32 #int(dim_max / 32),
                 [
                     [1 * 32, 32, 32],
@@ -307,20 +311,16 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                     [1, 32 * 3, 32 * 32],
                     [1 * 32, 32, 32 * 3],
                 ],
-                # Original shape no division
-                [
-                    [1, 32, 32],
-                ],
             ]
 
             # Merge all sublists into one list
             possible_shapes_by_dim = [copy.deepcopy(max_dim_input_shapes) for x in range(len(max_dims))]
 
             for i, (max_dim, max_dim_value) in enumerate(zip(max_dims, max_dim_values), 0):
-                [x.insert(max_dim, int(max_dim_value / 32)) for x in possible_shapes_by_dim[i][0]]
-                [x.insert(max_dim, int(max_dim_value / 4)) for x in possible_shapes_by_dim[i][1]]
-                [x.insert(max_dim, int(max_dim_value / 8)) for x in possible_shapes_by_dim[i][2]]
-                [x.insert(max_dim, int(max_dim_value)) for x in possible_shapes_by_dim[i][3]]
+                [x.insert(max_dim, int(max_dim_value)) for x in possible_shapes_by_dim[i][0]]
+                [x.insert(max_dim, int(max_dim_value / 32)) for x in possible_shapes_by_dim[i][1]]
+                [x.insert(max_dim, int(max_dim_value / 64)) for x in possible_shapes_by_dim[i][2]]
+                [x.insert(max_dim, int(max_dim_value / 96)) for x in possible_shapes_by_dim[i][3]]
 
             # Merge all sublists into one list
             possible_shapes_by_dim = [input_shape for x in possible_shapes_by_dim for y in x for input_shape in y]
