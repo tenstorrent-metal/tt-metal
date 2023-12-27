@@ -32,19 +32,20 @@ struct SystemMemoryCQInterface {
     // Equation for issue fifo size is
     // | issue_fifo_wr_ptr + command size B - issue_fifo_rd_ptr |
     // Space available would just be issue_fifo_limit - issue_fifo_size
-    SystemMemoryCQInterface(uint32_t command_queue_size) : command_queue_size(command_queue_size) {
+    SystemMemoryCQInterface(uint8_t channel, uint32_t command_queue_size) : command_queue_size(command_queue_size) {
         this->command_issue_region_size = tt::round_up(command_queue_size * this->default_issue_queue_split, 32);
         this->command_completion_region_size = this->command_queue_size - this->command_issue_region_size;
 
+        uint32_t cq_offset = channel * command_queue_size;
         this->issue_fifo_size = (this->command_issue_region_size - CQ_START) >> 4;
-        this->issue_fifo_limit = (this->command_issue_region_size >> 4) - 1;
-        this->issue_fifo_wr_ptr = CQ_START >> 4;  // In 16B words
+        this->issue_fifo_limit = ((this->command_issue_region_size + cq_offset) >> 4) - 1;
+        this->issue_fifo_wr_ptr = (CQ_START + cq_offset) >> 4;  // In 16B words
         this->issue_fifo_wr_toggle =
             0;  // This is used for the edge case where we wrap and our read pointer has not yet moved
 
         this->completion_fifo_size = this->command_completion_region_size >> 4;
-        this->completion_fifo_limit = (this->command_queue_size >> 4) - 1;
-        this->completion_fifo_rd_ptr = this->command_issue_region_size >> 4; // completion region is below issue region
+        this->completion_fifo_limit = this->issue_fifo_limit + this->completion_fifo_size;
+        this->completion_fifo_rd_ptr = (this->command_issue_region_size + cq_offset) >> 4; // completion region is below issue region
         this->completion_fifo_rd_toggle = 0;
     }
 
@@ -85,16 +86,20 @@ class SystemMemoryManager {
     SystemMemoryCQInterface cq_interface;
     SystemMemoryManager(chip_id_t device_id, const std::set<CoreCoord> &dev_dispatch_cores, const std::function<CoreCoord (CoreCoord)> &worker_from_logical) :
         cq_interface(
+            tt::Cluster::instance().get_assigned_channel_for_device(device_id),
             tt::Cluster::instance().get_host_channel_size(tt::Cluster::instance().get_associated_mmio_device(device_id), tt::Cluster::instance().get_assigned_channel_for_device(device_id))),
         device_id(device_id),
         m_dma_buf_size(tt::Cluster::instance().get_m_dma_buf_size(device_id)),
         hugepage_start(
             (char*) tt::Cluster::instance().host_dma_address(0, tt::Cluster::instance().get_associated_mmio_device(device_id), tt::Cluster::instance().get_assigned_channel_for_device(device_id))),
         fast_write_callable(
-            tt::Cluster::instance().get_fast_pcie_static_tlb_write_callable(device_id)),
+            tt::Cluster::instance().get_fast_pcie_static_tlb_write_callable(tt::Cluster::instance().get_associated_mmio_device(device_id))),
         dispatch_cores(dev_dispatch_cores),
         worker_from_logical_callable(worker_from_logical) {
 
+        std::cout << "System memory cq interface for device " << this->device_id << " - hugepage start: " << this->hugepage_start << std::endl;
+
+        // these should be using the mmio device id but the dispatch cores should be remote producer and consumer
         auto dispatch_cores_iter = dispatch_cores.begin();
         const std::tuple<uint32_t, uint32_t> producer_tlb_data = tt::Cluster::instance().get_tlb_data(tt_cxy_pair(device_id, this->worker_from_logical_callable(*dispatch_cores_iter++))).value();
         auto [producer_tlb_offset, producer_tlb_size] = producer_tlb_data;
@@ -135,7 +140,6 @@ class SystemMemoryManager {
     }
 
     // Ideally, data should be an array or pointer, but vector for time-being
-    // TODO ALMEET: MEASURE THIS
     void cq_write(const void* data, uint32_t size_in_bytes, uint32_t write_ptr) const {
         // There is a 50% overhead if hugepage_start is not made static.
         // Eventually when we want to have multiple hugepages, we may need to template

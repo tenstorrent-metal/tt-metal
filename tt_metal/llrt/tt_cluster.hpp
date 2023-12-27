@@ -130,6 +130,10 @@ class Cluster {
 
     uint32_t get_tensix_soft_reset_addr() const;
 
+    bool get_is_mmio_device(chip_id_t device_id) const {
+        return this->device_to_mmio_device_.at(device_id) == device_id;
+    }
+
    private:
     Cluster();
     ~Cluster();

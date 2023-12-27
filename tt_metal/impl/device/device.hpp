@@ -161,6 +161,7 @@ class Device {
     void build_firmware();
     void initialize_firmware(CoreCoord phys_core, launch_msg_t *launch_msg);
     void initialize_and_launch_firmware();
+    void initialize_command_queue();
     void clear_l1_state();
 
     std::pair<int, int> build_processor_type_to_index(JitBuildProcessorType t) const;
