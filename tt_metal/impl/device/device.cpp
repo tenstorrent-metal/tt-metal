@@ -102,8 +102,7 @@ void Device::initialize_allocator(const std::vector<uint32_t>& l1_bank_remap) {
         const auto noc_coord = this->worker_core_from_logical_core(logical_coord);
         config.core_type_from_noc_coord_table[noc_coord] = AllocCoreType::StorageOnly;
     }
-    for (const auto& core : soc_desc.dispatch_cores) {
-        const auto logical_coord = get_core_coord_from_relative(core, this->logical_grid_size());
+    for (const auto& logical_coord : detail::get_logical_dispatch_cores(this->id_)) {
         this->dispatch_cores_.insert(logical_coord);
         const auto noc_coord = this->worker_core_from_logical_core(logical_coord);
         config.core_type_from_noc_coord_table[noc_coord] = AllocCoreType::Dispatch;
@@ -261,18 +260,12 @@ void Device::clear_l1_state() {
 }
 
 void Device::initialize_command_queue() {
-    this->sysmem_manager = std::make_unique<SystemMemoryManager>(
-        this->id_,
-        this->dispatch_cores(), // if its a remote device then dispatch cores have to be from the L device
-        [&, this](CoreCoord core) { return this->worker_core_from_logical_core(core); }
-    );
+    this->sysmem_manager = std::make_unique<SystemMemoryManager>(this->id_);
 
     chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(this->id_);
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(this->id_);
 
-    // currently hugepage is 1:1 with channel and they are all the same size
-    uint32_t hugepage_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel);
-    uint32_t cq_offset = channel * hugepage_size;
+    uint32_t cq_offset = get_cq_offset_bytes(this->id_);
 
     std::vector<uint32_t> pointers(CQ_START / sizeof(uint32_t), 0);
     pointers[HOST_CQ_ISSUE_READ_PTR / sizeof(uint32_t)] = (CQ_START + cq_offset) >> 4; // HOST_CQ_ISSUE_READ_PTR

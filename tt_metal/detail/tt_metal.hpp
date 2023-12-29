@@ -445,26 +445,41 @@ namespace tt::tt_metal{
             );
         }
 
+
+
         // Sending dispatch kernel. TODO(agrebenisan): Needs a refactor
         inline void SendDispatchKernelToDevice(Device *device, uint32_t command_issue_region_size, uint32_t command_completion_region_size) {
             ZoneScoped;
 
+            // send the issue queue interface kernel and completion queue interface kernel in pairs
+            // send the dispatch kernel --> for MMIO device there is nothing to do here
+
+            // for remote device dispatch need to create two programs: one for L chip and one for R chip
             Program dispatch_program = CreateProgram();
-            auto dispatch_cores = device->dispatch_cores().begin();
-            CoreCoord producer_logical_core = *dispatch_cores++;
-            CoreCoord consumer_logical_core = *dispatch_cores;
 
-            CoreCoord producer_physical_core = device->worker_core_from_logical_core(producer_logical_core);
-            CoreCoord consumer_physical_core = device->worker_core_from_logical_core(consumer_logical_core);
+            tt_cxy_pair issue_q_logical_location = get_logical_command_fetcher_core(device->id());
+            tt_cxy_pair completion_q_logical_location = get_logical_completion_queue_interface_core(device->id());
+            tt_cxy_pair command_dispatcher_location = get_logical_command_dispatcher_core(device->id());
 
+            bool dispatch_on_remote = (completion_q_logical_location != command_dispatcher_location);
+
+            tt_cxy_pair issue_q_physical_location = get_physical_dispatch_core(issue_q_logical_location);
+            tt_cxy_pair completion_q_physical_location = get_physical_dispatch_core(completion_q_logical_location);
+
+            CoreCoord issue_q_logical_core = CoreCoord(issue_q_logical_location.x, issue_q_logical_location.y);
+            CoreCoord completion_q_logical_core = CoreCoord(completion_q_logical_location.x, completion_q_logical_location.y);
+            CoreCoord issue_q_physical_core = CoreCoord(issue_q_physical_location.x, issue_q_physical_location.y);
+            CoreCoord completion_q_physical_core = CoreCoord(completion_q_physical_location.x, completion_q_physical_location.y);
+
+            // the consumer noc x/y is the core that issue queue relays FD packets too
             std::map<string, string> producer_defines = {
                 {"IS_DISPATCH_KERNEL", ""},
-                {"CONSUMER_NOC_X", std::to_string(consumer_physical_core.x)},
-                {"CONSUMER_NOC_Y", std::to_string(consumer_physical_core.y)},
+                {"CONSUMER_NOC_X", std::to_string(completion_q_physical_core.x)},
+                {"CONSUMER_NOC_Y", std::to_string(completion_q_physical_core.y)},
             };
             std::map<string, string> consumer_defines = {
-                {"PRODUCER_NOC_X", std::to_string(producer_physical_core.x)},
-                {"PRODUCER_NOC_Y", std::to_string(producer_physical_core.y)},
+                {"PRODUCER_NOC_X", std::to_string(issue_q_physical_core.x)},
+                {"PRODUCER_NOC_Y", std::to_string(issue_q_physical_core.y)},
             };
 
             std::vector<uint32_t> producer_compile_args = {command_issue_region_size};
@@ -473,7 +488,7 @@ namespace tt::tt_metal{
             tt::tt_metal::CreateKernel(
                 dispatch_program,
                 "tt_metal/impl/dispatch/kernels/command_queue_producer.cpp",
-                producer_logical_core,
+                issue_q_logical_core,
                 tt::tt_metal::DataMovementConfig {
                     .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
                     .noc = tt::tt_metal::NOC::RISCV_0_default,
@@ -483,39 +498,37 @@ namespace tt::tt_metal{
             tt::tt_metal::CreateKernel(
                 dispatch_program,
                 "tt_metal/impl/dispatch/kernels/command_queue_consumer.cpp",
-                consumer_logical_core,
+                completion_q_logical_core,
                 tt::tt_metal::DataMovementConfig {
                     .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
                     .noc = tt::tt_metal::NOC::RISCV_0_default,
                     .compile_args = consumer_compile_args,
                     .defines = consumer_defines});
 
-            tt::tt_metal::CreateSemaphore(dispatch_program, producer_logical_core, 2);
-            tt::tt_metal::CreateSemaphore(dispatch_program, consumer_logical_core, 0);
+            tt::tt_metal::CreateSemaphore(dispatch_program, issue_q_logical_core, 2);
+            tt::tt_metal::CreateSemaphore(dispatch_program, completion_q_logical_core, 0);
 
+            // need a handle to device 0 here ...
             detail::CompileProgram(device, dispatch_program);
             tt::tt_metal::detail::ConfigureDeviceWithProgram(device, dispatch_program);
 
             uint32_t issue_fifo_addr = CQ_START >> 4;
             vector<uint32_t> issue_fifo_addr_vector = {issue_fifo_addr};
-            tt::tt_metal::detail::WriteToDeviceL1(device, producer_logical_core, CQ_ISSUE_READ_PTR, issue_fifo_addr_vector);
-            tt::tt_metal::detail::WriteToDeviceL1(device, producer_logical_core, CQ_ISSUE_WRITE_PTR, issue_fifo_addr_vector);
+            tt::tt_metal::detail::WriteToDeviceL1(device, issue_q_logical_core, CQ_ISSUE_READ_PTR, issue_fifo_addr_vector);
+            tt::tt_metal::detail::WriteToDeviceL1(device, issue_q_logical_core, CQ_ISSUE_WRITE_PTR, issue_fifo_addr_vector);
 
             uint32_t completion_fifo_addr = command_issue_region_size >> 4;
             vector<uint32_t> completion_fifo_addr_vector = {completion_fifo_addr};
-            tt::tt_metal::detail::WriteToDeviceL1(device, consumer_logical_core, CQ_COMPLETION_WRITE_PTR, completion_fifo_addr_vector);
-            tt::tt_metal::detail::WriteToDeviceL1(device, consumer_logical_core, CQ_COMPLETION_READ_PTR, completion_fifo_addr_vector);
+            tt::tt_metal::detail::WriteToDeviceL1(device, completion_q_logical_core, CQ_COMPLETION_WRITE_PTR, completion_fifo_addr_vector);
+            tt::tt_metal::detail::WriteToDeviceL1(device, completion_q_logical_core, CQ_COMPLETION_READ_PTR, completion_fifo_addr_vector);
 
             tt::Cluster::instance().l1_barrier(device->id());
 
-            const std::tuple<uint32_t, uint32_t> tlb_data = tt::Cluster::instance().get_tlb_data(tt_cxy_pair(device->id(), device->worker_core_from_logical_core(*device->dispatch_cores().begin()))).value();
-            auto [tlb_offset, tlb_size] = tlb_data;
-
-            launch_msg_t msg = dispatch_program.kernels_on_core(producer_logical_core)->launch_msg;
+            launch_msg_t msg = dispatch_program.kernels_on_core(issue_q_logical_core)->launch_msg;
 
             // TODO(pkeller): Should use detail::LaunchProgram once we have a mechanism to avoid running all RISCs
-            tt::llrt::write_launch_msg_to_core(device->id(), producer_physical_core, &msg);
-            tt::llrt::write_launch_msg_to_core(device->id(), consumer_physical_core, &msg);
+            tt::llrt::write_launch_msg_to_core(device->id(), issue_q_physical_core, &msg);
+            tt::llrt::write_launch_msg_to_core(device->id(), completion_q_physical_core, &msg);
         }
 
     }

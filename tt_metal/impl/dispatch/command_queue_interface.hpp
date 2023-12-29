@@ -6,14 +6,24 @@
 #include "tt_metal/impl/dispatch/device_command.hpp"
 #include "tt_metal/llrt/llrt.hpp"
 #include "tt_metal/common/math.hpp"
+#include "tt_metal/detail/core_manager.hpp"
 
 using namespace tt::tt_metal;
+using namespace tt::tt_metal::detail;
+
+inline uint32_t get_cq_offset_bytes(chip_id_t chip_id) {
+    chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(chip_id);
+    uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(chip_id);
+    // Currently hugepage is 1:1 with channel and they are all the same size
+    uint32_t hugepage_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel);
+    return channel * hugepage_size;
+}
 
 inline uint32_t get_cq_issue_rd_ptr(chip_id_t chip_id) {
     uint32_t recv;
     chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(chip_id);
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(chip_id);
-    tt::Cluster::instance().read_sysmem(&recv, sizeof(uint32_t), HOST_CQ_ISSUE_READ_PTR, mmio_device_id, channel);
+    tt::Cluster::instance().read_sysmem(&recv, sizeof(uint32_t), HOST_CQ_ISSUE_READ_PTR + get_cq_offset_bytes(chip_id), mmio_device_id, channel);
     return recv;
 }
 
@@ -21,31 +31,36 @@ inline uint32_t get_cq_completion_wr_ptr(chip_id_t chip_id) {
     uint32_t recv;
     chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(chip_id);
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(chip_id);
-    tt::Cluster::instance().read_sysmem(&recv, sizeof(uint32_t), HOST_CQ_COMPLETION_WRITE_PTR, mmio_device_id, channel);
+    tt::Cluster::instance().read_sysmem(&recv, sizeof(uint32_t), HOST_CQ_COMPLETION_WRITE_PTR + get_cq_offset_bytes(chip_id), mmio_device_id, channel);
     return recv;
 }
 
 struct SystemMemoryCQInterface {
-    // CQ is split into issue and completion regions
+    // CQ is split into issue and completion regions:
+    // |<----------------------- Command Queue---------------------->|
+    // 0    CQ_START               Issue Queue size             CQ size
+    // |<--------- Issue Queue ------->|<---- Completion Queue ----->|
+    // |    |                          |                             |
+    // |    |                          |                             |
+    // [0, CQ_START) is reserved space
     // Host writes commands and data for H2D transfers in the issue region, device reads from the issue region
     // Device signals completion and writes data for D2H transfers in the completion region, host reads from the completion region
     // Equation for issue fifo size is
     // | issue_fifo_wr_ptr + command size B - issue_fifo_rd_ptr |
     // Space available would just be issue_fifo_limit - issue_fifo_size
-    SystemMemoryCQInterface(uint8_t channel, uint32_t command_queue_size) : command_queue_size(command_queue_size) {
-        this->command_issue_region_size = tt::round_up(command_queue_size * this->default_issue_queue_split, 32);
-        this->command_completion_region_size = this->command_queue_size - this->command_issue_region_size;
+    SystemMemoryCQInterface(uint32_t command_queue_size, uint32_t command_queue_offset) : command_queue_size(command_queue_size) {
+        this->command_issue_region_size = tt::round_up((command_queue_size - CQ_START) * this->default_issue_queue_split, 32);
+        this->command_completion_region_size = (command_queue_size - CQ_START) - this->command_issue_region_size;
 
-        uint32_t cq_offset = channel * command_queue_size;
-        this->issue_fifo_size = (this->command_issue_region_size - CQ_START) >> 4;
-        this->issue_fifo_limit = ((this->command_issue_region_size + cq_offset) >> 4) - 1;
-        this->issue_fifo_wr_ptr = (CQ_START + cq_offset) >> 4;  // In 16B words
+        this->issue_fifo_size = this->command_issue_region_size >> 4;
+        this->issue_fifo_limit = ((CQ_START + this->command_issue_region_size) + command_queue_offset) >> 4;
+        this->issue_fifo_wr_ptr = (CQ_START + command_queue_offset) >> 4;  // In 16B words
         this->issue_fifo_wr_toggle =
             0;  // This is used for the edge case where we wrap and our read pointer has not yet moved
 
         this->completion_fifo_size = this->command_completion_region_size >> 4;
         this->completion_fifo_limit = this->issue_fifo_limit + this->completion_fifo_size;
-        this->completion_fifo_rd_ptr = (this->command_issue_region_size + cq_offset) >> 4; // completion region is below issue region
+        this->completion_fifo_rd_ptr = this->issue_fifo_limit; // completion region starts after issue
         this->completion_fifo_rd_toggle = 0;
     }
 
@@ -76,36 +91,32 @@ class SystemMemoryManager {
     // const std::tuple<uint32_t, uint32_t> tlb_data;
     const uint32_t m_dma_buf_size;
     const std::function<void(uint32_t, uint32_t, const uint8_t*, uint32_t)> fast_write_callable;
-    const std::set<CoreCoord> dispatch_cores;
-    const std::function<CoreCoord (CoreCoord)>worker_from_logical_callable;
     uint32_t issue_byte_addr;
     uint32_t completion_byte_addr;
     char* hugepage_start;
 
    public:
     SystemMemoryCQInterface cq_interface;
-    SystemMemoryManager(chip_id_t device_id, const std::set<CoreCoord> &dev_dispatch_cores, const std::function<CoreCoord (CoreCoord)> &worker_from_logical) :
+    SystemMemoryManager(chip_id_t device_id) :
         cq_interface(
-            tt::Cluster::instance().get_assigned_channel_for_device(device_id),
-            tt::Cluster::instance().get_host_channel_size(tt::Cluster::instance().get_associated_mmio_device(device_id), tt::Cluster::instance().get_assigned_channel_for_device(device_id))),
+            tt::Cluster::instance().get_host_channel_size(tt::Cluster::instance().get_associated_mmio_device(device_id), tt::Cluster::instance().get_assigned_channel_for_device(device_id)),
+            get_cq_offset_bytes(device_id)),
         device_id(device_id),
         m_dma_buf_size(tt::Cluster::instance().get_m_dma_buf_size(device_id)),
         hugepage_start(
             (char*) tt::Cluster::instance().host_dma_address(0, tt::Cluster::instance().get_associated_mmio_device(device_id), tt::Cluster::instance().get_assigned_channel_for_device(device_id))),
         fast_write_callable(
-            tt::Cluster::instance().get_fast_pcie_static_tlb_write_callable(tt::Cluster::instance().get_associated_mmio_device(device_id))),
-        dispatch_cores(dev_dispatch_cores),
-        worker_from_logical_callable(worker_from_logical) {
+            tt::Cluster::instance().get_fast_pcie_static_tlb_write_callable(tt::Cluster::instance().get_associated_mmio_device(device_id))) {
 
         std::cout << "System memory cq interface for device " << this->device_id << " - hugepage start: " << this->hugepage_start << std::endl;
 
-        // these should be using the mmio device id but the dispatch cores should be remote producer and consumer
-        auto dispatch_cores_iter = dispatch_cores.begin();
-        const std::tuple<uint32_t, uint32_t> producer_tlb_data = tt::Cluster::instance().get_tlb_data(tt_cxy_pair(device_id, this->worker_from_logical_callable(*dispatch_cores_iter++))).value();
+        tt_cxy_pair physical_producer_core = get_physical_dispatch_core(get_logical_command_fetcher_core(device_id));
+        const std::tuple<uint32_t, uint32_t> producer_tlb_data = tt::Cluster::instance().get_tlb_data(physical_producer_core).value();
         auto [producer_tlb_offset, producer_tlb_size] = producer_tlb_data;
         this->issue_byte_addr = producer_tlb_offset + CQ_ISSUE_WRITE_PTR % producer_tlb_size;
 
-        const std::tuple<uint32_t, uint32_t> consumer_tlb_data = tt::Cluster::instance().get_tlb_data(tt_cxy_pair(device_id, this->worker_from_logical_callable(*dispatch_cores_iter))).value();
+        tt_cxy_pair physical_consumer_core = get_physical_dispatch_core(get_logical_completion_queue_interface_core(device_id));
+        const std::tuple<uint32_t, uint32_t> consumer_tlb_data = tt::Cluster::instance().get_tlb_data(physical_consumer_core).value();
         auto [consumer_tlb_offset, consumer_tlb_size] = consumer_tlb_data;
         this->completion_byte_addr = consumer_tlb_offset + CQ_COMPLETION_READ_PTR % consumer_tlb_size;
     }
@@ -150,9 +161,6 @@ class SystemMemoryManager {
     }
 
     void send_issue_queue_write_ptr() const {
-        static CoreCoord dispatch_core =
-            this->worker_from_logical_callable(*this->dispatch_cores.begin());
-
         uint32_t write_ptr_and_toggle =
             this->cq_interface.issue_fifo_wr_ptr | (this->cq_interface.issue_fifo_wr_toggle << 31);
         this->fast_write_callable(this->issue_byte_addr, 4, (uint8_t*)&write_ptr_and_toggle, this->m_dma_buf_size);
@@ -191,9 +199,6 @@ class SystemMemoryManager {
     }
 
     void send_completion_queue_read_ptr() const {
-        static CoreCoord dispatch_core =
-            this->worker_from_logical_callable(*(++this->dispatch_cores.begin()));
-
         uint32_t read_ptr_and_toggle =
             this->cq_interface.completion_fifo_rd_ptr | (this->cq_interface.completion_fifo_rd_toggle << 31);
         this->fast_write_callable(this->completion_byte_addr, 4, (uint8_t*)&read_ptr_and_toggle, this->m_dma_buf_size);

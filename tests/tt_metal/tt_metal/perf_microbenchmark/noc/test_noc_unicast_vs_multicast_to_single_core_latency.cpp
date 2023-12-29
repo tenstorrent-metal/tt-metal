@@ -17,6 +17,7 @@ void measure_latency(string kernel_name) {
     tt_metal::Device *device = tt_metal::CreateDevice(device_id);
 
     auto dispatch_cores = device->dispatch_cores().begin();
+    // TODO: update this test to use the core manager apis
     CoreCoord producer_logical_core = *dispatch_cores++;
     CoreCoord consumer_logical_core = *dispatch_cores;
 
