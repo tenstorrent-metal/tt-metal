@@ -501,7 +501,7 @@ const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t 
     }
     command.set_data_size(padded_page_size * num_pages);
 
-    TT_ASSERT(padded_page_size <= consumer_cb_size, "Page is too large to fit in consumer buffer");
+    TT_ASSERT(padded_page_size <= consumer_cb_size, "Aligned page size {} B is too large to fit in {} B consumer data buffer", padded_page_size, DeviceCommand::CONSUMER_DATA_BUFFER_SIZE);
 
     return command;
 }
