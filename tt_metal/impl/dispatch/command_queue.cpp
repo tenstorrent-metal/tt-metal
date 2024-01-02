@@ -395,7 +395,6 @@ const DeviceCommand EnqueueReadBufferCommand::assemble_device_command(uint32_t d
 
     if (is_sharded(this->buffer.buffer_layout())) {
         uint32_t num_cores = this->buffer.num_cores();
-        auto core_bank_indices = this->buffer.core_bank_indices();
         command.set_sharded_buffer_num_cores(num_cores);
     }
 
@@ -504,7 +503,6 @@ const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t 
 
     if (is_sharded(this->buffer.buffer_layout())) {
         uint32_t num_cores = this->buffer.num_cores();
-        auto core_bank_indices = this->buffer.core_bank_indices();
         command.set_sharded_buffer_num_cores(num_cores);
     }
     command.set_data_size(padded_page_size * num_pages);
@@ -797,10 +795,12 @@ void CommandQueue::enqueue_command(Command& command, bool blocking) {
 
 //TODO: Currently converting page ordering from interleaved to sharded and then doing contiguous read/write
 // Look into modifying command to do read/write of a page at a time to avoid doing copy
-void convert_interleaved_to_sharded_on_host(const void * host, const int num_pages,
-                                        const int page_size,
-                                        const std::vector<uint32_t>& page_map,
+void convert_interleaved_to_sharded_on_host(const void * host,
+                                        const Buffer & buffer,
                                         bool read=false) {
+
+    const uint32_t num_pages = buffer.num_pages();
+    const uint32_t page_size = buffer.page_size();
 
     const uint32_t size_in_bytes = num_pages * page_size;
 
@@ -810,7 +810,7 @@ void convert_interleaved_to_sharded_on_host(const void * host, const int num_pag
     const void * dst = host;
     std::set<uint32_t> pages_seen;
     for (uint32_t host_page_id = 0; host_page_id < num_pages; host_page_id++) {
-        auto dev_page_id = page_map[host_page_id];
+        auto dev_page_id = buffer.get_mapped_page_id(host_page_id);
 
         TT_ASSERT(dev_page_id < num_pages and dev_page_id >= 0);
         if (read) {
@@ -883,9 +883,8 @@ void CommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blocking)
 
     if (buffer.buffer_layout() == TensorMemoryLayout::WIDTH_SHARDED or
         buffer.buffer_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
-        convert_interleaved_to_sharded_on_host(dst, buffer.num_pages(),
-                                        buffer.page_size(),
-                                        buffer.dev_page_to_host_page_mapping(),
+        convert_interleaved_to_sharded_on_host(dst,
+                                        buffer,
                                         true);
     }
 }
@@ -902,9 +901,9 @@ void CommandQueue::enqueue_write_buffer(Buffer& buffer, const void* src, bool bl
 
     if (buffer.buffer_layout() == TensorMemoryLayout::WIDTH_SHARDED or
         buffer.buffer_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
-        convert_interleaved_to_sharded_on_host(src, buffer.num_pages(),
-                                    buffer.page_size(),
-                                    buffer.dev_page_to_host_page_mapping());
+        convert_interleaved_to_sharded_on_host(src,
+                                    buffer
+                                    );
     }
 
     uint32_t padded_page_size = align(buffer.page_size(), 32);
