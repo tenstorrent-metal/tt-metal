@@ -261,8 +261,6 @@ def matmul(
         *batch_shape_a, height_a, width_a = input_shape_a
         *batch_shape_b, height_b, width_b = input_shape_b
 
-
-
     m_size = height_a
     k_size = width_a
     n_size = width_b

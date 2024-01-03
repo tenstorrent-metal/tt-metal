@@ -81,7 +81,7 @@ class Tensor(ttl.ttnn.tensor.Tensor):
             return self.value.shape() == self.value.shape_without_padding()
         else:
             return False
-    
+
     def is_sharded(self) -> bool:
         return self.value.is_sharded()
 
@@ -154,7 +154,7 @@ def to_torch(tensor: Tensor) -> "torch.Tensor":
 
 
 @decorate_operation()
-def to_device(tensor, device, *, memory_config: MemoryConfig = DRAM_MEMORY_CONFIG, shard_spec = None):
+def to_device(tensor, device, *, memory_config: MemoryConfig = DRAM_MEMORY_CONFIG):
     """
     to_device(tensor: ttnn.Tensor, device: tt_lib.device.Device, dtype: Optional[DataType] = None) -> Tensor
 
@@ -175,12 +175,12 @@ def to_device(tensor, device, *, memory_config: MemoryConfig = DRAM_MEMORY_CONFI
         Tensor([ 0.800781, -0.455078, -0.585938], dtype=bfloat16 )
     """
 
-    def impl(tensor, device, *, memory_config, shard_spec):
+    def impl(tensor, device, *, memory_config):
         ttl_tensor = tensor.value
-        return Tensor(ttl_tensor.to(device, memory_config, shard_spec))
+        return Tensor(ttl_tensor.to(device, memory_config))
 
     return ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_device")(
-        tensor, device, memory_config=memory_config, shard_spec=shard_spec
+        tensor, device, memory_config=memory_config
     )
 
 

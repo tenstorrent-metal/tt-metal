@@ -79,17 +79,6 @@ void Tensor::deallocate(bool force) {
 
 
 
-
-Tensor Tensor::to(Device *target_device, const MemoryConfig &mem_config, const ShardSpec & shard_spec) const {
-    ZoneScoped;
-    if (storage_type() == StorageType::DEVICE) {
-        TT_ASSERT(this->device() == target_device && "Currently do not support moving between devices");
-        return *this;
-    }
-    tensor_impl::validate_on_device_dtype_and_layout(target_device, this->dtype(), this->layout());
-    return tensor_impl::to_device_wrapper_sharded(*this, target_device, mem_config, shard_spec);
-}
-
 Tensor Tensor::to(Device *target_device, const MemoryConfig &mem_config) const {
     ZoneScoped;
 
@@ -97,19 +86,6 @@ Tensor Tensor::to(Device *target_device, const MemoryConfig &mem_config) const {
         TT_ASSERT(this->device() == target_device && "Currently do not support moving between devices");
         return *this;
     }
-    TT_ASSERT(!mem_config.is_sharded() &&
-                " Cannot be sharded, if sharded use to(Device *target_device, const MemoryConfig &mem_config, const ShardSpec & shard_spec)  instead");
-    std::string mem_config_str;
-    if(mem_config.memory_layout == TensorMemoryLayout::INTERLEAVED)
-        mem_config_str = "INTERLEAVED ";
-    else if(mem_config.memory_layout == TensorMemoryLayout::SINGLE_BANK)
-        mem_config_str = "SINGLE_BANK ";
-    else if(mem_config.memory_layout == TensorMemoryLayout::BLOCK_SHARDED)
-        mem_config_str = "BLOCK_SHARDED ";
-    else if(mem_config.memory_layout == TensorMemoryLayout::HEIGHT_SHARDED)
-        mem_config_str = "HEIGHT_SHARDED ";
-    else if(mem_config.memory_layout == TensorMemoryLayout::WIDTH_SHARDED)
-        mem_config_str = "HEIGHT_SHARDED ";
 
     tensor_impl::validate_on_device_dtype_and_layout(target_device, this->dtype(), this->layout());
     return tensor_impl::to_device_wrapper(*this, target_device, mem_config);
