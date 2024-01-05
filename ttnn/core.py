@@ -189,73 +189,79 @@ def matmul(
         [10, 64, 128]
     """
 
-    if dtype is None:
-        dtype = input_tensor_a.dtype
+    if not input_tensor_a.is_sharded():
+        if dtype is None:
+            dtype = input_tensor_a.dtype
 
-    input_shape_a = input_tensor_a.shape
-    input_shape_b = input_tensor_b.shape
+        input_shape_a = input_tensor_a.shape
+        input_shape_b = input_tensor_b.shape
 
-    output_shape_list = []
-    padded_output_shape_list = []
-    for index in range(len(input_shape_a) - 1):
-        output_shape_list.append(input_shape_a[index])
-        padded_output_shape_list.append(input_shape_a.padded()[index])
-    output_shape_list.append(input_shape_b[-1])
-    padded_output_shape_list.append(input_shape_b.padded()[-1])
-    output_shape = Shape(output_shape_list, padded_output_shape_list)
+        output_shape_list = []
+        padded_output_shape_list = []
+        for index in range(len(input_shape_a) - 1):
+            output_shape_list.append(input_shape_a[index])
+            padded_output_shape_list.append(input_shape_a.padded()[index])
+        output_shape_list.append(input_shape_b[-1])
+        padded_output_shape_list.append(input_shape_b.padded()[-1])
+        output_shape = Shape(output_shape_list, padded_output_shape_list)
 
-    if not isinstance(input_tensor_a, Tensor):
-        raise RuntimeError("Expected first argument to be a ttnn.Tensor")
-    if not isinstance(input_tensor_b, Tensor):
-        raise RuntimeError("Expected second argument to be a ttnn.Tensor")
+        if not isinstance(input_tensor_a, Tensor):
+            raise RuntimeError("Expected first argument to be a ttnn.Tensor")
+        if not isinstance(input_tensor_b, Tensor):
+            raise RuntimeError("Expected second argument to be a ttnn.Tensor")
 
-    if input_tensor_a.value.storage_type() != ttl.tensor.StorageType.DEVICE:
-        raise RuntimeError("input_tensor_a must be on device!")
+        if input_tensor_a.value.storage_type() != ttl.tensor.StorageType.DEVICE:
+            raise RuntimeError("input_tensor_a must be on device!")
 
-    if input_tensor_b.value.storage_type() != ttl.tensor.StorageType.DEVICE:
-        raise RuntimeError("input_tensor_b must be on device!")
+        if input_tensor_b.value.storage_type() != ttl.tensor.StorageType.DEVICE:
+            raise RuntimeError("input_tensor_b must be on device!")
 
-    # The idea is to make the shapes "possibly" broadcastable.
-    if len(input_tensor_a.shape) > MAX_RANK:
-        raise RuntimeError("There is currently no support for ranks greater than 4.")
+        # The idea is to make the shapes "possibly" broadcastable.
+        if len(input_tensor_a.shape) > MAX_RANK:
+            raise RuntimeError("There is currently no support for ranks greater than 4.")
 
-    if len(input_shape_b) > MAX_RANK:
-        raise RuntimeError(f"There is currently no support for ranks greater than {MAX_RANK}.")
+        if len(input_shape_b) > MAX_RANK:
+            raise RuntimeError(f"There is currently no support for ranks greater than {MAX_RANK}.")
 
-    if len(input_shape_a) == 1:
-        batch_shape_a = []
-        height_a = 1
-        (width_a,) = input_shape_a
-        padded_height_a = 1
-        (padded_width_a,) = input_shape_a.padded()
+        if len(input_shape_a) == 1:
+            batch_shape_a = []
+            height_a = 1
+            (width_a,) = input_shape_a
+            padded_height_a = 1
+            (padded_width_a,) = input_shape_a.padded()
+        else:
+            *batch_shape_a, height_a, width_a = input_shape_a
+            *_, padded_height_a, padded_width_a = input_shape_a.padded()
+
+        if len(input_shape_b) == 1:
+            batch_shape_b = []
+            (height_b,) = input_shape_b
+            width_b = 1
+            (padded_height_b,) = input_shape_b.padded()
+            padded_width_b = 1
+        else:
+            *batch_shape_b, height_b, width_b = input_shape_b
+            *_, padded_height_b, padded_width_b = input_shape_b.padded()
+
+        input_tensor_a = reshape(
+            input_tensor_a,
+            Shape(tuple(batch_shape_a + [height_a, width_a]), tuple(batch_shape_a + [padded_height_a, padded_width_a])),
+        )
+        input_tensor_b = reshape(
+            input_tensor_b,
+            Shape(tuple(batch_shape_b + [height_b, width_b]), tuple(batch_shape_b + [padded_height_b, padded_width_b])),
+        )
+
+        input_tensor_a = _reshape_to_4D(input_tensor_a)
+        input_tensor_b = _reshape_to_4D(input_tensor_b)
+
+        if width_a != height_b:
+            raise RuntimeError("The width of the first tensor must be equal to the height of the second tensor")
     else:
         *batch_shape_a, height_a, width_a = input_shape_a
-        *_, padded_height_a, padded_width_a = input_shape_a.padded()
-
-    if len(input_shape_b) == 1:
-        batch_shape_b = []
-        (height_b,) = input_shape_b
-        width_b = 1
-        (padded_height_b,) = input_shape_b.padded()
-        padded_width_b = 1
-    else:
         *batch_shape_b, height_b, width_b = input_shape_b
-        *_, padded_height_b, padded_width_b = input_shape_b.padded()
 
-    input_tensor_a = reshape(
-        input_tensor_a,
-        Shape(tuple(batch_shape_a + [height_a, width_a]), tuple(batch_shape_a + [padded_height_a, padded_width_a])),
-    )
-    input_tensor_b = reshape(
-        input_tensor_b,
-        Shape(tuple(batch_shape_b + [height_b, width_b]), tuple(batch_shape_b + [padded_height_b, padded_width_b])),
-    )
 
-    input_tensor_a = _reshape_to_4D(input_tensor_a)
-    input_tensor_b = _reshape_to_4D(input_tensor_b)
-
-    if width_a != height_b:
-        raise RuntimeError("The width of the first tensor must be equal to the height of the second tensor")
 
     m_size = height_a
     k_size = width_a
