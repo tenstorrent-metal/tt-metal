@@ -640,8 +640,15 @@ void Softmax::validate(const std::vector<Tensor> &input_tensors, const std::vect
                         TT_FATAL(program_config.block_w % program_config.subblock_w == 0, "block_w must be divisible by subblock_w.");
                         TT_FATAL(M % TILE_WIDTH == 0, "M must be divisible by tile width.");
                         TT_FATAL(K % TILE_WIDTH == 0, "K must be divisible by tile width.");
-                        TT_FATAL(Kt / program_config.compute_with_storage_grid_size.x == program_config.block_w, "block_w must equal to K / num_cores_c.");
-                        TT_FATAL(Mt / program_config.compute_with_storage_grid_size.y == program_config.block_h, "block_h must equal to M / num_cores_r.");
+
+                        if (input_tensor.shard_spec().value().shard_orientation == ShardOrientation::COL_MAJOR) {
+                            TT_FATAL(Kt / program_config.compute_with_storage_grid_size.x == program_config.block_w, "block_w must equal to K / num_cores_c.");
+                            TT_FATAL(Mt / program_config.compute_with_storage_grid_size.y == program_config.block_h, "block_h must equal to M / num_cores_r.");
+                        } else {
+                            TT_FATAL(Kt / program_config.compute_with_storage_grid_size.y == program_config.block_w, "block_w must equal to K / num_cores_r.");
+                            TT_FATAL(Mt / program_config.compute_with_storage_grid_size.x == program_config.block_h, "block_h must equal to M / num_cores_c.");
+                        }
+
                         TT_FATAL(this->inplace);
                     }
                 },
