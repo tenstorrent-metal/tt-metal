@@ -375,6 +375,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
 
     // tensor shape
     const auto shape = input_tensor.shape();
+    const auto shard_orient = input_tensor.shard_spec().value().shard_orientation;
     uint32_t M = shape[2];
     uint32_t K = shape[3] * shape[0];
     uint32_t Mt = M / TILE_WIDTH;
@@ -538,8 +539,14 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
     // Runtime Args
     uint32_t mask_addr = mask.has_value() ? mask.value().buffer()->address() : 0;
     union { float f; uint32_t u; } s; s.f = scale.value_or(1.0f); // scale for fused scale-mask-softmax
+
+    uint32_t mask_start_tile_id = 0;
     for(int core_idx_y = 0; core_idx_y < num_cores_r; core_idx_y++) {
-        uint32_t mask_start_tile_id = 0;
+
+        if (shard_orient == ShardOrientation::COL_MAJOR) {
+            mask_start_tile_id = 0;
+        }
+
         for(int core_idx_x = 0; core_idx_x < num_cores_c; core_idx_x++) {
             CoreCoord core = {(std::size_t) start_core_x + core_idx_x, (std::size_t) start_core_y + core_idx_y};
 
@@ -551,15 +558,23 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_(
             reader_args.push_back(mask_start_tile_id);
             tt_metal::SetRuntimeArgs(program, reader_kernels_id, core, reader_args);
 
-            if (mask.has_value()) {
-                if (causal_mask) {
-                    mask_start_tile_id += mask.value().shape()[-1] * mask.value().shape()[-2] / TILE_WIDTH / TILE_HEIGHT;
-                } else {
-                    mask_start_tile_id += use_row_major_kernel ? mask.value().shape()[-2] : mask.value().shape()[-1] / TILE_WIDTH;
+            if (shard_orient == ShardOrientation::COL_MAJOR) {
+                if (mask.has_value()) {
+                    if (causal_mask) {
+                        mask_start_tile_id += mask.value().shape()[-1] * mask.value().shape()[-2] / TILE_WIDTH / TILE_HEIGHT;
+                    } else {
+                        mask_start_tile_id += use_row_major_kernel ? mask.value().shape()[-2] : mask.value().shape()[-1] / TILE_WIDTH;
+                    }
+                }
+            } else if (core_idx_x == num_cores_c - 1) {
+                if (mask.has_value()) {
+                    if (causal_mask) {
+                        mask_start_tile_id += mask.value().shape()[-1] * mask.value().shape()[-2] / TILE_WIDTH / TILE_HEIGHT;
+                    } else {
+                        mask_start_tile_id += use_row_major_kernel ? mask.value().shape()[-2] : mask.value().shape()[-1] / TILE_WIDTH;
+                    }
                 }
             }
-
-
         }
     }
 
