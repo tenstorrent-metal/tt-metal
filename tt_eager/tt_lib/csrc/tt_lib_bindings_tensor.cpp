@@ -209,12 +209,14 @@ void TensorModule(py::module &m_tensor) {
     pyMemoryConfig
         .def(
             py::init<>(
-                [](TensorMemoryLayout memory_layout, BufferType buffer_type) {
-                    return MemoryConfig{.memory_layout=memory_layout, .buffer_type=buffer_type};
+                [](TensorMemoryLayout memory_layout, BufferType buffer_type, std::optional<ShardSpec> shard_spec) {
+                    return MemoryConfig{.memory_layout=memory_layout, .buffer_type=buffer_type, .shard_spec=shard_spec};
                 }
             ),
             py::arg("memory_layout") = TensorMemoryLayout::INTERLEAVED,
-            py::arg("buffer_type") = BufferType::DRAM, R"doc(
+            py::arg("buffer_type") = BufferType::DRAM,
+            py::arg("shard_spec") = std::nullopt,
+            R"doc(
                 Create MemoryConfig class.
                 If interleaved is set to True, tensor data will be interleaved across multiple DRAM banks on TT Accelerator device.
                 Otherwise, tensor data will be stored in a DRAM bank selected by dram_channel (valid values are 0, 1, ..., 7).
