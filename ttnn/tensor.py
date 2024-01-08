@@ -20,13 +20,11 @@ float32 = DataType.FLOAT32
 bfloat16 = DataType.BFLOAT16
 bfloat8_b = DataType.BFLOAT8_B
 
-
 BufferType = ttl.tensor.BufferType
 TensorMemoryLayout = ttl.tensor.TensorMemoryLayout
 MemoryConfig = ttl.tensor.MemoryConfig
 DRAM_MEMORY_CONFIG = MemoryConfig(TensorMemoryLayout.INTERLEAVED, BufferType.DRAM)
 L1_MEMORY_CONFIG = MemoryConfig(TensorMemoryLayout.INTERLEAVED, BufferType.L1)
-
 
 Layout = ttl.tensor.Layout
 ROW_MAJOR_LAYOUT = Layout.ROW_MAJOR
@@ -84,6 +82,57 @@ class Tensor(ttl.ttnn.tensor.Tensor):
 
     def is_sharded(self) -> bool:
         return self.value.is_sharded()
+
+    @property
+    def memory_config(self) -> ttl.tensor.MemoryConfig:
+        if has_storage_type_of(self, DEVICE_STORAGE_TYPE):
+            return self.value.memory_config()
+        else:
+            raise RuntimeError("Tensor is not on device!")
+
+
+def SHARDED_MEMORY_CONFIG(
+    grid,
+    shard_shape,
+    tensor_memory_layout: TensorMemoryLayout,
+    shard_orientation: ttl.tensor.ShardOrientation = ttl.tensor.ShardOrientation.ROW_MAJOR,
+    halo: bool = False,
+):
+    grid_coord = ttl.tensor.CoreCoord(grid[1], grid[0])
+    shard_grid = ttl.tensor.CoreRangeSet({ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 0), grid_coord)})
+    shard_spec = ttl.tensor.ShardSpec(shard_grid, shard_shape, shard_orientation, halo)
+    mem_config = MemoryConfig(tensor_memory_layout, BufferType.L1, shard_spec)
+    return mem_config
+
+
+@decorate_operation()
+def HEIGHT_SHARDED_MEMORY_CONFIG(
+    grid,
+    shard_shape,
+    shard_orientation: ttl.tensor.ShardOrientation = ttl.tensor.ShardOrientation.ROW_MAJOR,
+    halo: bool = False,
+):
+    return SHARDED_MEMORY_CONFIG(grid, shard_shape, TensorMemoryLayout.HEIGHT_SHARDED, shard_orientation, halo)
+
+
+@decorate_operation()
+def WIDTH_SHARDED_MEMORY_CONFIG(
+    grid,
+    shard_shape,
+    shard_orientation: ttl.tensor.ShardOrientation = ttl.tensor.ShardOrientation.ROW_MAJOR,
+    halo: bool = False,
+):
+    return SHARDED_MEMORY_CONFIG(grid, shard_shape, TensorMemoryLayout.WIDTH_SHARDED, shard_orientation, halo)
+
+
+@decorate_operation()
+def BLOCK_SHARDED_MEMORY_CONFIG(
+    grid,
+    shard_shape,
+    shard_orientation: ttl.tensor.ShardOrientation = ttl.tensor.ShardOrientation.ROW_MAJOR,
+    halo: bool = False,
+):
+    return SHARDED_MEMORY_CONFIG(grid, shard_shape, TensorMemoryLayout.BLOCK_SHARDED, shard_orientation, halo)
 
 
 def has_storage_type_of(tensor: Tensor, storage_type) -> bool:
@@ -250,7 +299,7 @@ def to_layout(tensor, layout: Layout):
 
 # TODO:integrate the move op to convert DRAM to L1 and L1 to DRAM
 @decorate_operation()
-def to_mem_config(tensor, memory_config: MemoryConfig):
+def to_memory_config(tensor, memory_config: MemoryConfig):
     """
     to_mem_config(tensor: ttnn.Tensor) -> Tensor
 
@@ -275,12 +324,11 @@ def to_mem_config(tensor, memory_config: MemoryConfig):
         else:
 
             def impl(ttl_tensor, sharded_memory_config):
-                compute_grid_size = tensor.device.compute_with_storage_grid_size()
-                return ttl.tensor.interleaved_to_sharded(
+                return ttl.tensor.interleaved_to_sharded_core_range_set(
                     ttl_tensor,
-                    compute_grid_size,
+                    sharded_memory_config.shard_spec.grid,
                     sharded_memory_config.shard_spec.shape,
-                    sharded_memory_config.layout,
+                    sharded_memory_config.memory_layout,
                     sharded_memory_config.shard_spec.orientation,
                 )
 
@@ -300,6 +348,7 @@ def to_mem_config(tensor, memory_config: MemoryConfig):
             ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_mem_config")(
                 ttl_tensor, memory_config
             )
+    return Tensor(ttl_tensor)
 
 
 @decorate_operation()

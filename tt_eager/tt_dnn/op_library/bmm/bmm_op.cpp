@@ -714,7 +714,6 @@ void Matmul::validate(
                     TT_FATAL(per_core_M == (shard_shape[0] / TILE_HEIGHT));
                     TT_FATAL((shard_shape[1] / TILE_WIDTH) % program_config.in0_block_w == 0);
                     TT_FATAL(K / (shard_shape[1] / TILE_WIDTH) == N / program_config.per_core_N);
-
                 }
                 if (this->output_mem_config.is_sharded()) {
                     TT_FATAL(this->output_mem_config.memory_layout == TensorMemoryLayout::BLOCK_SHARDED);

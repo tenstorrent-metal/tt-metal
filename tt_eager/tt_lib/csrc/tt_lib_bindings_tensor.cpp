@@ -239,6 +239,7 @@ void TensorModule(py::module &m_tensor) {
         )
         .def_readonly("buffer_type", &MemoryConfig::buffer_type, "Buffer type to store tensor data. Can be DRAM or L1")
         .def_readonly("memory_layout", &MemoryConfig::memory_layout, "Memory layout of tensor data.")
+        .def_readonly("shard_spec", &MemoryConfig::shard_spec, "Memory layout of tensor data.")
         .def(py::self == py::self)
         .def(py::self != py::self);
 
@@ -290,7 +291,11 @@ void TensorModule(py::module &m_tensor) {
                     return ShardSpec(core_sets, shard_shape, shard_orientation, halo);
                 }
             )
-        );
+        )
+        .def_readonly("shape", &ShardSpec::shape, "Shape of shard.")
+        .def_readonly("grid", &ShardSpec::grid, "Grid to layout shards.")
+        .def_readonly("orientation", &ShardSpec::orientation, "Orientation of cores to read shards")
+        ;
 
 
     auto py_owned_buffer_for_uint32_t = py::class_<owned_buffer::Buffer<uint32_t>>(m_tensor, "owned_buffer_for_uint32_t", py::buffer_protocol());
