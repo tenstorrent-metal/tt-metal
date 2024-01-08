@@ -248,12 +248,14 @@ def to_layout(tensor, layout: Layout):
     return Tensor(ttl_tensor)
 
 
+# TODO:integrate the move op to convert DRAM to L1 and L1 to DRAM
 @decorate_operation()
-def interleaved_to_sharded(tensor, sharded_memory_config: MemoryConfig):
+def to_mem_config(tensor, memory_config: MemoryConfig):
     """
-    interleaved_to_sharded(tensor: ttnn.Tensor) -> Tensor
+    to_mem_config(tensor: ttnn.Tensor) -> Tensor
 
-    Converts a tensor stored as an interleaved buffer into a sharded buffer.
+    Converts a tensor to the desired mem_config, used for converting tensors to sharded tensors or interleaved
+
 
     Args:
         * :attr:`tensor`: the ttnn.Tensor
@@ -262,56 +264,42 @@ def interleaved_to_sharded(tensor, sharded_memory_config: MemoryConfig):
         >>> device_id = 0
         >>> device = ttnn.open(device_id)
         >>> tensor = ttnn.to_device(ttnn.from_torch(torch.randn((10, 64, 32), dtype=torch.bfloat16)), device)
-        >>> tensor = ttnn.interleaved_to_sharded(tensor, sharded_memory_config)
+        >>> tensor = ttnn.to_mem_config(tensor, memory_config)
     """
-    ttl_tensor = tensor.value
-    if ttl_tensor.is_sharded():
-        return tensor
-    else:
 
-        def impl(ttl_tensor, sharded_memory_config):
-            compute_grid_size = tensor.device.compute_with_storage_grid_size()
-            return ttl.tensor.interleaved_to_sharded(
-                ttl_tensor,
-                compute_grid_size,
-                sharded_memory_config.shard_spec.shape,
-                sharded_memory_config.layout,
-                sharded_memory_config.shard_spec.orientation,
+    ttl_tensor = tensor.value
+    # to_sharded path
+    if memory_config.is_sharded():
+        if ttl_tensor.is_sharded():
+            return tensor
+        else:
+
+            def impl(ttl_tensor, sharded_memory_config):
+                compute_grid_size = tensor.device.compute_with_storage_grid_size()
+                return ttl.tensor.interleaved_to_sharded(
+                    ttl_tensor,
+                    compute_grid_size,
+                    sharded_memory_config.shard_spec.shape,
+                    sharded_memory_config.layout,
+                    sharded_memory_config.shard_spec.orientation,
+                )
+
+            ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_mem_config")(
+                ttl_tensor, memory_config
             )
-
-        ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.interleaved_to_sharded")(
-            ttl_tensor, sharded_memory_config
-        )
-
-
-@decorate_operation()
-def sharded_to_interleaved(tensor, interleaved_memory_config: MemoryConfig):
-    """
-    sharded_to_interleaved(tensor: ttnn.Tensor) -> Tensor
-
-    Converts a tensor stored as a sharded buffer into an interleaved buffer.
-
-    Args:
-        * :attr:`tensor`: the ttnn.Tensor
-
-    Example::
-        >>> device_id = 0
-        >>> device = ttnn.open(device_id)
-        >>> tensor = ttnn.to_device(ttnn.from_torch(torch.randn((10, 64, 32), dtype=torch.bfloat16)), device)
-        >>> tensor = ttnn.sharded_to_interleaved(tensor, interleaved_memory_config)
-    """
-    ttl_tensor = tensor.value
-    if not ttl_tensor.is_sharded():
-        return tensor
+    # to_interleaved path
     else:
+        if not ttl_tensor.is_sharded():
+            return tensor
+        else:
 
-        def impl(ttl_tensor, interleaved_memory_config):
-            compute_grid_size = tensor.device.compute_with_storage_grid_size()
-            return ttl.tensor.sharded_to_interleaved(ttl_tensor, interleaved_memory_config)
+            def impl(ttl_tensor, interleaved_memory_config):
+                compute_grid_size = tensor.device.compute_with_storage_grid_size()
+                return ttl.tensor.sharded_to_interleaved(ttl_tensor, interleaved_memory_config)
 
-        ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.sharded_to_interleaved")(
-            ttl_tensor, interleaved_memory_config
-        )
+            ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_mem_config")(
+                ttl_tensor, memory_config
+            )
 
 
 @decorate_operation()
