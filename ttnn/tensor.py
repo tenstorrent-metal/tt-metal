@@ -320,7 +320,24 @@ def to_memory_config(tensor, memory_config: MemoryConfig):
     # to_sharded path
     if memory_config.is_sharded():
         if ttl_tensor.is_sharded():
-            return tensor
+            if memory_config.shard_spec.orientation == memory_config.shard_spec.orientation:
+                return tensor
+            else:
+                # change sharding strategy
+                def impl(ttl_tensor, sharded_memory_config):
+                    ttl_tensor = ttl.tensor.sharded_to_interleaved(ttl_tensor, DRAM_MEMORY_CONFIG)
+                    return ttl.tensor.interleaved_to_sharded_core_range_set(
+                        ttl_tensor,
+                        sharded_memory_config.shard_spec.grid,
+                        sharded_memory_config.shard_spec.shape,
+                        sharded_memory_config.memory_layout,
+                        sharded_memory_config.shard_spec.orientation,
+                    )
+
+                ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_memory_config")(
+                    ttl_tensor, memory_config
+                )
+
         else:
 
             def impl(ttl_tensor, sharded_memory_config):
@@ -332,7 +349,7 @@ def to_memory_config(tensor, memory_config: MemoryConfig):
                     sharded_memory_config.shard_spec.orientation,
                 )
 
-            ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_mem_config")(
+            ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_memory_config")(
                 ttl_tensor, memory_config
             )
     # to_interleaved path
@@ -345,7 +362,7 @@ def to_memory_config(tensor, memory_config: MemoryConfig):
                 compute_grid_size = tensor.device.compute_with_storage_grid_size()
                 return ttl.tensor.sharded_to_interleaved(ttl_tensor, interleaved_memory_config)
 
-            ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_mem_config")(
+            ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_memory_config")(
                 ttl_tensor, memory_config
             )
     return Tensor(ttl_tensor)
