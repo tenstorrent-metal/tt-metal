@@ -290,7 +290,7 @@ def test_tutorial_matmul_with_tilized_input_in_l1_memory_and_user_specified_core
 
 
 @skip_for_wormhole_b0()
-def test_sharded_matmul(device):
+def test_interleaved_to_sharded_matmul(device):
     torch.manual_seed(0)
     grid_size = (5, 8)
 
@@ -313,7 +313,7 @@ def test_sharded_matmul(device):
     input_tensor_a = ttnn.to_layout(input_tensor_a, ttnn.TILE_LAYOUT)
     input_tensor_b = ttnn.to_layout(input_tensor_b, ttnn.TILE_LAYOUT)
 
-    sharded_mem_config = ttnn.BLOCK_SHARDED_MEMORY_CONFIG(grid_size, [M // grid_size[0], K // grid_size[1]])
+    sharded_mem_config = ttnn.create_block_sharded_memory_config(grid_size, [M // grid_size[0], K // grid_size[1]])
     input_tensor_a = ttnn.to_memory_config(input_tensor_a, sharded_mem_config)
 
     output = ttnn.matmul(input_tensor_a, input_tensor_b, memory_config=ttnn.L1_MEMORY_CONFIG, core_grid=grid_size)

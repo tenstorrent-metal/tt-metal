@@ -9,7 +9,7 @@ from typing import Optional, Union, Tuple, List
 import tt_lib as ttl
 
 from ttnn.decorators import decorate_operation
-
+from enum import Enum
 
 Device = ttl.device.Device
 
@@ -91,13 +91,62 @@ class Tensor(ttl.ttnn.tensor.Tensor):
             raise RuntimeError("Tensor is not on device!")
 
 
-def SHARDED_MEMORY_CONFIG(
-    grid,
-    shard_shape,
-    tensor_memory_layout: TensorMemoryLayout,
-    shard_orientation: ttl.tensor.ShardOrientation = ttl.tensor.ShardOrientation.ROW_MAJOR,
+class ShardingStrategy(Enum):
+    HEIGHT = 1
+    WIDTH = 2
+    BLOCK = 3
+
+
+class ShardOrientation(Enum):
+    ROW_MAJOR = 1
+    COLUMN_MAJOR = 2
+
+
+@decorate_operation()
+def create_sharded_memory_config(
+    grid: Tuple[int, int],
+    shard_shape: Tuple[int, int],
+    strategy: ShardingStrategy,
+    orientation: ShardOrientation = ShardOrientation.ROW_MAJOR,
     halo: bool = False,
-):
+) -> MemoryConfig:
+    """
+    create_sharded_memory_config(grid: Tuple[int, int],
+                                shard_shape: Tuple[int, int],
+                                sharding_strategy: ShardingStrategy,
+                                shard_orientation: ShardOrientation,
+                                halo: bool) -> MemoryConfig
+
+    Creates a MemoryConfig object with a sharding spec, required for sharded ops.
+    Currently sharding only supports L1 tensors.
+
+    Args:
+        * :attr:`grid`: the grid on which to distribute the sharded tensor on (writes to the cores L1s)
+        * :attr:`shard_shape`: the shape in elements of a respective shard. This is a 2D shape, the upper dimension is the multiplication of dims 0 to rank-1, and the inner dimension is the last dim
+        * :attr:`strategy`: the sharding strategy of either height, width or block
+        * :attr:`orientation`: the order in which to traverse the cores when reading/writing shards. Defaults to ttnn.ShardOrientation.ROW_MAJOR
+        * :attr:`halo`: if the shards have overlapping values. Defaults to False
+
+
+    Example::
+        >>> tensor = ttnn.create_sharded_memory_config((5, 8), (320,64), ttnn.ShardingStrategy.BLOCK, ttnn.ShardOrientation.ROW_MAJOR, False)
+    """
+    if strategy == ShardingStrategy.BLOCK:
+        tensor_memory_layout = TensorMemoryLayout.BLOCK_SHARDED
+    elif strategy == ShardingStrategy.WIDTH:
+        tensor_memory_layout = TensorMemoryLayout.WIDTH_SHARDED
+    elif strategy == ShardingStrategy.HEIGHT:
+        tensor_memory_layout = TensorMemoryLayout.HEIGHT_SHARDED
+    else:
+        raise RuntimeError("Invalid sharding strategy")
+
+    if orientation == ShardOrientation.ROW_MAJOR:
+        shard_orientation = ttl.tensor.ShardOrientation.ROW_MAJOR
+    elif orientation == ShardOrientation.COLUMN_MAJOR:
+        shard_orientation = ttl.tensor.ShardOrientation.COLUMN_MAJOR
+    else:
+        raise RuntimeError("Invalid shard orientation")
+
     grid_coord = ttl.tensor.CoreCoord(grid[1], grid[0])
     shard_grid = ttl.tensor.CoreRangeSet({ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 0), grid_coord)})
     shard_spec = ttl.tensor.ShardSpec(shard_grid, shard_shape, shard_orientation, halo)
@@ -106,33 +155,90 @@ def SHARDED_MEMORY_CONFIG(
 
 
 @decorate_operation()
-def HEIGHT_SHARDED_MEMORY_CONFIG(
-    grid,
-    shard_shape,
-    shard_orientation: ttl.tensor.ShardOrientation = ttl.tensor.ShardOrientation.ROW_MAJOR,
+def create_block_sharded_memory_config(
+    grid: Tuple[int, int],
+    shard_shape: Tuple[int, int],
+    orientation: ShardOrientation = ShardOrientation.ROW_MAJOR,
     halo: bool = False,
-):
-    return SHARDED_MEMORY_CONFIG(grid, shard_shape, TensorMemoryLayout.HEIGHT_SHARDED, shard_orientation, halo)
+) -> MemoryConfig:
+    """
+    create_block_sharded_memory_config(grid: Tuple[int, int],
+                                shard_shape: Tuple[int, int],
+                                shard_orientation: ShardOrientation,
+                                halos: bool) -> MemoryConfig
+
+    Creates a MemoryConfig object with a sharding spec, using the block sharded strategy, required for sharded ops.
+    Currently sharding only supports L1 tensors.
+
+    Args:
+        * :attr:`grid`: the grid on which to distribute the sharded tensor on (writes to the cores L1s)
+        * :attr:`shard_shape`: the shape in elements of a respective shard. This is a 2D shape, the upper dimension is the multiplication of dims 0 to rank-1, and the inner dimension is the last dim
+        * :attr:`orientation`: the order in which to traverse the cores when reading/writing shards. Defaults to ttnn.ShardOrientation.ROW_MAJOR
+        * :attr:`halo`: if the shards have overlapping values. Defaults to False
+
+
+    Example::
+        >>> tensor = ttnn.create_block_sharded_memory_config((5, 8), (320,64), ttnn.ShardOrientation.ROW_MAJOR, False)
+    """
+    return create_sharded_memory_config(grid, shard_shape, ShardingStrategy.BLOCK, orientation, halo)
 
 
 @decorate_operation()
-def WIDTH_SHARDED_MEMORY_CONFIG(
-    grid,
-    shard_shape,
-    shard_orientation: ttl.tensor.ShardOrientation = ttl.tensor.ShardOrientation.ROW_MAJOR,
+def create_height_sharded_memory_config(
+    grid: Tuple[int, int],
+    shard_shape: Tuple[int, int],
+    orientation: ShardOrientation = ShardOrientation.ROW_MAJOR,
     halo: bool = False,
-):
-    return SHARDED_MEMORY_CONFIG(grid, shard_shape, TensorMemoryLayout.WIDTH_SHARDED, shard_orientation, halo)
+) -> MemoryConfig:
+    """
+    create_height_sharded_memory_config(grid: Tuple[int, int],
+                                shard_shape: Tuple[int, int],
+                                shard_orientation: ShardOrientation,
+                                halo: bool) -> MemoryConfig
+
+    Creates a MemoryConfig object with a sharding spec, using the height sharded strategy, required for sharded ops.
+    Currently sharding only supports L1 tensors.
+
+    Args:
+        * :attr:`grid`: the grid on which to distribute the sharded tensor on (writes to the cores L1s)
+        * :attr:`shard_shape`: the shape in elements of a respective shard. This is a 2D shape, the upper dimension is the multiplication of dims 0 to rank-1, and the inner dimension is the last dim
+        * :attr:`orientation`: the order in which to traverse the cores when reading/writing shards. Defaults to ttnn.ShardOrientation.ROW_MAJOR
+        * :attr:`halo`: if the shards have overlapping values. Defaults to False
+
+
+    Example::
+        >>> tensor = ttnn.create_height_sharded_memory_config((5, 8), (320,64), ttnn.ShardOrientation.ROW_MAJOR, False)
+    """
+    return create_sharded_memory_config(grid, shard_shape, ShardingStrategy.HEIGHT, orientation, halo)
 
 
 @decorate_operation()
-def BLOCK_SHARDED_MEMORY_CONFIG(
-    grid,
-    shard_shape,
-    shard_orientation: ttl.tensor.ShardOrientation = ttl.tensor.ShardOrientation.ROW_MAJOR,
+def create_width_sharded_memory_config(
+    grid: Tuple[int, int],
+    shard_shape: Tuple[int, int],
+    orientation: ShardOrientation = ShardOrientation.ROW_MAJOR,
     halo: bool = False,
-):
-    return SHARDED_MEMORY_CONFIG(grid, shard_shape, TensorMemoryLayout.BLOCK_SHARDED, shard_orientation, halo)
+) -> MemoryConfig:
+    """
+    create_width_sharded_memory_config(grid: Tuple[int, int],
+                                shard_shape: Tuple[int, int],
+                                shard_orientation: ShardOrientation,
+                                halo: bool) -> MemoryConfig
+
+    Creates a MemoryConfig object with a sharding spec, using the width sharded strategy, required for sharded ops.
+    Currently sharding only supports L1 tensors.
+
+    Args:
+        * :attr:`grid`: the grid on which to distribute the sharded tensor on (writes to the cores L1s)
+        * :attr:`shard_shape`: the shape in elements of a respective shard. This is a 2D shape, the upper dimension is the multiplication of dims 0 to rank-1, and the inner dimension is the last dim
+        * :attr:`orientation`: the order in which to traverse the cores when reading/writing shards. Defaults to ttnn.ShardOrientation.ROW_MAJOR
+        * :attr:`halo`: if the shards have overlapping values. Defaults to False
+
+
+    Example::
+        >>> tensor = ttnn.create_width_sharded_memory_config((5, 8), (320,64), ttnn.ShardOrientation.ROW_MAJOR, False)
+    """
+    return create_sharded_memory_config(grid, shard_shape, ShardingStrategy.WIDTH, orientation, halo)
 
 
 def has_storage_type_of(tensor: Tensor, storage_type) -> bool:
@@ -301,9 +407,9 @@ def to_layout(tensor, layout: Layout):
 @decorate_operation()
 def to_memory_config(tensor, memory_config: MemoryConfig):
     """
-    to_mem_config(tensor: ttnn.Tensor) -> Tensor
+    to_memory_config(tensor: ttnn.Tensor) -> Tensor
 
-    Converts a tensor to the desired mem_config, used for converting tensors to sharded tensors or interleaved
+    Converts a tensor to the desired mem_config, used for converting tensors to sharded tensors or interleaved, and to convert DRAM to L1 and vice versa
 
 
     Args:
@@ -313,17 +419,22 @@ def to_memory_config(tensor, memory_config: MemoryConfig):
         >>> device_id = 0
         >>> device = ttnn.open(device_id)
         >>> tensor = ttnn.to_device(ttnn.from_torch(torch.randn((10, 64, 32), dtype=torch.bfloat16)), device)
-        >>> tensor = ttnn.to_mem_config(tensor, memory_config)
+        >>> tensor = ttnn.to_memory_config(tensor, memory_config)
     """
 
     ttl_tensor = tensor.value
     # to_sharded path
     if memory_config.is_sharded():
         if ttl_tensor.is_sharded():
-            if memory_config.shard_spec.orientation == memory_config.shard_spec.orientation:
+            if (
+                tensor.memory_config.shard_spec.orientation == memory_config.shard_spec.orientation
+                and tensor.memory_config.shard_spec.grid == memory_config.shard_spec.grid
+                and tensor.memory_config.shard_spec.shape == memory_config.shard_spec.shape
+                and tensor.memory_config.shard_spec.orientation == memory_config.shard_spec.orientation
+            ):
                 return tensor
             else:
-                # change sharding strategy
+                # reshard
                 def impl(ttl_tensor, sharded_memory_config):
                     ttl_tensor = ttl.tensor.sharded_to_interleaved(ttl_tensor, DRAM_MEMORY_CONFIG)
                     return ttl.tensor.interleaved_to_sharded_core_range_set(
@@ -355,7 +466,17 @@ def to_memory_config(tensor, memory_config: MemoryConfig):
     # to_interleaved path
     else:
         if not ttl_tensor.is_sharded():
-            return tensor
+            if tensor.memory_config.memory_layout == memory_config.memory_layout:
+                return tensor
+            else:
+                # L1 to DRAM or DRAM to L1
+                def impl(ttl_tensor, output_memory_config):
+                    return ttl.tensor.clone(ttl_tensor, output_memory_config)
+
+                ttl_tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_memory_config")(
+                    ttl_tensor, memory_config
+                )
+
         else:
 
             def impl(ttl_tensor, interleaved_memory_config):
@@ -434,6 +555,10 @@ __all__ = [
     "bfloat8_b",
     "DRAM_MEMORY_CONFIG",
     "L1_MEMORY_CONFIG",
+    "create_sharded_memory_config",
+    "create_height_sharded_memory_config",
+    "create_width_sharded_memory_config",
+    "create_block_sharded_memory_config",
     "ROW_MAJOR_LAYOUT",
     "TILE_LAYOUT",
     "TILE_SIZE",
