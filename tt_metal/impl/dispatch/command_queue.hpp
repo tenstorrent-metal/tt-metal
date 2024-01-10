@@ -70,6 +70,8 @@ class Command {
     virtual const DeviceCommand assemble_device_command(uint32_t buffer_size) = 0;
 };
 
+class EnqueueReadShardedBufferCommand;
+class EnqueueReadInterleavedBufferCommand;
 class EnqueueReadBufferCommand : public Command {
    private:
     Device* device;
@@ -80,10 +82,10 @@ class EnqueueReadBufferCommand : public Command {
     static constexpr EnqueueCommandType type_ = EnqueueCommandType::ENQUEUE_READ_BUFFER;
     uint32_t command_queue_channel;
 
-    const DeviceCommand assemble_device_command_postamble(const DeviceCommand & input_cmd,
-                                    uint32_t padded_page_size,
-                                    uint32_t num_pages);
 
+    virtual const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) = 0;
+    friend class EnqueueReadShardedBufferCommand;
+    friend class EnqueueReadInterleavedBufferCommand;
    public:
     Buffer& buffer;
     uint32_t read_buffer_addr;
@@ -97,13 +99,59 @@ class EnqueueReadBufferCommand : public Command {
         std::optional<uint32_t> pages_to_read = std::nullopt);
 
     const DeviceCommand assemble_device_command(uint32_t dst);
-    const DeviceCommand assemble_device_command_sharded(uint32_t dst);
 
     void process();
 
     EnqueueCommandType type();
 };
 
+class EnqueueReadInterleavedBufferCommand : public EnqueueReadBufferCommand {
+   private:
+    const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) override;
+
+   public:
+    EnqueueReadInterleavedBufferCommand(
+        uint32_t command_queue_channel,
+        Device* device,
+        Buffer& buffer,
+        void* dst,
+        SystemMemoryManager& manager,
+        uint32_t src_page_index = 0,
+        std::optional<uint32_t> pages_to_read = std::nullopt)
+            :EnqueueReadBufferCommand(command_queue_channel,
+                                device,
+                                buffer,
+                                dst,
+                                manager,
+                                src_page_index,
+                                pages_to_read) {;}
+};
+
+
+class EnqueueReadShardedBufferCommand : public EnqueueReadBufferCommand {
+   private:
+    const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) override;
+
+   public:
+    EnqueueReadShardedBufferCommand(
+        uint32_t command_queue_channel,
+        Device* device,
+        Buffer& buffer,
+        void* dst,
+        SystemMemoryManager& manager,
+        uint32_t src_page_index = 0,
+        std::optional<uint32_t> pages_to_read = std::nullopt)
+            :EnqueueReadBufferCommand(command_queue_channel,
+                                device,
+                                buffer,
+                                dst,
+                                manager,
+                                src_page_index,
+                                pages_to_read) {;}
+};
+
+class EnqueueWriteShardedBufferCommand;
+class EnqueueWriteInterleavedBufferCommand;
 class EnqueueWriteBufferCommand : public Command {
    private:
     Device* device;
@@ -116,9 +164,9 @@ class EnqueueWriteBufferCommand : public Command {
     static constexpr EnqueueCommandType type_ = EnqueueCommandType::ENQUEUE_WRITE_BUFFER;
     uint32_t command_queue_channel;
 
-    const DeviceCommand assemble_device_command_postamble(const DeviceCommand & input_cmd,
-                                    uint32_t padded_page_size,
-                                    uint32_t num_pages);
+    virtual const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) = 0;
+    friend class EnqueueWriteShardedBufferCommand;
+    friend class EnqueueWriteInterleavedBufferCommand;
    public:
     EnqueueWriteBufferCommand(
         uint32_t command_queue_channel,
@@ -130,11 +178,59 @@ class EnqueueWriteBufferCommand : public Command {
         std::optional<uint32_t> pages_to_write = std::nullopt);
 
     const DeviceCommand assemble_device_command(uint32_t src_address);
-    const DeviceCommand assemble_device_command_sharded(uint32_t src_address);
 
     void process();
 
     EnqueueCommandType type();
+};
+
+class EnqueueWriteInterleavedBufferCommand : public EnqueueWriteBufferCommand {
+   private:
+    const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) override;
+   public:
+    EnqueueWriteInterleavedBufferCommand(
+        uint32_t command_queue_channel,
+        Device* device,
+        Buffer& buffer,
+        const void* src,
+        SystemMemoryManager& manager,
+        uint32_t dst_page_index = 0,
+        std::optional<uint32_t> pages_to_write = std::nullopt)
+        : EnqueueWriteBufferCommand(
+            command_queue_channel,
+            device,
+            buffer,
+            src,
+            manager,
+            dst_page_index,
+            pages_to_write){;}
+
+
+};
+
+
+class EnqueueWriteShardedBufferCommand : public EnqueueWriteBufferCommand {
+   private:
+    const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) override;
+   public:
+    EnqueueWriteShardedBufferCommand(
+        uint32_t command_queue_channel,
+        Device* device,
+        Buffer& buffer,
+        const void* src,
+        SystemMemoryManager& manager,
+        uint32_t dst_page_index = 0,
+        std::optional<uint32_t> pages_to_write = std::nullopt)
+        : EnqueueWriteBufferCommand(
+            command_queue_channel,
+            device,
+            buffer,
+            src,
+            manager,
+            dst_page_index,
+            pages_to_write){;}
+
+
 };
 
 class EnqueueProgramCommand : public Command {

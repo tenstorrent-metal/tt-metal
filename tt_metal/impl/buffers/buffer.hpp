@@ -86,19 +86,19 @@ struct ShardSpecBuffer {
                 this->page_shape = page_shape;
                 this-> tensor2d_shape = tensor2d_shape;
             }
-    CoreRangeSet grid() {
+    CoreRangeSet grid() const {
         return tensor_shard_spec.grid;
     }
-    std::array<uint32_t, 2>  shape() {
+    std::array<uint32_t, 2>  shape() const {
         return tensor_shard_spec.shape;
     }
-    ShardOrientation orientation() {
+    ShardOrientation orientation() const {
         return tensor_shard_spec.orientation;
     }
-    bool halo() {
+    bool halo() const {
         return tensor_shard_spec.halo;
     }
-    uint32_t size(){
+    uint32_t size() const{
         auto width_in_pages = tensor_shard_spec.shape[0] / page_shape[0];
         auto height_in_pages = tensor_shard_spec.shape[1] / page_shape[1];
         return width_in_pages * height_in_pages;
