@@ -273,7 +273,7 @@ def matmul(
         is_batched = math.prod(batch_shape_b) > 1
 
         if is_batched:
-            if not (input_tensor_a.is_sharded() and input_tensor_b.is_sharded()):
+            if (not input_tensor_a.is_sharded()) and (not input_tensor_b.is_sharded()):
                 per_core_M = int(math.ceil((m_size / TILE_SIZE)))
                 per_core_N = int(math.ceil((n_size / TILE_SIZE)))
                 in0_block_w = 1  # TODO(arakhmati): Can it be more than 1 without running out of memory?
@@ -281,10 +281,10 @@ def matmul(
                 if input_tensor_a.memory_config.memory_layout == ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED:
                     raise TypeError("Cannot be width sharded")
                 shard_shape = input_tensor_a.memory_config.shard_spec.shape
-                N = input_tensor_b.shape[-1] / TILE_SIZE
+                N = input_tensor_b.shape[-1] // TILE_SIZE
                 per_core_M = shard_shape[0] // TILE_SIZE
                 per_core_N = N
-                in0_block_w = 1
+                in0_block_w = shard_shape[1] // TILE_SIZE
             elif input_tensor_b.is_sharded():
                 if input_tensor_b.memory_config.memory_layout == ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED:
                     raise TypeError("Cannot be width sharded")

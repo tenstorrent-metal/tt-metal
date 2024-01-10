@@ -316,6 +316,8 @@ def to_device(tensor, device, *, memory_config: MemoryConfig = DRAM_MEMORY_CONFI
     Copies the `ttnn.Tensor` :attr:`tensor` to the `tt_lib.device.Device`.
     The tensor may be placed in DRAM or L1 memory.
 
+    Currently memory_config must be of an Interleaved tensor (not sharded)
+
     Args:
         * :attr:`tensor`: the ttnn.Tensor
         * :attr:`memory_config`: the optional MemoryConfig (DRAM_MEMORY_CONFIG or L1_MEMORY_CONFIG). Defaults to DRAM_MEMORY_CONFIG.
