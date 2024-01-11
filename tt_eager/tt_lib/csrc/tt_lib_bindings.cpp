@@ -75,6 +75,10 @@ void DeviceModule(py::module &m_device) {
         +------------------+------------------------+-----------------------+-------------+----------+
     )doc");
 
+    m_device.def("GetNumAvailableDevices", &GetNumAvailableDevices, R"doc(
+        Get the number of detected devices in the system.
+    )doc");
+
     m_device.def("SetDefaultDevice", &AutoFormat::SetDefaultDevice, R"doc(
         Sets the default device to use for ops when inputs aren't on device.
 

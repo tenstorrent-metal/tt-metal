@@ -40,6 +40,26 @@ std::vector<Tensor> generic_create_output_tensors(
     return output_tensors;
 }
 
+template<typename ConcreteOperation>
+std::vector<Tensor> generic_create_output_tensors2(
+    const ConcreteOperation& operation,
+    const std::vector<Tensor>& input_tensors,
+    const DataType output_dtype,
+    const Layout output_layout,
+    const MemoryConfig& output_mem_config
+) {
+    const auto& output_shapes = operation.compute_output_shapes(input_tensors);
+
+    std::vector<Tensor> output_tensors;
+    output_tensors.reserve(output_shapes.size());
+    for (uint32_t i = 0; i < output_shapes.size(); i++) {
+        TT_ASSERT(input_tensors[i].storage_type() == StorageType::DEVICE);
+        output_tensors.emplace_back(
+            create_device_tensor(output_shapes[i], output_dtype, output_layout, input_tensors[i].device(), output_mem_config));
+    }
+    return output_tensors;
+}
+
 
 
 namespace run_operation_state {
