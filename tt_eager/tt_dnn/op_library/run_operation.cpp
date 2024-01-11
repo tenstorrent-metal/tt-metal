@@ -247,6 +247,69 @@ std::vector<Tensor> run_device_operation(
 
     return output_tensors;
 }
+
+std::vector<Tensor> run_device_operation2(
+    const DeviceOperation& operation,
+    const std::vector<Tensor>& input_tensors,
+    const std::vector<std::optional<const Tensor>>& optional_input_tensors) {
+    ZoneScoped;
+    ZoneText(operation.get_type_name().c_str(), operation.get_type_name().size());
+
+    auto profile_scope = op_profiler::OpProfileScope(operation.get_type_name(), op_profiler::OpType::tt_dnn_device);
+
+    std::function<std::variant<std::map<Device *, tt_metal::Program>, std::map<Device *, std::reference_wrapper<tt_metal::Program>>>(
+        const DeviceOperation&,
+        const std::vector<Tensor>&,
+        const std::vector<std::optional<const Tensor>>&,
+        std::vector<Tensor>&)>
+        get_or_create_programs;
+    if (program_cache::is_enabled()) {
+        TT_FATAL(false, "Unsupported");
+    } else {
+        get_or_create_programs = [](const DeviceOperation& operation,
+                                   const std::vector<Tensor>& input_tensors,
+                                   const std::vector<std::optional<const Tensor>>& optional_input_tensors,
+                                   std::vector<Tensor>& output_tensors) -> std::map<Device *, tt_metal::Program> {
+            auto program_with_callbacks =
+                operation.create_programs(input_tensors, optional_input_tensors, output_tensors);
+            return std::move(program_with_callbacks.programs);
+        };
+    }
+
+    operation.validate(input_tensors, optional_input_tensors);
+    auto output_tensors = operation.create_output_tensors(input_tensors);
+    auto programs = get_or_create_programs(operation, input_tensors, optional_input_tensors, output_tensors);
+
+    // Enqueue or Launch Program
+    std::visit(
+        [&operation, &input_tensors, &optional_input_tensors](auto& programs) {
+            std::vector<std::thread> ths;
+            ths.reserve(programs.size());
+            auto do_profile = op_profiler::get_profiler_flag();
+            for (auto& [device, program]: programs) {
+                if (do_profile) {
+                    detail::setup_profiler(operation, input_tensors, program);
+                }
+                if (USE_FAST_DISPATCH) {
+                    EnqueueProgram(tt::tt_metal::detail::GetCommandQueue(device), program, false);
+                    // Only need to dump device data when in dispatch mode
+                    // LaunchKernel automatically dumps device data
+                    op_profiler::dump_device_profiler_results(device, program);
+                } else {
+                    ths.emplace_back([&] { ::detail::LaunchProgram(device, program); });
+                }
+            }
+            for (auto& th : ths) {
+                th.join();
+            }
+        },
+        programs);
+
+    op_profiler::append_all_tensor_io_data(input_tensors, optional_input_tensors, output_tensors);
+
+    return output_tensors;
+}
+
 }  // namespace detail
 
 std::vector<Tensor> run(const HostOperation& operation, const std::vector<Tensor>& input_tensors) {
@@ -257,7 +320,11 @@ std::vector<Tensor> run(
     const DeviceOperation& operation,
     const std::vector<Tensor>& input_tensors,
     const std::vector<std::optional<const Tensor>>& optional_input_tensors) {
-    return detail::decorate_operation(detail::run_device_operation)(operation, input_tensors, optional_input_tensors);
+    if (operation.has_create_programs()) {
+        return detail::decorate_operation(detail::run_device_operation2)(operation, input_tensors, optional_input_tensors);
+    } else {
+        return detail::decorate_operation(detail::run_device_operation)(operation, input_tensors, optional_input_tensors);
+    }
 }
 
 std::vector<Tensor> run_without_autoformat(

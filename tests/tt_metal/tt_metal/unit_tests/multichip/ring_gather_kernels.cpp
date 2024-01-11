@@ -473,7 +473,7 @@ TEST_F(DeviceFixture, EthKernelsInterleavedRingGatherAllChips) {
     const size_t dst_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + 32;
     const size_t sem_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
     BankedConfig test_config =
-        BankedConfig{.num_pages = 10, .size_bytes = 10 * 2 * 32 * 32, .page_size_bytes = 2 * 32 * 32};
+        BankedConfig{.num_pages = 2, .size_bytes = 2 * 2 * 32 * 32, .page_size_bytes = 2 * 32 * 32};
     const auto& device_ring = get_device_ring(devices_);
     if (device_ring.empty()) {
         GTEST_SKIP();

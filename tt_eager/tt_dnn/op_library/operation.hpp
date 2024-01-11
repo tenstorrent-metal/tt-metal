@@ -46,6 +46,16 @@ struct ProgramWithCallbacks {
     }
 };
 
+struct ProgramsWithCallbacks {
+    std::map<Device *, Program> programs{};
+    std::optional<OverrideAddressesCallback> override_addresses_callback = std::nullopt;
+    std::optional<OverrideRuntimeArgumentsCallback> override_runtime_arguments_callback = std::nullopt;
+
+    bool supports_program_cache() const {
+        return this->override_addresses_callback.has_value() or this->override_runtime_arguments_callback.has_value();
+    }
+};
+
 struct ProfilerInfo {
     std::optional<std::string> preferred_name;
     std::optional<std::string> parallelization_strategy;
@@ -116,6 +126,19 @@ constexpr bool implements_create_program_with_optional_input_tensors() {
 }
 
 template <class T, class... Args>
+using has_create_programs_t =
+    decltype(std::declval<T>().create_programs(std::declval<Args>()...));
+
+template <class T>
+constexpr bool implements_create_programs() {
+    return std::experimental::is_detected_v<
+        has_create_programs_t,
+        T,
+        const std::vector<Tensor>&,
+        std::vector<Tensor>&>;
+}
+
+template <class T, class... Args>
 using has_compute_program_hash_t = decltype(std::declval<T>().compute_program_hash(std::declval<Args>()...));
 
 template <class T>
@@ -138,7 +161,7 @@ constexpr bool implements_compute_program_hash_with_optional_input_tensors() {
 
 template <class T>
 constexpr bool is_device_operation() {
-    return implements_create_program<T>() or implements_create_program_with_optional_input_tensors<T>();
+    return implements_create_program<T>() or implements_create_program_with_optional_input_tensors<T>() or implements_create_programs<T>();
 }
 
 template <class T>
@@ -243,6 +266,18 @@ struct DeviceOperation final {
         return this->create_program_impl_(
             this->type_erased_storage, input_tensors, optional_input_tensors, output_tensors);
     }
+    inline ProgramsWithCallbacks create_programs(
+        const std::vector<Tensor>& input_tensors,
+        const std::vector<std::optional<const Tensor>>& optional_input_tensors,
+        std::vector<Tensor>& output_tensors) const {
+        return this->create_programs_impl_(
+            this->type_erased_storage, input_tensors, optional_input_tensors, output_tensors);
+    }
+
+    inline bool has_create_programs() const {
+        return this->has_create_programs_impl_(
+            this->type_erased_storage);
+    }
 
     inline void override_runtime_arguments(
         OverrideRuntimeArgumentsCallback& override_runtime_arguments_callback,
@@ -299,7 +334,7 @@ struct DeviceOperation final {
                 const auto& operation = *reinterpret_cast<const std::decay_t<T>*>(&storage);
                 if constexpr (detail::implements_validate<T>()) {
                     TT_FATAL(optional_input_tensors.empty());
-                    static_assert(detail::implements_create_program<T>());
+                    static_assert(detail::implements_create_program<T>() or detail::implements_create_programs<T>());
                     operation.validate(input_tensors);
                 } else if constexpr (detail::implements_validate_with_optional_input_tensors<T>()) {
                     TT_FATAL(not optional_input_tensors.empty());
@@ -332,8 +367,27 @@ struct DeviceOperation final {
                     TT_ASSERT(not optional_input_tensors.empty());
                     return operation.create_program(input_tensors, optional_input_tensors, output_tensors);
                 } else {
-                    static_assert(tt::stl::concepts::always_false_v<T>, "Operation doesn't implement create_program");
+                    return ProgramWithCallbacks{};
+                    // static_assert(tt::stl::concepts::always_false_v<T>, "Operation doesn't implement create_program");
                 }
+            }},
+        create_programs_impl_{
+            [](const storage_t& storage,
+               const std::vector<Tensor>& input_tensors,
+               const std::vector<std::optional<const Tensor>>& optional_input_tensors,
+               std::vector<Tensor>& output_tensors) -> ProgramsWithCallbacks {
+                const auto& operation = *reinterpret_cast<const std::decay_t<T>*>(&storage);
+                if constexpr (detail::implements_create_programs<T>()) {
+                    return operation.create_programs(input_tensors, output_tensors);
+                } else {
+                    return ProgramsWithCallbacks{};
+                    // static_assert(tt::stl::concepts::always_false_v<T>, "Operation doesn't implement create_programs");
+                }
+            }},
+        has_create_programs_impl_{
+            [](const storage_t& storage) -> bool {
+                const auto& operation = *reinterpret_cast<const std::decay_t<T>*>(&storage);
+               return detail::implements_create_programs<T>();
             }},
         override_runtime_arguments_impl_{
             [](const storage_t& storage,
@@ -360,7 +414,7 @@ struct DeviceOperation final {
                     static_assert(detail::implements_create_program_with_optional_input_tensors<T>());
                     TT_ASSERT(not optional_input_tensors.empty());
                     return operation.compute_program_hash(input_tensors, optional_input_tensors);
-                } else if constexpr (detail::implements_create_program<T>()) {
+                } else if constexpr (detail::implements_create_program<T>() || detail::implements_create_programs<T>()) {
                     TT_ASSERT(optional_input_tensors.empty());
                     return hash_operation<T>(operation, input_tensors);
                 } else if constexpr (detail::implements_create_program_with_optional_input_tensors<T>()) {
@@ -415,6 +469,13 @@ struct DeviceOperation final {
         const std::vector<Tensor>&,
         const std::vector<std::optional<const Tensor>>&,
         std::vector<Tensor>&);
+    ProgramsWithCallbacks (*create_programs_impl_)(
+        const storage_t& value,
+        const std::vector<Tensor>&,
+        const std::vector<std::optional<const Tensor>>&,
+        std::vector<Tensor>&);
+    bool (*has_create_programs_impl_)(
+        const storage_t& value);
     void (*override_runtime_arguments_impl_)(
         const storage_t& value,
         OverrideRuntimeArgumentsCallback&,
