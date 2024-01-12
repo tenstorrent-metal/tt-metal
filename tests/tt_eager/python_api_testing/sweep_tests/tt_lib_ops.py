@@ -2168,17 +2168,19 @@ def embeddings(x, y, *args, device, dtype, layout, input_mem_config, output_mem_
     y_shape = y.shape
 
     batch_size = x_shape[0]
-    num_rows = x_shape[2]
+    num_rows = x_shape[3]
+
+    num_embeddings = y_shape[2]
     embedding_dim = y_shape[3]
 
     x_ref = x.detach().clone()
 
-    t0 = torch.clamp(x_ref, min=0, max=y.shape[-2] - 1)
+    t0 = torch.clamp(x_ref, min=0, max=y.shape[-3] - 1)
     t0 = ttl.tensor.Tensor(t0, dtype[0]).to(device, input_mem_config[0])
 
     t1 = ttl.tensor.Tensor(y, dtype[1]).to(device, input_mem_config[1])
 
-    t2 = ttl.tensor.embeddings(t0, t1, False, False, output_mem_config=output_mem_config)
+    t2 = ttl.tensor.embeddings(t0, t1, False, output_mem_config=output_mem_config)
 
     tt_data = t2.cpu().to_torch()
 
