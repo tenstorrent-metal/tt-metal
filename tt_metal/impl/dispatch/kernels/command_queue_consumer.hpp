@@ -35,42 +35,6 @@ void noc_async_write_multicast_one_packet_no_path_reserve(
 }
 
 FORCE_INLINE
-void multicore_cb_wait_front(bool db_buf_switch, int32_t num_pages) {
-    DEBUG_STATUS('C', 'R', 'B', 'W');
-
-    uint32_t pages_acked = *reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_ack_addr(db_buf_switch));
-    volatile tt_l1_ptr uint32_t* pages_received_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_recv_addr(db_buf_switch));
-
-    uint16_t pages_received;
-    do {
-        pages_received = uint16_t(*pages_received_ptr) - pages_acked;
-    } while (pages_received < num_pages);
-    DEBUG_STATUS('C', 'R', 'B', 'D');
-}
-
-void multicore_cb_pop_front(
-    uint64_t producer_noc_encoding,
-    bool db_buf_switch,
-    uint32_t fifo_limit,
-    uint32_t fifo_size,
-    uint32_t num_pages,
-    uint32_t page_size) {
-    volatile tt_l1_ptr uint32_t* CQ_CONSUMER_CB_ACK_PTR = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_ack_addr(db_buf_switch));
-    volatile tt_l1_ptr uint32_t* CQ_CONSUMER_CB_READ_PTR =
-        reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_rd_ptr_addr(db_buf_switch));
-
-    *CQ_CONSUMER_CB_ACK_PTR += num_pages;
-    *CQ_CONSUMER_CB_READ_PTR += (page_size * num_pages) >> 4;
-
-    if ((*CQ_CONSUMER_CB_READ_PTR << 4) > fifo_limit) {
-        *CQ_CONSUMER_CB_READ_PTR -= fifo_size >> 4;
-    }
-
-    uint32_t pages_ack_addr = get_db_cb_ack_addr(db_buf_switch);
-    noc_semaphore_set_remote(uint32_t(CQ_CONSUMER_CB_ACK_PTR), producer_noc_encoding | pages_ack_addr);
-}
-
-FORCE_INLINE
 uint32_t get_read_ptr(bool db_buf_switch) {
     return *reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_rd_ptr_addr(db_buf_switch)) << 4;
 }

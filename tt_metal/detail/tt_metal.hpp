@@ -528,9 +528,13 @@ namespace tt::tt_metal{
         inline void CompileCommandQueuePrograms(Device *device, vector<unique_ptr<Program, ProgramDeleter>>& command_queue_programs) {
             ZoneScoped;
 
-            if (device->is_mmio_capable()) {
-                unique_ptr<Program, ProgramDeleter> command_queue_program_ptr(new Program);
+            unique_ptr<Program, ProgramDeleter> command_queue_program_ptr(new Program);
 
+            // Currently we only double buffer commands in tensix cores
+            uint32_t num_tensix_command_slots = 2;
+            uint32_t num_eth_command_slots = 1;
+
+            if (device->is_mmio_capable()) {
                 for (const chip_id_t &device_id : tt::Cluster::instance().get_devices_controlled_by_mmio_device(device->id())) {
                     // TODO (abhullar): allow for multiple cqs on remote device, atm device initialization asserts one cq for the remote device
                     uint8_t num_hw_cqs = device_id == device->id() ? device->num_hw_cqs() : 1;
@@ -597,7 +601,7 @@ namespace tt::tt_metal{
                                 .defines = producer_defines});
 
 
-                        uint32_t num_command_slots = (device_id == device->id()) ? 2 : 1;
+                        uint32_t num_command_slots = (device_id == device->id()) ? num_tensix_command_slots : num_eth_command_slots;
                         tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, issue_q_logical_core, num_command_slots);
 
                         // Currently remote device dispatch completion queue interface has not been brought up
@@ -617,14 +621,130 @@ namespace tt::tt_metal{
                         }
                     }
                 }
-
-                CompileProgram(device, *command_queue_program_ptr);
-                command_queue_programs.push_back(std::move(command_queue_program_ptr));
-
             } else {
-                // TODO: Load dispatch kernels on dispatch cores of the remote chip
-                //  https://github.com/tenstorrent-metal/tt-metal/issues/3953 and https://github.com/tenstorrent-metal/tt-metal/issues/3954
+                TT_ASSERT(device->num_hw_cqs() == 1, "Currently can only support one command queue for remote device");
+
+                uint8_t num_hw_cqs = device->num_hw_cqs();
+                const uint8_t cq_id = 0;
+                chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
+                uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
+                uint32_t cq_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel) / num_hw_cqs;
+
+                tt_cxy_pair remote_processor_location = dispatch_core_manager::get(num_hw_cqs).remote_processor_core(device->id(), channel, cq_id);
+                tt_cxy_pair dispatch_location = dispatch_core_manager::get(num_hw_cqs).command_dispatcher_core(device->id(), channel, cq_id);
+                tt_cxy_pair remote_signaller_location = dispatch_core_manager::get(num_hw_cqs).remote_signaller_core(device->id(), channel, cq_id);
+                CoreCoord remote_processor_logical_core(remote_processor_location.x, remote_processor_location.y);
+                CoreCoord dispatch_logical_core(dispatch_location.x, dispatch_location.y);
+                CoreCoord remote_signaller_logical_core(remote_signaller_location.x, remote_signaller_location.y);
+                CoreCoord remote_processor_physical_core = get_physical_core_coordinate(remote_processor_location, CoreType::WORKER);
+                CoreCoord dispatch_physical_core = get_physical_core_coordinate(dispatch_location, CoreType::WORKER);
+                CoreCoord remote_signaller_physical_core = get_physical_core_coordinate(remote_signaller_location, CoreType::WORKER);
+
+                std::cout << "Remote processor: logical location " << remote_processor_location.str() << " - physical " << remote_processor_physical_core.str() << std::endl;
+                std::cout << "Remote dispatcher: logical location " << dispatch_location.str() << " - physical " << dispatch_physical_core.str() << std::endl;
+                std::cout << "Remote signaller: logical location " << remote_signaller_location.str() << " - physical " << remote_signaller_physical_core.str() << std::endl;
+
+                uint32_t cmd_start_tensix = get_command_start_l1_address(false);
+                uint32_t data_section_addr_tensix = get_data_section_l1_address(false);
+                uint32_t producer_data_buffer_size_tensix = get_producer_data_buffer_size(false);
+                uint32_t consumer_data_buffer_size_tensix = get_consumer_data_buffer_size(false);
+
+                uint32_t producer_cmd_start_eth = get_command_start_l1_address(true);
+                uint32_t producer_data_buffer_size_eth = get_producer_data_buffer_size(true);
+
+                std::vector<uint32_t> processor_compile_args = {
+                    cmd_start_tensix,
+                    data_section_addr_tensix,
+                    producer_data_buffer_size_tensix,
+                    cmd_start_tensix, // TODO debug core is on tensix: producer_cmd_start_eth
+                    producer_data_buffer_size_tensix, // TODO debug core is on tensix: producer_data_buffer_size_eth
+                    cmd_start_tensix,
+                    consumer_data_buffer_size_tensix,
+                };
+
+                std::map<string, string> processor_defines = {
+                    {"DISPATCH_KERNEL", "1"},
+                    {"PRODUCER_NOC_X", std::to_string(remote_signaller_physical_core.x)},
+                    {"PRODUCER_NOC_Y", std::to_string(remote_signaller_physical_core.y)},
+                    {"DISPATCHER_NOC_X", std::to_string(dispatch_physical_core.x)},
+                    {"DISPATCHER_NOC_Y", std::to_string(dispatch_physical_core.y)},
+                };
+
+                tt::tt_metal::CreateKernel(
+                    *command_queue_program_ptr,
+                    "tt_metal/impl/dispatch/kernels/remote_command_processor.cpp",
+                    remote_processor_logical_core,
+                    tt::tt_metal::DataMovementConfig {
+                        .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+                        .noc = tt::tt_metal::NOC::RISCV_0_default,
+                        .compile_args = processor_compile_args,
+                        .defines = processor_defines});
+
+                // first semaphore is between ethernet router and the processor core to signal whether processor can receive commands
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_processor_logical_core, 0);
+                // second semaphore is between processor and dispatcher to detect whether dispatcher can accept commands
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_processor_logical_core, num_tensix_command_slots);
+
+                std::vector<uint32_t> dispatcher_compile_args = {
+                    cmd_start_tensix,
+                    consumer_data_buffer_size_tensix
+                };
+
+                std::map<string, string> dispatcher_defines = {
+                    {"DISPATCH_KERNEL", "1"},
+                    {"PRODUCER_NOC_X", std::to_string(remote_processor_physical_core.x)},
+                    {"PRODUCER_NOC_Y", std::to_string(remote_processor_physical_core.y)},
+                    {"SIGNALLER_NOC_X", std::to_string(remote_signaller_physical_core.x)},
+                    {"SIGNALLER_NOC_Y", std::to_string(remote_signaller_physical_core.y)},
+                };
+
+                tt::tt_metal::CreateKernel(
+                    *command_queue_program_ptr,
+                    "tt_metal/impl/dispatch/kernels/remote_dispatcher.cpp",
+                    dispatch_logical_core,
+                    tt::tt_metal::DataMovementConfig {
+                        .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+                        .noc = tt::tt_metal::NOC::RISCV_0_default,
+                        .compile_args = dispatcher_compile_args,
+                        .defines = dispatcher_defines});
+
+
+                // first semaphore is between processor and dispatcher to signal whether the latter can receive commands
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_logical_core, 0);
+                // second semaphore is between dispatcher and remote completion signaller to signal if the former can send data
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_logical_core, num_tensix_command_slots);
+
+                // Debug kernel
+                std::vector<uint32_t> debug_compile_args = {
+                    device->l1_size_per_core() - 64,
+                    cmd_start_tensix,
+                    producer_data_buffer_size_tensix,
+                    data_section_addr_tensix,
+                    cmd_start_tensix,
+                    producer_data_buffer_size_tensix
+                };
+
+                std::map<string, string> debug_defines = {
+                    {"DISPATCH_KERNEL", "1"},
+                    {"CONSUMER_NOC_X", std::to_string(remote_processor_physical_core.x)},
+                    {"CONSUMER_NOC_Y", std::to_string(remote_processor_physical_core.y)},
+                };
+
+                tt::tt_metal::CreateKernel(
+                    *command_queue_program_ptr,
+                    "tt_metal/impl/dispatch/kernels/debug.cpp",
+                    remote_signaller_logical_core,
+                    tt::tt_metal::DataMovementConfig {
+                        .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+                        .noc = tt::tt_metal::NOC::RISCV_0_default,
+                        .compile_args = debug_compile_args,
+                        .defines = debug_defines});
+
+                // first semaphore is between processor and dispatcher to signal whether the latter can receive commands
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_signaller_logical_core, 1);
             }
+            CompileProgram(device, *command_queue_program_ptr);
+            command_queue_programs.push_back(std::move(command_queue_program_ptr));
         }
     }
 }
