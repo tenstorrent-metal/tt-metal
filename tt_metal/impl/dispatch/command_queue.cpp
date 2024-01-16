@@ -388,7 +388,8 @@ const DeviceCommand EnqueueReadBufferCommand::assemble_device_command(uint32_t d
     DeviceCommand command = this->create_buffer_transfer_instruction(dst_address, padded_page_size, num_pages);
 
     // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
-    bool cmd_consumer_on_ethernet = not device->is_mmio_capable();
+    // Even when targeting fast dispatch on remote device, commands are tunneled through ethernet to consumer tensix cores
+    constexpr bool cmd_consumer_on_ethernet = false;
     uint32_t consumer_cb_num_pages = (get_consumer_data_buffer_size(cmd_consumer_on_ethernet) / padded_page_size);
 
     if (consumer_cb_num_pages >= 4) {
@@ -411,6 +412,26 @@ const DeviceCommand EnqueueReadBufferCommand::assemble_device_command(uint32_t d
     command.set_producer_cb_num_pages(producer_cb_num_pages);
     command.set_consumer_cb_num_pages(consumer_cb_num_pages);
     command.set_num_pages(num_pages);
+
+    // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
+    bool relay_through_ethernet = not device->is_mmio_capable();
+    if (relay_through_ethernet) {
+        uint32_t relay_cb_num_pages = get_consumer_data_buffer_size(true) / padded_page_size;
+        // TODO: UPDATE THIS BY MEASURING PERF OF DIFFERENT VALUES
+        if (relay_cb_num_pages >= 4) {
+            relay_cb_num_pages = (relay_cb_num_pages / 4) * 4;
+            command.set_producer_relay_transfer_num_pages(relay_cb_num_pages / 4);
+            command.set_consumer_relay_transfer_num_pages(relay_cb_num_pages / 4);
+        } else {
+            command.set_producer_relay_transfer_num_pages(1);
+            command.set_consumer_relay_transfer_num_pages(1);
+        }
+
+        uint32_t relay_cb_size = relay_cb_num_pages * padded_page_size;
+
+        command.set_relay_cb_size(relay_cb_size);
+        command.set_relay_cb_num_pages(relay_cb_num_pages);
+    }
 
     return command;
 }
@@ -515,10 +536,11 @@ const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t 
         padded_page_size = align(this->buffer.page_size(), 32);
     }
 
-    // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
-    bool cmd_consumer_on_ethernet = not device->is_mmio_capable();
-    uint32_t consumer_cb_num_pages = (get_consumer_data_buffer_size(cmd_consumer_on_ethernet) / padded_page_size);
     DeviceCommand command = this->create_buffer_transfer_instruction(src_address, padded_page_size, num_pages);
+
+    // Even when targeting fast dispatch on remote device, commands are tunneled through ethernet to consumer tensix cores
+    constexpr bool cmd_consumer_on_ethernet = false;
+    uint32_t consumer_cb_num_pages = get_consumer_data_buffer_size(cmd_consumer_on_ethernet) / padded_page_size;
 
     if (consumer_cb_num_pages >= 4) {
         consumer_cb_num_pages = (consumer_cb_num_pages / 4) * 4;
@@ -539,6 +561,25 @@ const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t 
     command.set_consumer_cb_num_pages(consumer_cb_num_pages);
     command.set_num_pages(num_pages);
 
+    // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
+    bool relay_through_ethernet = not device->is_mmio_capable();
+    if (relay_through_ethernet) {
+        uint32_t relay_cb_num_pages = get_consumer_data_buffer_size(true) / padded_page_size;
+        // TODO: UPDATE THIS BY MEASURING PERF OF DIFFERENT VALUES
+        if (relay_cb_num_pages >= 4) {
+            relay_cb_num_pages = (relay_cb_num_pages / 4) * 4;
+            command.set_producer_relay_transfer_num_pages(relay_cb_num_pages / 4);
+            command.set_consumer_relay_transfer_num_pages(relay_cb_num_pages / 4);
+        } else {
+            command.set_producer_relay_transfer_num_pages(1);
+            command.set_consumer_relay_transfer_num_pages(1);
+        }
+
+        uint32_t relay_cb_size = relay_cb_num_pages * padded_page_size;
+
+        command.set_relay_cb_size(relay_cb_size);
+        command.set_relay_cb_num_pages(relay_cb_num_pages);
+    }
 
     command.set_data_size(padded_page_size * num_pages);
     return command;
@@ -571,7 +612,33 @@ void EnqueueWriteBufferCommand::process() {
 
     this->manager.issue_queue_push_back(cmd_size, LAZY_COMMAND_QUEUE_MODE, this->command_queue_id);
 
+    uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
+    tt_cxy_pair remote_signaller_location = dispatch_core_manager::get(device->num_hw_cqs()).remote_signaller_core(device->id(), channel, 0);
+    CoreCoord rs_physical_core = get_physical_core_coordinate(remote_signaller_location, CoreType::WORKER);
+    tt_cxy_pair remote_signaller_phys_location = tt_cxy_pair(remote_signaller_location.chip, rs_physical_core.x, rs_physical_core.y);
+    uint32_t cmd_address = get_command_start_l1_address(false);
+
     auto cmd_desc = cmd.get_desc();
+    std::cout << "Host command - "
+              << " data size: " << cmd_desc[DeviceCommand::data_size_idx]
+              << " num_buffer_transfers: " << cmd_desc[DeviceCommand::num_buffer_transfers_idx]
+              << " page_size: " << cmd_desc[DeviceCommand::page_size_idx]
+              << " producer_cb_size: " << cmd_desc[DeviceCommand::producer_cb_size_idx]
+              << " consumer_cb_size: " << cmd_desc[DeviceCommand::consumer_cb_size_idx]
+              << " producer_cb_num_pages: " << cmd_desc[DeviceCommand::producer_cb_num_pages_idx]
+              << " consumer_cb_num_pages: " << cmd_desc[DeviceCommand::consumer_cb_num_pages_idx]
+              << " num_pages: " << cmd_desc[DeviceCommand::num_pages_idx]
+              << " producer_consumer_transfer_num_pages: " << cmd_desc[DeviceCommand::producer_consumer_transfer_num_pages_idx] << std::endl;
+
+    std::cout << "Writing enqueue write buffer command to " << remote_signaller_phys_location.str()
+              << " at address: " << cmd_address << std::endl;
+
+    tt::Cluster::instance().write_core(
+        cmd.get_desc().data(),
+        DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND,
+        remote_signaller_phys_location,
+        cmd_address
+    );
 }
 
 
