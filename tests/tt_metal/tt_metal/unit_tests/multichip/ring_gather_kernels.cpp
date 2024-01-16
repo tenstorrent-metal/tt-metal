@@ -480,4 +480,6 @@ TEST_F(DeviceFixture, EthKernelsInterleavedRingGatherAllChips) {
     }
     ASSERT_TRUE(unit_tests::erisc::kernels::eth_interleaved_ring_gather_sender_receiver_kernels(
         device_ring, test_config, src_eth_l1_byte_address, dst_eth_l1_byte_address, sem_l1_byte_address));
+    ASSERT_TRUE(unit_tests::erisc::kernels::eth_interleaved_ring_gather_sender_receiver_kernels(
+        device_ring, test_config, src_eth_l1_byte_address, dst_eth_l1_byte_address, sem_l1_byte_address, test_config.size_bytes + 32));
 }
