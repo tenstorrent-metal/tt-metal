@@ -63,7 +63,7 @@ void kernel_main() {
         program_local_cb(data_section_addr, producer_cb_num_pages, page_size, producer_cb_size);
         while (db_semaphore_addr[0] == 0)
             ;  // Check that there is space in the consumer
-        // program_consumer_cb(db_buf_switch, ((uint64_t)consumer_noc_encoding << 32), consumer_cb_num_pages, page_size, consumer_cb_size);
+        // program_consumer_cb<consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch, ((uint64_t)consumer_noc_encoding << 32), consumer_cb_num_pages, page_size, consumer_cb_size);
         // relay_command(db_buf_switch, ((uint64_t)consumer_noc_encoding << 32));
 
         // Decrement the semaphore value

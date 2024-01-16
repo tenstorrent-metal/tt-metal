@@ -63,7 +63,13 @@ void kernel_main() {
         program_local_cb(data_section_addr, producer_cb_num_pages, page_size, producer_cb_size);
         while (db_semaphore_addr[0] == 0)
             ;  // Check that there is space in the consumer
-        program_consumer_cb(db_buf_switch, consumer_noc_encoding, consumer_cb_num_pages, page_size, consumer_cb_size);
+
+        /*
+            constexpr uint32_t consumer_cmd_base_addr = get_compile_time_arg_val(5);
+    constexpr uint32_t consumer_data_buffer_size = get_compile_time_arg_val(6);
+        */
+
+        program_consumer_cb<consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch, consumer_noc_encoding, consumer_cb_num_pages, page_size, consumer_cb_size);
         relay_command(db_buf_switch, consumer_noc_encoding);
         if (stall) {
             while (*db_semaphore_addr != 2)

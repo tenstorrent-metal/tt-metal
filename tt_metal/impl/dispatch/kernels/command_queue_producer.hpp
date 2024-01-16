@@ -82,15 +82,12 @@ void program_local_cb(uint32_t data_section_addr, uint32_t num_pages, uint32_t p
     cb_interface[cb_id].fifo_page_size = page_size >> 4;
 }
 
-FORCE_INLINE
-void program_consumer_cb(bool db_buf_switch, uint64_t consumer_noc_encoding, uint32_t num_pages, uint32_t page_size, uint32_t cb_size) {
+template <uint32_t consumer_cmd_base_addr, uint32_t consumer_data_buffer_size>
+FORCE_INLINE void program_consumer_cb(bool db_buf_switch, uint64_t consumer_noc_encoding, uint32_t num_pages, uint32_t page_size, uint32_t cb_size) {
     /*
         This API programs the double-buffered CB space of the consumer. This API should be called
         before notifying the consumer that data is available.
     */
-    constexpr uint32_t consumer_cmd_base_addr = get_compile_time_arg_val(5);
-    constexpr uint32_t consumer_data_buffer_size = get_compile_time_arg_val(6);
-
     uint32_t acked_addr = get_db_cb_ack_addr(db_buf_switch);
     uint32_t recv_addr = get_db_cb_recv_addr(db_buf_switch);
     uint32_t num_pages_addr = get_db_cb_num_pages_addr(db_buf_switch);
@@ -257,6 +254,53 @@ void produce(
                 num_writes_completed += num_to_write;
                 num_to_write = min(num_pages - num_writes_completed, producer_consumer_transfer_num_pages);
             }
+        }
+        command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
+    }
+}
+
+template <uint32_t consumer_cmd_base_addr, uint32_t consumer_data_buffer_size>
+void transfer(
+    volatile tt_l1_ptr uint32_t* command_ptr, uint32_t num_srcs, uint32_t sharded_buffer_num_cores, uint32_t page_size, uint32_t producer_cb_size, uint32_t producer_cb_num_pages,
+    uint32_t consumer_cb_size, uint32_t consumer_cb_num_pages, uint64_t consumer_noc_encoding, uint32_t producer_consumer_transfer_num_pages, bool db_buf_switch) {
+    /*
+        This API sends data from circular buffer in its L1 and writes data to the consumer core. On the consumer,
+        we partition the data space into 2 via double-buffering. There are two command slots, and two
+        data slots. Callees to transfer receive data into their local buffer and then check whether they can write to
+        the consumer. It continues like this in a loop, context switching between waiting to receive data and
+        writing to the consumer.
+    */
+
+    command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
+    uint32_t l1_consumer_fifo_limit = get_db_buf_addr<consumer_cmd_base_addr, consumer_data_buffer_size>(rx_buf_switch) + consumer_cb_size;
+
+    for (uint32_t i = 0; i < num_srcs; i++) {
+        const uint32_t num_pages = command_ptr[2];
+        const uint32_t page_size = command_ptr[3];
+
+        uint32_t num_to_transfer = min(num_pages, producer_consumer_transfer_num_pages); // This must be a bigger number for perf.
+        uint32_t num_transfers_completed = 0;
+
+        while (num_transfers_completed != num_pages) {
+            // Wait for data to be received in local CB
+            multicore_cb_wait_front(rx_buf_switch, num_to_transfer);
+            uint32_t src_addr = get_read_ptr(rx_buf_switch);
+            // Transfer data to consumer CB
+            uint32_t dst_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_wr_ptr_addr(db_tx_buf_switch))[0] << 4;
+            uint64_t dst_noc_addr = consumer_noc_encoding | dst_addr;
+            noc_async_write(src_addr, dst_noc_addr, page_size * num_to_transfer);
+            multicore_cb_push_back(consumer_noc_encoding, l1_consumer_fifo_limit, consumer_cb_size, db_buf_switch, page_size, num_to_write);
+            noc_async_write_barrier();
+            // Signal to core that transferred the data to local CB that it can send next chunk
+            multicore_cb_pop_front(
+                producer_noc_encoding,
+                rx_buf_switch,
+                l1_consumer_fifo_limit,
+                consumer_cb_size,
+                num_to_transfer,
+                page_size);
+            num_transfers_completed += num_to_transfer;
+            num_to_transfer = min(num_pages - num_transfers_completed, producer_consumer_transfer_num_pages);
         }
         command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
     }
