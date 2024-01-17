@@ -10,8 +10,10 @@ void kernel_main() {
     constexpr uint32_t cmd_base_addr = get_compile_time_arg_val(0);
     constexpr uint32_t data_section_addr = get_compile_time_arg_val(1);
     constexpr uint32_t data_buffer_size = get_compile_time_arg_val(2);
-    constexpr uint32_t dispatcher_cmd_base_addr = get_compile_time_arg_val(3);
-    constexpr uint32_t dispatcher_data_buffer_size = get_compile_time_arg_val(4);
+    constexpr uint32_t producer_cmd_base_addr = get_compile_time_arg_val(3);
+    constexpr uint32_t producer_data_buffer_size = get_compile_time_arg_val(4);
+    constexpr uint32_t dispatcher_cmd_base_addr = get_compile_time_arg_val(5);
+    constexpr uint32_t dispatcher_data_buffer_size = get_compile_time_arg_val(6);
 
     // Initialize the producer/consumer DB semaphore
     // This represents how many buffers the producer can write to.
@@ -43,9 +45,8 @@ void kernel_main() {
         uint32_t consumer_cb_num_pages = command_ptr[DeviceCommand::consumer_cb_num_pages_idx];
         uint32_t num_pages = command_ptr[DeviceCommand::num_pages_idx];
         uint32_t producer_consumer_transfer_num_pages = command_ptr[DeviceCommand::producer_consumer_transfer_num_pages_idx];
-        uint32_t sharded_buffer_num_cores = command_ptr[DeviceCommand::sharded_buffer_num_cores_idx];
 
-        program_local_cb(data_section_addr, producer_cb_num_pages, page_size, producer_cb_size);
+        program_local_cb(data_section_addr, producer_cb_num_pages, page_size, producer_cb_size); // the producer should be responsible for setting this cb up?
         while (db_tx_semaphore_addr[0] == 0)
             ;  // Check that there is space in the dispatcher
         program_consumer_cb<dispatcher_cmd_base_addr, dispatcher_data_buffer_size>(db_tx_buf_switch, dispatcher_noc_encoding, consumer_cb_num_pages, page_size, consumer_cb_size);
@@ -63,21 +64,20 @@ void kernel_main() {
         noc_semaphore_inc(dispatcher_noc_encoding | get_semaphore(0), 1);
         noc_async_write_barrier();  // Barrier for now
 
-        // TODO: UPLIFT THIS TO JUST SEND FROM ITS OWN L1
-        // should there be 2 semaphoes between remote cmd processor and ethernet to synchronize on the data being sent
-        // Send data to the consumer
-        // produce(
-        //     command_ptr,
-        //     num_buffer_transfers,
-        //     sharded_buffer_num_cores,
-        //     page_size,
-        //     producer_cb_size,
-        //     producer_cb_num_pages,
-        //     consumer_cb_size,
-        //     consumer_cb_num_pages,
-        //     dispatcher_noc_encoding,
-        //     producer_consumer_transfer_num_pages,
-        //     db_tx_buf_switch);
+        transfer(
+            command_ptr,
+            num_buffer_transfers,
+            page_size,
+            producer_cb_size,
+            get_db_buf_addr<producer_cmd_base_addr, producer_data_buffer_size>(rx_buf_switch) + producer_cb_size,
+            producer_noc_encoding,
+            consumer_cb_size,
+            get_db_buf_addr<dispatcher_cmd_base_addr, dispatcher_data_buffer_size>(db_tx_buf_switch) + consumer_cb_size,
+            dispatcher_noc_encoding,
+            producer_consumer_transfer_num_pages,
+            rx_buf_switch,
+            db_tx_buf_switch
+        );
 
         // notify producer ethernet router that it has completed transferring a command
         noc_semaphore_inc(producer_noc_encoding | get_semaphore(0), 1);

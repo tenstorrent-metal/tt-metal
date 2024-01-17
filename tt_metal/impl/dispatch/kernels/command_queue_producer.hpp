@@ -151,23 +151,6 @@ bool cb_consumer_space_available(bool db_buf_switch, int32_t num_pages) {
 }
 
 FORCE_INLINE
-void multicore_cb_push_back(uint64_t consumer_noc_encoding, uint32_t consumer_fifo_limit, uint32_t consumer_fifo_size, bool db_buf_switch, uint32_t page_size, uint32_t num_to_write) {
-    // TODO(agrebenisan): Should create a multi-core CB interface... struct in L1
-    volatile tt_l1_ptr uint32_t* CQ_CONSUMER_CB_RECV_PTR = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_recv_addr(db_buf_switch));
-    volatile tt_l1_ptr uint32_t* CQ_CONSUMER_CB_WRITE_PTR = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_wr_ptr_addr(db_buf_switch));
-
-    *CQ_CONSUMER_CB_RECV_PTR += num_to_write;
-    *CQ_CONSUMER_CB_WRITE_PTR += (page_size * num_to_write) >> 4;
-
-    if ((*CQ_CONSUMER_CB_WRITE_PTR << 4) >= consumer_fifo_limit) {
-        *CQ_CONSUMER_CB_WRITE_PTR -= consumer_fifo_size >> 4;
-    }
-
-    uint32_t pages_recv_addr = get_db_cb_recv_addr(db_buf_switch);
-    noc_semaphore_set_remote(uint32_t(CQ_CONSUMER_CB_RECV_PTR), consumer_noc_encoding | pages_recv_addr);
-}
-
-FORCE_INLINE
 void relay_command(bool db_buf_switch, uint64_t consumer_noc_encoding) {
     /*
         Relays the current command to the consumer.
@@ -259,10 +242,9 @@ void produce(
     }
 }
 
-template <uint32_t consumer_cmd_base_addr, uint32_t consumer_data_buffer_size>
 void transfer(
-    volatile tt_l1_ptr uint32_t* command_ptr, uint32_t num_srcs, uint32_t sharded_buffer_num_cores, uint32_t page_size, uint32_t producer_cb_size, uint32_t producer_cb_num_pages,
-    uint32_t consumer_cb_size, uint32_t consumer_cb_num_pages, uint64_t consumer_noc_encoding, uint32_t producer_consumer_transfer_num_pages, bool db_buf_switch) {
+    volatile tt_l1_ptr uint32_t* command_ptr, uint32_t num_srcs, uint32_t page_size, uint32_t producer_cb_size, uint32_t l1_producer_fifo_limit, uint64_t producer_noc_encoding,
+    uint32_t consumer_cb_size, uint32_t l1_consumer_fifo_limit, uint64_t consumer_noc_encoding, uint32_t producer_consumer_transfer_num_pages, bool rx_buf_switch, bool db_tx_buf_switch) {
     /*
         This API sends data from circular buffer in its L1 and writes data to the consumer core. On the consumer,
         we partition the data space into 2 via double-buffering. There are two command slots, and two
@@ -272,7 +254,6 @@ void transfer(
     */
 
     command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
-    uint32_t l1_consumer_fifo_limit = get_db_buf_addr<consumer_cmd_base_addr, consumer_data_buffer_size>(rx_buf_switch) + consumer_cb_size;
 
     for (uint32_t i = 0; i < num_srcs; i++) {
         const uint32_t num_pages = command_ptr[2];
@@ -290,15 +271,15 @@ void transfer(
             uint64_t dst_noc_addr = consumer_noc_encoding | dst_addr;
             noc_async_write(src_addr, dst_noc_addr, page_size * num_to_transfer);
             multicore_cb_push_back(consumer_noc_encoding, l1_consumer_fifo_limit, consumer_cb_size, db_buf_switch, page_size, num_to_write);
-            noc_async_write_barrier();
             // Signal to core that transferred the data to local CB that it can send next chunk
             multicore_cb_pop_front(
                 producer_noc_encoding,
                 rx_buf_switch,
-                l1_consumer_fifo_limit,
-                consumer_cb_size,
+                l1_producer_fifo_limit,
+                producer_cb_size,
                 num_to_transfer,
                 page_size);
+            noc_async_write_barrier();
             num_transfers_completed += num_to_transfer;
             num_to_transfer = min(num_pages - num_transfers_completed, producer_consumer_transfer_num_pages);
         }
