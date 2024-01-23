@@ -283,24 +283,28 @@ std::vector<Tensor> run_device_operation2(
     // Enqueue or Launch Program
     std::visit(
         [&operation, &input_tensors, &optional_input_tensors](auto& programs) {
-            std::vector<std::thread> ths;
-            ths.reserve(programs.size());
             auto do_profile = op_profiler::get_profiler_flag();
-            for (auto& [device, program]: programs) {
-                if (do_profile) {
-                    detail::setup_profiler(operation, input_tensors, program);
-                }
-                if (USE_FAST_DISPATCH) {
+            if (USE_FAST_DISPATCH) {
+                for (auto& [device, program]: programs) {
+                    if (do_profile) {
+                        detail::setup_profiler(operation, input_tensors, program);
+                    }
                     EnqueueProgram(tt::tt_metal::detail::GetCommandQueue(device), program, false);
+                }
+                for (auto& [device, program]: programs) {
                     // Only need to dump device data when in dispatch mode
                     // LaunchKernel automatically dumps device data
                     op_profiler::dump_device_profiler_results(device, program);
-                } else {
+                }
+            } else {
+                std::vector<std::thread> ths;
+                ths.reserve(programs.size());
+                for (auto& [device, program]: programs) {
                     ths.emplace_back([&] { ::detail::LaunchProgram(device, program); });
                 }
-            }
-            for (auto& th : ths) {
-                th.join();
+                for (auto& th : ths) {
+                    th.join();
+                }
             }
         },
         programs);

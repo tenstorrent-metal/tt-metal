@@ -106,11 +106,6 @@ operation::ProgramsWithCallbacks all_gather_multi_core(
         rem_bytes = input_tensors[0].buffer()->size();
         rem_pages = rem_bytes / input_tensors[0].buffer()->page_size();
     }
-    std::cout<<bytes_per_chunk<<std::endl;
-    std::cout<<pages_per_chunk<<std::endl;
-    std::cout<<num_full_chunks<<std::endl;
-    std::cout<<rem_bytes<<std::endl;
-    std::cout<<rem_pages<<std::endl;
 
     bool rm = input_tensors[0].layout() == Layout::ROW_MAJOR;
     bool width = input_tensors[0].shape().rank() - 1 == dim;
@@ -126,12 +121,6 @@ operation::ProgramsWithCallbacks all_gather_multi_core(
         offset = output_tensors[0].shape()[-1] / TILE_WIDTH - num_cols;
         num_tiles = input_tensors[0].volume() / TILE_HW;
     }
-    std::cout<<num_rows<<std::endl;
-    std::cout<<num_cols<<std::endl;
-    std::cout<<num_tiles<<std::endl;
-    std::cout<<offset<<std::endl;
-    std::cout<<width<<std::endl;
-    std::cout<<rm<<std::endl;
 
     uint32_t page_idx = 0;
     uint32_t page_offset = 0;
@@ -281,8 +270,6 @@ operation::ProgramsWithCallbacks all_gather_multi_core(
             eth_receiver_core,
             receiver_rt_args);
 
-        std::cout<<page_idx<<std::endl;
-        std::cout<<page_offset<<std::endl;
         if (rm) {
             if (width) {
                 page_offset += input_buffer->page_size();

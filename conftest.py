@@ -264,6 +264,10 @@ def devices(request):
     import tt_lib as ttl
 
     num_devices = ttl.device.GetNumAvailableDevices()
+    silicon_arch_name = request.config.getoption("tt_arch")
+    arch = getattr(ttl.device.Arch, silicon_arch_name.upper())
+    if arch == ttl.device.Arch.WORMHOLE_B0:
+        num_devices //= 2
     devices = []
     for i in range(num_devices):
         devices.append(ttl.device.CreateDevice(i))
@@ -271,6 +275,8 @@ def devices(request):
     yield devices
 
     for device in devices:
+        ttl.device.ClearCommandQueueProgramCache(device)
+        ttl.device.DeallocateBuffers(device)
         ttl.device.CloseDevice(device)
 
 
