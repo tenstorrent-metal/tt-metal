@@ -39,7 +39,7 @@ def test_all_gather(devices, input_shape, dim, layout, mem_config, function_leve
             ttl.tensor.Tensor(t, ttl.tensor.DataType.BFLOAT16).to(layout).to(devices[i], mem_config)
         )
 
-    tt_out_tensors = ttl.tensor.all_gather(tt_input_tensors, dim, mem_config)
+    tt_out_tensors = ttl.tensor.all_gather2(tt_input_tensors, dim, mem_config)
 
     for i, t in enumerate(tt_out_tensors):
         tt_output_tensor = t.cpu().to(ttl.tensor.Layout.ROW_MAJOR).to_torch()

@@ -19,6 +19,7 @@
 #include "tt_dnn/op_library/copy/copy_op.hpp"
 #include "tt_dnn/op_library/sharded/sharded_op.hpp"
 #include "tt_dnn/op_library/all_gather/all_gather_op.hpp"
+#include "tt_dnn/op_library/all_gather2/all_gather_op.hpp"
 
 namespace tt::tt_metal::detail{
 
@@ -484,6 +485,11 @@ namespace tt::tt_metal::detail{
         m_tensor.def("all_gather", &all_gather,
             py::arg("input_tensors"), py::arg("dim"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
             R"doc(All gather)doc"
+        );
+        // Multi-Device ops
+        m_tensor.def("all_gather2", &all_gather2,
+            py::arg("input_tensors"), py::arg("dim"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+            R"doc(All gather 2.0)doc"
         );
     }
 
