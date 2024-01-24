@@ -40,6 +40,14 @@ Matrix Multiplication
    ttnn/matmul
    ttnn/linear
 
+Convolution
+=====================
+
+.. toctree::
+   :maxdepth: 1
+
+   ttnn/Conv2D
+
 Pointwise Unary
 ================
 

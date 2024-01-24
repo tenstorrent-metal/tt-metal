@@ -13,6 +13,92 @@ from tt_eager.tt_dnn.op_library.sliding_window_op_infra.tt_py_composite_conv imp
 
 
 class Conv2D:
+    """
+
+    Applies a 2D convolution over an input signal composed of several input planes.
+
+    Args:
+
+        in_channels (int): Number of channels in the input image
+        out_channels (int): Number of channels produced by the convolution
+        kernel_size (int or tuple): Size of the convolving kernel. Single int or tuple of 2 ints: (Kernel_H, Kernel_W)
+        stride (int or tuple, optional): Stride of the convolution. Single int or tuple of 2 ints: (Stride_H, Stride_w) Default: 1
+        padding (int, tuple or str, optional): Padding added to all four sides of the input. Default: 0
+        padding_mode (str, optional): ``'zeros'``, ``'reflect'``, ``'replicate'`` or ``'circular'``. Default: ``'zeros'``
+        dilation (int or tuple, optional): Spacing between kernel elements. Default: 1
+        groups (int, optional): Number of blocked connections from input channels to output channels. Default: 1
+        dtype (DataType): Output datatype.
+        weights_dtype (DataType): Weights datatype:
+        device (Device): Tenstorrent device object.
+        use_1d_systolic_array (bool): Specifies conv parallelization over a grid of cores on Tenstorrent device.
+
+            The grid of cores to parallelize the conv op is determined automatically based on this flag.
+            Conv is implemented as a matrix multiplication where the input, weight and output of the conv are mapped as follows to perform a 2d matrix multiplication:
+            Conv as matrix multiply input shape - ```'(1, 1, N x H_out x Wout, C_in x Kernel_H x Kernel_W)'```,
+            Conv as matrix multiply weight shape - ```'(1, 1, C_in x Kernel_H x Kernel_W, C_out)'```,
+            Conv as matrix multiply output shape - ```'(1, 1, N x H_out x Wout, C_out)'```
+            if ``use_1d_systolic_array`` is ``True``, conv output tensor (with the above output shape) is sliced by the y-dim across cores.
+            if it is ``False``, conv output tensor is sliced by the y-dim across columns of the grid and is sliced by the x-dim across the rows of the grid.
+
+        conv_blocking_and_parallelization_config_override (Dict, optional): Default: None. One or more config parameters to override the automatically determined parameters.
+
+            Valid config parameter names and description:
+
+            ``'num_cores_nhw'``: Number of cores to slice the y-dim of conv as matrix multiply input shape i.e. ```'(1, 1, N x H_out x Wout, C_in x Kernel_H x Kernel_W)'```
+            ``'grid_size'``: Tuple of two ints: (number of columns, number of rows)
+            ``'per_core_out_matrix_height'``: Per core (sliced) y-dim conv as matrix multiply output shape. Must be divisible by 32.
+            ``'per_core_out_matrix_width'``: Per core (sliced) x-dim conv as matrix multiply output shape. Must be divisible by 32.
+            Other per core config parameters that specify how to perform the matrix multiply in blocks
+            ``'act_block_h'``: Block height of activation matrix. Must be divisible by 32.
+            ``'act_block_w'``: Block width of activation matrix. Must be divisible by 32. Must be either equal to in_channels or in_channels x Kernel_H x Kernel_W.
+            ``'act_c_num_blocks'``: Number of blocks of input and output channels. Must evenly divide both input and output channels. Must be equal to 1 if use_1d_stolic_array is True.
+            ``'weight_block_w'``: Block width of weight matrix. Must be divisible by 32.
+            ``'out_block_h'``: Block height of output matrix. Must be divisible by 32. Must be equal to per_core_out_matrix_height if it is set.
+            ``'out_block_w'``: Block width of output matrix. Must be divisible by 32. Must be equal to per_core_out_matrix_width if it is set.
+            ``'out_subblock_h'``: Sub block height of output matrix. Must be divisible by 32. Both sublock height and width must be set if one of them is set.
+            ``'out_subblock_w'``: Sub block width of output matrix. Must be divisible by 32. Both sublock height and width must be set if one of them is set.
+
+        batch_size (int): Batch size of input
+        input_height (int): Height of the input image
+        input_width (int): Width of the input image
+        reader_patterns_cache (Dict): Special config tensors are generated for conv reader kernels that are added to this dictionary. These tensors can be reused across different conv ops with same parameters.
+
+            Provide an empty dictionary to the first conv op and then, provide the same cache dictionary to subsequent conv ops.
+
+        math_fidelity (MathFidelity): ``'MathFidelity.HiFi4'`` or ``'MathFidelity.LoFi'``.
+        weight (Tensor): Weight TT Tensor in row major layout with shape - ```'(C_out, C_in, Kernel_H, Kernel_W)'```
+        bias (Tensor, optional): Bias TT Tensor in row major layout with shape - ```'(1, 1, 1, C_out)'```. Default: None.
+        activation (str, optional): Specifies if there is an activation op to be fused with conv op.
+
+            Only relu activation fuction is supported: ```RELU```. Default: None.
+
+        reallocate_halo_output (bool, optional): flag to reallocate halo op's output before conv op to reduce memory defragmentation.
+
+    Note:
+
+        Only `dilation=1` or `dilation=(1,1)` is supported
+
+    Note:
+
+        Only `groups=1` is supported
+
+    Note:
+
+        Only `padding_mode=zeros` is supported
+
+    Examples:
+
+        # With square kernels and equal stride
+        m = nn.Conv2d(16, 33, 3, stride=2)
+        # non-square kernels and unequal stride and with padding
+        m = nn.Conv2d(16, 33, (3, 5), stride=(2, 1), padding=(4, 2))
+        # non-square kernels and unequal stride and with padding and dilation
+        m = nn.Conv2d(16, 33, (3, 5), stride=(2, 1), padding=(4, 2), dilation=(3, 1))
+        input = torch.randn(20, 16, 50, 100)
+        output = m(input)
+
+    """
+
     def __init__(
         self,
         in_channels: int,
