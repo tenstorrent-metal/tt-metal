@@ -196,6 +196,9 @@ operation::ProgramWithCallbacks layernorm_(
         reader_defines["FUSE_PRE_ADD"] = "1";
         eltwise_binary_defines["FUSE_PRE_ADD"] = "1";
     }
+    if (not b and in_data_format != cb_data_format) {
+        eltwise_binary_defines["CONVERT_IN_DTYPE"] = "1";
+    }
     if (gamma.has_value()) {
         reader_defines["FUSE_GAMMA"] = "1";
     }
@@ -797,6 +800,9 @@ operation::ProgramWithCallbacks layernorm_sharded_(
     std::map<string, string> eltwise_binary_defines;
     if (b) {
         eltwise_binary_defines["FUSE_PRE_ADD"] = "1";
+    }
+    if (not b and in_data_format != cb_data_format) {
+        eltwise_binary_defines["CONVERT_IN_DTYPE"] = "1";
     }
     // compute kernel compile time args
     std::vector<uint32_t> top_row_compute_compile_time_args = {

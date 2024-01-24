@@ -70,7 +70,7 @@ void MAIN {
     int index_h_offset = 0;
     int index = 0;
 
-    #ifdef FUSE_PRE_ADD
+    #if defined(FUSE_PRE_ADD) || defined(CONVERT_IN_DTYPE)
     constexpr int cb_in = cb_x;
     #else
     constexpr int cb_in = cb_in0;
@@ -105,6 +105,36 @@ void MAIN {
     cb_push_back(cb_in, num_tiles_per_block);
     unpack_reconfig_data_format(tt::CB::c_intermed0, tt::CB::c_intermed0);
     cb_wait_front(cb_in, num_tiles_per_block);
+    #endif
+
+    // copy from bfp8_b to fp16
+    #ifdef CONVERT_IN_DTYPE
+    unpack_reconfig_data_format(tt::CB::c_in0, tt::CB::c_in0);
+    pack_reconfig_data_format(tt::CB::c_intermed0);
+    index_h_offset = 0;
+    copy_tile_init();
+    cb_reserve_back(cb_in, num_tiles_per_block);
+    for (uint32_t i = 0; i < block_h; i++) {
+        index_subblock_w_offset = 0;
+        for (uint32_t j = 0; j < num_subblocks_w; j++) {
+            tile_regs_acquire();
+            for (uint32_t w = 0; w < subblock_w; w++) {
+                index = w + index_subblock_w_offset + index_h_offset;
+                copy_tile(cb_in0, index, w);
+            }
+            tile_regs_commit();
+            tile_regs_wait();
+            for (uint32_t i = 0; i < subblock_w; i++) {
+                pack_tile(i, cb_in);
+            }
+            tile_regs_release();
+            index_subblock_w_offset += subblock_w;
+        }
+        index_h_offset += block_w;
+    }
+    cb_push_back(cb_in, num_tiles_per_block);
+    cb_wait_front(cb_in, num_tiles_per_block);
+    unpack_reconfig_data_format(tt::CB::c_intermed0, tt::CB::c_intermed0);
     #endif
 
     // E[x],

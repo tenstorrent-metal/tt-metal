@@ -66,8 +66,11 @@ from models.utility_functions import torch2tt_tensor, tt2torch_tensor, pad_by_ze
 )
 @pytest.mark.parametrize(
     "in_dtype",
-    (ttl.tensor.DataType.BFLOAT16,),
-    ids=["BFLOAT16"],
+    (
+        ttl.tensor.DataType.BFLOAT16,
+        ttl.tensor.DataType.BFLOAT8_B,
+    ),
+    ids=["BFLOAT16", "BFLOAT8_B"],
 )
 @pytest.mark.parametrize(
     "test_id",
