@@ -344,8 +344,18 @@ void produce_for_eth_src_router(
 }
 
 void transfer(
-    volatile tt_l1_ptr uint32_t* command_ptr, uint32_t num_srcs, uint32_t page_size, uint32_t producer_cb_size, uint32_t l1_producer_fifo_limit, uint64_t producer_noc_encoding,
-    uint32_t consumer_cb_size, uint32_t l1_consumer_fifo_limit, uint64_t consumer_noc_encoding, uint32_t producer_consumer_transfer_num_pages, bool rx_buf_switch, bool db_tx_buf_switch) {
+    db_cb_config_t* db_cb_config,
+    const db_cb_config_t* remote_db_cb_config,
+    volatile tt_l1_ptr uint32_t* command_ptr,
+    uint32_t num_srcs,
+    uint32_t page_size,
+    uint32_t producer_cb_size,
+    uint32_t l1_producer_fifo_limit,
+    uint64_t producer_noc_encoding,
+    uint32_t consumer_cb_size,
+    uint32_t l1_consumer_fifo_limit,
+    uint64_t consumer_noc_encoding,
+    uint32_t producer_consumer_transfer_num_pages) {
     /*
         This API sends data from circular buffer in its L1 and writes data to the consumer core. On the consumer,
         we partition the data space into 2 via double-buffering. There are two command slots, and two
@@ -363,24 +373,35 @@ void transfer(
         uint32_t num_to_transfer = min(num_pages, producer_consumer_transfer_num_pages); // This must be a bigger number for perf.
         uint32_t num_transfers_completed = 0;
 
+        DPRINT << "TX: num pages: " << num_pages
+               << " page size: " << page_size
+               << " num to tx: " << num_to_transfer << ENDL();
+
         while (num_transfers_completed != num_pages) {
             // Wait for data to be received in local CB
-            multicore_cb_wait_front(rx_buf_switch, num_to_transfer);
-            uint32_t src_addr = get_read_ptr(rx_buf_switch);
+            multicore_cb_wait_front(db_cb_config, num_to_transfer);
+            uint32_t src_addr = (db_cb_config->rd_ptr) << 4;
             // Transfer data to consumer CB
-            uint32_t dst_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_wr_ptr_addr(db_tx_buf_switch))[0] << 4;
+            uint32_t dst_addr = (db_cb_config->wr_ptr << 4);
             uint64_t dst_noc_addr = consumer_noc_encoding | dst_addr;
             noc_async_write(src_addr, dst_noc_addr, page_size * num_to_transfer);
-            multicore_cb_push_back(consumer_noc_encoding, l1_consumer_fifo_limit, consumer_cb_size, db_tx_buf_switch, page_size, num_to_transfer);
+            multicore_cb_push_back(
+                db_cb_config,
+                remote_db_cb_config,
+                consumer_noc_encoding,
+                l1_consumer_fifo_limit,
+                num_to_transfer);
             noc_async_write_barrier();
+            DPRINT << "TX: got the data and pushed to dispatcher" << ENDL();
             // Signal to core that transferred the data to local CB that it can send next chunk
             multicore_cb_pop_front(
+                db_cb_config,
+                remote_db_cb_config,
                 producer_noc_encoding,
-                rx_buf_switch,
                 l1_producer_fifo_limit,
-                consumer_cb_size,
                 num_to_transfer,
-                page_size);
+                db_cb_config->page_size);
+            DPRINT << "TX: signal to debug that it tx data to dispatcher" << ENDL();
             num_transfers_completed += num_to_transfer;
             num_to_transfer = min(num_pages - num_transfers_completed, producer_consumer_transfer_num_pages);
         }

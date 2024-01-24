@@ -527,8 +527,6 @@ const DeviceCommand EnqueueWriteShardedBufferCommand::create_buffer_transfer_ins
     return command;
 }
 
-
-
 const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t src_address) {
     uint32_t num_pages = this->pages_to_write;
     uint32_t padded_page_size = this->buffer.page_size();
@@ -640,7 +638,6 @@ void EnqueueWriteBufferCommand::process() {
         cmd_address
     );
 }
-
 
 EnqueueCommandType EnqueueWriteBufferCommand::type() { return this->type_; }
 

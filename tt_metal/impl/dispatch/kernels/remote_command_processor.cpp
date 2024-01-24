@@ -64,7 +64,17 @@ void kernel_main() {
         while (db_tx_semaphore_addr[0] == 0)
             ;  // Check that there is space in the dispatcher
         DPRINT << "rcp: done waiting on db_tx_semaphore_addr" << ENDL();
-        program_consumer_cb<dispatcher_cmd_base_addr, dispatcher_data_buffer_size>(db_tx_buf_switch, dispatcher_noc_encoding, consumer_cb_num_pages, page_size, consumer_cb_size);
+        db_cb_config_t *db_cb_config = (db_cb_config_t *)(CQ_CONSUMER_CB_BASE + (rx_buf_switch * l1_db_cb_addr_offset));
+        db_cb_config_t *dispatcher_db_cb_config = (db_cb_config_t *)(CQ_CONSUMER_CB_BASE + (db_tx_buf_switch * l1_db_cb_addr_offset));
+
+        program_consumer_cb<dispatcher_cmd_base_addr, dispatcher_data_buffer_size>(
+            db_cb_config,
+            dispatcher_db_cb_config,
+            db_tx_buf_switch,
+            dispatcher_noc_encoding,
+            consumer_cb_num_pages,
+            page_size,
+            consumer_cb_size);
         DPRINT << "rcp: dispatcher_cmd_base_addr: " << dispatcher_cmd_base_addr << ENDL();
         relay_command<dispatcher_cmd_base_addr, dispatcher_data_buffer_size>(db_tx_buf_switch, dispatcher_noc_encoding);
         if (stall) {
@@ -81,6 +91,8 @@ void kernel_main() {
         noc_async_write_barrier();  // Barrier for now
 
         transfer(
+            db_cb_config,
+            dispatcher_db_cb_config,
             command_ptr,
             num_buffer_transfers,
             page_size,
@@ -90,10 +102,7 @@ void kernel_main() {
             consumer_cb_size,
             get_db_buf_addr<dispatcher_cmd_base_addr, dispatcher_data_buffer_size>(db_tx_buf_switch) + consumer_cb_size,
             dispatcher_noc_encoding,
-            producer_consumer_transfer_num_pages,
-            rx_buf_switch,
-            db_tx_buf_switch
-        );
+            producer_consumer_transfer_num_pages);
 
         // notify producer ethernet router that it has completed transferring a command
         noc_semaphore_inc(producer_noc_encoding | get_semaphore(0), 1);

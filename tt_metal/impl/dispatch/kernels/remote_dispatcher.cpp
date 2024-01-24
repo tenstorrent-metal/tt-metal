@@ -50,14 +50,33 @@ void kernel_main() {
             << " " << num_pages
             << " " << producer_consumer_transfer_num_pages << ENDL();
 
+        db_cb_config_t *db_cb_config = (db_cb_config_t *)(CQ_CONSUMER_CB_BASE + (db_rx_buf_switch * l1_db_cb_addr_offset));
+        const db_cb_config_t *remote_db_cb_config = (db_cb_config_t *)(CQ_CONSUMER_CB_BASE + (db_rx_buf_switch * l1_db_cb_addr_offset));
+
         if (is_program) {
-            write_and_launch_program(program_transfer_start_addr, num_pages, command_ptr, producer_noc_encoding, consumer_cb_size, consumer_cb_num_pages, producer_consumer_transfer_num_pages, db_rx_buf_switch);
+            write_and_launch_program(
+                db_cb_config,
+                remote_db_cb_config,
+                program_transfer_start_addr,
+                num_pages,
+                command_ptr,
+                producer_noc_encoding,
+                producer_consumer_transfer_num_pages);
             wait_for_program_completion(num_workers);
         } else {
+            DPRINT << "Dispatcher: writing buffer" << ENDL();
             command_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer_transfer_start_addr);
             // TODO: Uplift this!
             // if the dst buffer type is system memory then we need to write it to the remote signaller to send back
-            write_buffers<0>(command_ptr, 0, num_buffer_transfers,  sharded_buffer_num_cores, consumer_cb_size, consumer_cb_num_pages, producer_noc_encoding, producer_consumer_transfer_num_pages, db_rx_buf_switch);
+            write_buffers<0>(
+                db_cb_config,
+                remote_db_cb_config,
+                command_ptr,
+                0,
+                num_buffer_transfers,
+                sharded_buffer_num_cores,
+                producer_noc_encoding,
+                producer_consumer_transfer_num_pages);
         }
 
         if (finish) {

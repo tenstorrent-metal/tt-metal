@@ -561,8 +561,10 @@ namespace tt::tt_metal{
                                 issue_q_reader_location, EthRouterMode::FD_SRC, device_id);
                             consumer_physical_core = device->ethernet_core_from_logical_core(logical_eth_router_src);
 
-                            tt::Cluster::instance().configure_eth_core_for_dispatch_core(
-                                issue_q_reader_location, EthRouterMode::FD_SRC, device_id);
+                            // tt::Cluster::instance().configure_eth_core_for_dispatch_core(
+                            //     issue_q_reader_location, EthRouterMode::FD_SRC, device_id);
+
+                            std::cout << "Logical eth router src: " << logical_eth_router_src.str() << " physical " << consumer_physical_core.str() << std::endl;
                         }
 
                         std::map<string, string> producer_defines = {
@@ -645,6 +647,12 @@ namespace tt::tt_metal{
                 CoreCoord dispatch_physical_core = get_physical_core_coordinate(dispatch_location, CoreType::WORKER);
                 CoreCoord remote_signaller_physical_core = get_physical_core_coordinate(remote_signaller_location, CoreType::WORKER);
 
+                CoreCoord logical_eth_router_dst = tt::Cluster::instance().get_eth_core_for_dispatch_core(
+                    remote_processor_location, EthRouterMode::FD_DST, mmio_device_id);
+                CoreCoord physical_eth_router_dst = device->ethernet_core_from_logical_core(logical_eth_router_dst);
+                // tt::Cluster::instance().configure_eth_core_for_dispatch_core(remote_processor_location, EthRouterMode::FD_DST, mmio_device_id);
+
+                std::cout << "Eth router dst: logical location " << logical_eth_router_dst.str() << " physical " << physical_eth_router_dst.str() << std::endl;
                 std::cout << "Remote processor: logical location " << remote_processor_location.str() << " - physical " << remote_processor_physical_core.str() << std::endl;
                 std::cout << "Remote dispatcher: logical location " << dispatch_location.str() << " - physical " << dispatch_physical_core.str() << std::endl;
                 std::cout << "Remote signaller: logical location " << remote_signaller_location.str() << " - physical " << remote_signaller_physical_core.str() << std::endl;
@@ -735,7 +743,7 @@ namespace tt::tt_metal{
                     {"CONSUMER_NOC_Y", std::to_string(remote_processor_physical_core.y)},
                 };
 
-                tt::tt_metal::CreateKernel(
+                auto debug_kernel_handle = tt::tt_metal::CreateKernel(
                     *command_queue_program_ptr,
                     "tt_metal/impl/dispatch/kernels/debug.cpp",
                     remote_signaller_logical_core,
@@ -744,6 +752,15 @@ namespace tt::tt_metal{
                         .noc = tt::tt_metal::NOC::RISCV_0_default,
                         .compile_args = debug_compile_args,
                         .defines = debug_defines});
+
+                vector<uint32_t> debug_runtime_args = {2080}; // this is never getting written to device
+                tt::tt_metal::SetRuntimeArgs(
+                    *command_queue_program_ptr,
+                    debug_kernel_handle,
+                    remote_signaller_logical_core,
+                    debug_runtime_args);
+
+                detail::WriteRuntimeArgsToDevice(device, *command_queue_program_ptr);
 
                 // first semaphore is between processor and dispatcher to signal whether the latter can receive commands
                 tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_signaller_logical_core, 1);

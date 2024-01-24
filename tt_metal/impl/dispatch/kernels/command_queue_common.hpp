@@ -39,55 +39,48 @@ void db_acquire(volatile uint32_t* semaphore, uint64_t noc_encoding) {
     noc_async_write_barrier();
 }
 
-FORCE_INLINE
-void multicore_cb_push_back(uint64_t consumer_noc_encoding, uint32_t consumer_fifo_limit, uint32_t consumer_fifo_size, bool db_buf_switch, uint32_t page_size, uint32_t num_to_write) {
-    // TODO(agrebenisan): Should create a multi-core CB interface... struct in L1
-    volatile tt_l1_ptr uint32_t* CQ_CONSUMER_CB_RECV_PTR = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_recv_addr(db_buf_switch));
-    volatile tt_l1_ptr uint32_t* CQ_CONSUMER_CB_WRITE_PTR = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_wr_ptr_addr(db_buf_switch));
+void multicore_cb_push_back(
+    db_cb_config_t* db_cb_config,
+    const db_cb_config_t* remote_db_cb_config,
+    uint64_t consumer_noc_encoding,
+    uint32_t consumer_fifo_16b_limit,
+    uint32_t num_to_write) {
+    db_cb_config->recv += num_to_write;
+    db_cb_config->wr_ptr += db_cb_config->page_size * num_to_write;
 
-    *CQ_CONSUMER_CB_RECV_PTR += num_to_write;
-    *CQ_CONSUMER_CB_WRITE_PTR += (page_size * num_to_write) >> 4;
-
-    if ((*CQ_CONSUMER_CB_WRITE_PTR << 4) >= consumer_fifo_limit) {
-        *CQ_CONSUMER_CB_WRITE_PTR -= consumer_fifo_size >> 4;
+    if (db_cb_config->wr_ptr >= consumer_fifo_16b_limit) {
+        db_cb_config->wr_ptr -= db_cb_config->total_size;
     }
 
-    uint32_t pages_recv_addr = get_db_cb_recv_addr(db_buf_switch);
-    noc_semaphore_set_remote(uint32_t(CQ_CONSUMER_CB_RECV_PTR), consumer_noc_encoding | pages_recv_addr);
+    uint32_t remote_pages_recv_addr = (uint32_t)(&(remote_db_cb_config->recv));
+    noc_semaphore_set_remote((uint32_t)(&(db_cb_config->recv)), consumer_noc_encoding | remote_pages_recv_addr);
 }
 
 FORCE_INLINE
-void multicore_cb_wait_front(bool db_buf_switch, int32_t num_pages) {
+void multicore_cb_wait_front(db_cb_config_t* db_cb_config, int32_t num_pages) {
     DEBUG_STATUS('C', 'R', 'B', 'W');
-
-    uint32_t pages_acked = *reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_ack_addr(db_buf_switch));
-    volatile tt_l1_ptr uint32_t* pages_received_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_recv_addr(db_buf_switch));
 
     uint16_t pages_received;
     do {
-        pages_received = uint16_t(*pages_received_ptr) - pages_acked;
+        pages_received = uint16_t(db_cb_config->recv - db_cb_config->ack);
     } while (pages_received < num_pages);
     DEBUG_STATUS('C', 'R', 'B', 'D');
 }
 
 void multicore_cb_pop_front(
+    db_cb_config_t* db_cb_config,
+    const db_cb_config_t* remote_db_cb_config,
     uint64_t producer_noc_encoding,
-    bool db_buf_switch,
-    uint32_t fifo_limit,
-    uint32_t fifo_size,
-    uint32_t num_pages,
+    uint32_t consumer_fifo_limit,
+    uint32_t num_to_write,
     uint32_t page_size) {
-    volatile tt_l1_ptr uint32_t* CQ_CONSUMER_CB_ACK_PTR = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_ack_addr(db_buf_switch));
-    volatile tt_l1_ptr uint32_t* CQ_CONSUMER_CB_READ_PTR =
-        reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_db_cb_rd_ptr_addr(db_buf_switch));
+    db_cb_config->ack += num_to_write;
+    db_cb_config->rd_ptr += page_size * num_to_write;
 
-    *CQ_CONSUMER_CB_ACK_PTR += num_pages;
-    *CQ_CONSUMER_CB_READ_PTR += (page_size * num_pages) >> 4;
-
-    if ((*CQ_CONSUMER_CB_READ_PTR << 4) > fifo_limit) {
-        *CQ_CONSUMER_CB_READ_PTR -= fifo_size >> 4;
+    if ((db_cb_config->rd_ptr << 4) > consumer_fifo_limit) {
+        db_cb_config->rd_ptr -= db_cb_config->total_size;
     }
 
-    uint32_t pages_ack_addr = get_db_cb_ack_addr(db_buf_switch);
-    noc_semaphore_set_remote(uint32_t(CQ_CONSUMER_CB_ACK_PTR), producer_noc_encoding | pages_ack_addr);
+    uint32_t pages_ack_addr = (uint32_t)(&(remote_db_cb_config->ack));
+    noc_semaphore_set_remote((uint32_t)(&(db_cb_config->ack)), producer_noc_encoding | pages_ack_addr);
 }

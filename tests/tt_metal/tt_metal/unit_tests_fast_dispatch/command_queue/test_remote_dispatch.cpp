@@ -20,29 +20,51 @@ namespace remote_tests {
 
 TEST_F(CommandQueueMultiDeviceFixture, DummyTest) {
     std::cout << "here" << std::endl;
-    auto device = devices_[1];
-    CommandQueue &remote_cq = detail::GetCommandQueue(device);
 
-    uint32_t one_gb = 1 << 30;
-    std::vector<uint32_t> zero(one_gb/sizeof(uint32_t), 0);
-    tt::Cluster::instance().write_sysmem(zero.data(), one_gb, 0, 0, 1);
-
-    uint32_t num_pages = 1;
-    uint32_t page_size = 2048;
-    uint32_t buff_size = num_pages * page_size;
-    Buffer bufa(device, buff_size, page_size, BufferType::DRAM);
-
-    std::vector<uint32_t> src(buff_size / sizeof(uint32_t), 0);
-    for (uint32_t i = 0; i < src.size(); i++) {
-        src.at(i) = i;
+    auto chip0_to_eth_cores = devices_[0]->get_ethernet_cores_grouped_by_connected_chips();
+    std::cout << "Device 0 get_ethernet_cores_grouped_by_connected_chips: " << std::endl;
+    for (const auto &[chip_id, eth_cores] : chip0_to_eth_cores) {
+        std::cout << "chip: " << chip_id << std::endl;
+        for (const auto &eth_core : eth_cores) {
+            std::cout << eth_core.str() << "\t";
+        }
+        std::cout << "\n";
     }
 
-    EnqueueWriteBuffer(remote_cq, bufa, src.data(), false);
+    auto chip1_to_eth_cores = devices_[1]->get_ethernet_cores_grouped_by_connected_chips();
+    std::cout << "Device 1 get_ethernet_cores_grouped_by_connected_chips: " << std::endl;
+    for (const auto &[chip_id, eth_cores] : chip1_to_eth_cores) {
+        std::cout << "chip: " << chip_id << std::endl;
+        for (const auto &eth_core : eth_cores) {
+            std::cout << eth_core.str() << "\t";
+        }
+        std::cout << "\n";
+    }
 
-    std::vector<uint32_t> readback_data;
-    readback_data.resize(DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER);
-    tt::Cluster::instance().read_sysmem(readback_data.data(), DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER * sizeof(uint32_t), 96, 0, 1);
-    tt::test_utils::print_vector_fixed_numel_per_row(readback_data, 32);
+
+    // auto device = devices_[1];
+    // CommandQueue &remote_cq = detail::GetCommandQueue(device);
+
+    // uint32_t one_gb = 1 << 30;
+    // std::vector<uint32_t> zero(one_gb/sizeof(uint32_t), 0);
+    // tt::Cluster::instance().write_sysmem(zero.data(), one_gb, 0, 0, 1);
+
+    // uint32_t num_pages = 1;
+    // uint32_t page_size = 2048;
+    // uint32_t buff_size = num_pages * page_size;
+    // Buffer bufa(device, buff_size, page_size, BufferType::DRAM);
+
+    // std::vector<uint32_t> src(buff_size / sizeof(uint32_t), 0);
+    // for (uint32_t i = 0; i < src.size(); i++) {
+    //     src.at(i) = i;
+    // }
+
+    // EnqueueWriteBuffer(remote_cq, bufa, src.data(), false);
+
+    // std::vector<uint32_t> readback_data;
+    // readback_data.resize(DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER);
+    // tt::Cluster::instance().read_sysmem(readback_data.data(), DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER * sizeof(uint32_t), 96, 0, 1);
+    // tt::test_utils::print_vector_fixed_numel_per_row(readback_data, 32);
 }
 
 TEST_F(CommandQueueMultiDeviceFixture, RemoteDummyTest) {
@@ -56,10 +78,21 @@ TEST_F(CommandQueueMultiDeviceFixture, RemoteDummyTest) {
     uint32_t buff_size = num_pages * page_size;
     Buffer bufa(device, buff_size, page_size, BufferType::DRAM);
 
+    std::cout << "Buffer address " << bufa.address() << std::endl;
+
     std::vector<uint32_t> src(buff_size / sizeof(uint32_t), 0);
     for (uint32_t i = 0; i < src.size(); i++) {
         src.at(i) = i;
     }
+
+    Buffer bufb(device, buff_size, page_size, BufferType::DRAM);
+    tt::tt_metal::detail::WriteToBuffer(bufb, src);
+
+    std::vector<uint32_t> db_readback_data;
+    tt::tt_metal::detail::ReadFromBuffer(bufb, db_readback_data);
+    // tt::test_utils::print_vector_fixed_numel_per_row(db_readback_data, 32);
+
+    std::cout << "debug buffer addr: " << bufb.address() << std::endl;
 
     EnqueueWriteBuffer(remote_cq, bufa, src.data(), false);
 
@@ -90,7 +123,11 @@ TEST_F(CommandQueueMultiDeviceFixture, RemoteDummyTest) {
         address
     );
 
-    // sleep(3);
+    sleep(1);
+
+    std::vector<uint32_t> readback_data;
+    tt::tt_metal::detail::ReadFromBuffer(bufa, readback_data);
+    tt::test_utils::print_vector_fixed_numel_per_row(readback_data, 32);
 }
 
 }   // namespace remote_tests
