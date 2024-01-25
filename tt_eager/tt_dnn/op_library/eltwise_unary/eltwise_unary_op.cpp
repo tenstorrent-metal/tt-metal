@@ -309,6 +309,7 @@ const operation::Hash EltwiseUnary::compute_program_hash(const std::vector<Tenso
         input_tensor.dtype(),
         input_tensor.memory_config().memory_layout,
         input_tensor.memory_config().buffer_type,
+        input_tensor.device()->id(),
         this->output_mem_config.memory_layout,
         this->output_mem_config.buffer_type
         );
