@@ -228,7 +228,6 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     // Step 5: Continue constructing pages for GO signals
     src = 0;
     for (KernelGroup& kg : program.get_kernel_groups()) {
-        kg.launch_msg.mode = DISPATCH_MODE_DEV;
         vector<pair<uint32_t, uint32_t>> dst_noc_multicast_info =
             extract_dst_noc_multicast_info(kg.core_ranges.ranges());
 
@@ -245,9 +244,6 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     if (num_transfers_within_page) {
         num_transfers_in_go_signal_pages.push_back(num_transfers_within_page);
     }
-
-    // Allocate some more space for GO signal
-    program_pages.resize(program_pages.size() + align(src, DeviceCommand::PROGRAM_PAGE_SIZE) / sizeof(uint32_t));
 
     // Create a vector of all program binaries/cbs/semaphores
     uint32_t program_page_idx = 0;
@@ -271,23 +267,6 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
     for (const Semaphore& semaphore : program.semaphores()) {
         program_pages[program_page_idx] = semaphore.initial_value();
         program_page_idx += 4;
-    }
-
-    // Since GO signal begin in a new page, I need to advance my idx
-    program_page_idx = align(program_page_idx, DeviceCommand::PROGRAM_PAGE_SIZE / sizeof(uint32_t));
-
-    // uint32_t dispatch_core_word = ((uint32_t)dispatch_core.y << 16) | dispatch_core.x;
-    for (KernelGroup& kg: program.get_kernel_groups()) {
-        // TODO(agrebenisan): Hanging when we extend the launch msg. Needs to be investigated. For now,
-        // only supporting enqueue program for cq 0 on a device.
-        // kg.launch_msg.dispatch_core_x = dispatch_core.x;
-        // kg.launch_msg.dispatch_core_y = dispatch_core.y;
-        static_assert(sizeof(launch_msg_t) % sizeof(uint32_t) == 0);
-        uint32_t *launch_message_data = (uint32_t *)&kg.launch_msg;
-        for (int i = 0; i < sizeof(launch_msg_t) / sizeof(uint32_t); i++) {
-            program_pages[program_page_idx + i] = launch_message_data[i];
-        }
-        program_page_idx += sizeof(launch_msg_t) / sizeof(uint32_t);
     }
 
     uint32_t num_workers = 0;
@@ -604,7 +583,7 @@ EnqueueProgramCommand::EnqueueProgramCommand(
     Buffer& buffer,
     ProgramMap& program_to_dev_map,
     SystemMemoryManager& manager,
-    const Program& program,
+    Program& program,
     bool stall,
     std::optional<std::reference_wrapper<Trace>> trace
     ) :
@@ -642,7 +621,7 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
     uint32_t num_program_binary_pages = this->program_to_dev_map.num_transfers_in_program_pages.size();
     uint32_t num_go_signal_pages = this->program_to_dev_map.num_transfers_in_go_signal_pages.size();
     uint32_t num_host_data_pages = num_runtime_arg_pages + num_cb_config_pages;
-    uint32_t num_cached_pages = num_program_binary_pages + num_go_signal_pages;
+    uint32_t num_cached_pages = num_program_binary_pages;
     uint32_t total_num_pages = num_host_data_pages + num_cached_pages;
 
     command.set_page_size(DeviceCommand::PROGRAM_PAGE_SIZE);
@@ -690,12 +669,18 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
             populate_program_data_transfer_instructions(
                 this->program_to_dev_map.num_transfers_in_program_pages, this->program_to_dev_map.program_page_transfers);
         }
-
-        if (num_go_signal_pages) {
-            populate_program_data_transfer_instructions(
-                this->program_to_dev_map.num_transfers_in_go_signal_pages, this->program_to_dev_map.go_signal_page_transfers);
-        }
     }
+
+    command.add_buffer_transfer_interleaved_instruction(
+        host_data_src + DeviceCommand::PROGRAM_PAGE_SIZE * num_host_data_pages,
+        dummy_dst_addr,
+        num_go_signal_pages,
+        DeviceCommand::PROGRAM_PAGE_SIZE,
+        uint32_t(BufferType::SYSTEM_MEMORY),
+        dummy_buffer_type, page_index_offset, page_index_offset);
+
+    populate_program_data_transfer_instructions(
+        this->program_to_dev_map.num_transfers_in_go_signal_pages, this->program_to_dev_map.go_signal_page_transfers);
 
     // TODO (abhullar): deduce whether the producer is on ethernet core rather than hardcoding assuming tensix worker
     const uint32_t producer_cb_num_pages = (get_producer_data_buffer_size(/*use_eth_l1=*/false) / DeviceCommand::PROGRAM_PAGE_SIZE);
@@ -755,6 +740,7 @@ void EnqueueProgramCommand::process() {
 
     system_memory_temporary_storage_address = start_addr + align(system_memory_temporary_storage_address - start_addr, DeviceCommand::PROGRAM_PAGE_SIZE);
 
+    start_addr = system_memory_temporary_storage_address;
     array<uint32_t, 4> cb_data;
     for (const shared_ptr<CircularBuffer>& cb : program.circular_buffers()) {
         for (const auto buffer_index : cb->buffer_indices()) {
@@ -766,6 +752,20 @@ void EnqueueProgramCommand::process() {
                 trace_host_data.insert(trace_host_data.end(), cb_data.begin(), cb_data.end());
             }
         }
+    }
+
+    system_memory_temporary_storage_address = start_addr + align(system_memory_temporary_storage_address - start_addr, DeviceCommand::PROGRAM_PAGE_SIZE);
+
+    for (KernelGroup& kg: this->program.get_kernel_groups()) {
+        // TODO(agrebenisan): Hanging when we extend the launch msg. Needs to be investigated. For now,
+        // only supporting enqueue program for cq 0 on a device.
+        // kg.launch_msg.dispatch_core_x = dispatch_core.x;
+        // kg.launch_msg.dispatch_core_y = dispatch_core.y;
+        kg.launch_msg.mode = DISPATCH_MODE_DEV;
+        static_assert(sizeof(launch_msg_t) % sizeof(uint32_t) == 0);
+        uint32_t *launch_message_data = (uint32_t *)&kg.launch_msg;
+        this->manager.cq_write(launch_message_data, sizeof(launch_msg_t), system_memory_temporary_storage_address);
+        system_memory_temporary_storage_address = align(system_memory_temporary_storage_address + sizeof(launch_msg_t), padding_alignment);
     }
 
     this->manager.issue_queue_push_back(cmd_size, LAZY_COMMAND_QUEUE_MODE, this->command_queue_id);
