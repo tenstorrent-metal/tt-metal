@@ -296,6 +296,8 @@ void TensorModule(py::module &m_tensor) {
         .def_readwrite("shape", &ShardSpec::shape, "Shape of shard.")
         .def_readwrite("grid", &ShardSpec::grid, "Grid to layout shards.")
         .def_readwrite("orientation", &ShardSpec::orientation, "Orientation of cores to read shards")
+        .def(py::self == py::self)
+        .def(py::self != py::self)
         ;
 
 

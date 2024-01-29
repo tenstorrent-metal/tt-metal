@@ -241,11 +241,24 @@ operation::ProgramWithCallbacks all_gather2_multi_core(
         }
     }
 
-    auto override_runtime_args_callback = [](const Program& program,
-                                             const std::vector<Buffer*>& input_buffers,
-                                             const std::vector<Buffer*>& output_buffers) {};
+    auto override_runtime_arguments_callback = [eth_sender_kernel, eth_receiver_kernel, eth_sender_core, eth_receiver_core](
+        const void* operation,
+        Program& program,
+        const std::vector<Tensor>& input_tensors,
+        const std::vector<std::optional<const Tensor>>& optional_input_tensors,
+        const std::vector<Tensor>& output_tensors
+    ) {
+        const auto& input = input_tensors[0];
+        const auto& output = output_tensors[0];
+        auto &sender_runtime_args = GetRuntimeArgs(program, eth_sender_kernel, eth_sender_core);
+        sender_runtime_args[0] = input.buffer()->address();
+        sender_runtime_args[1] = output.buffer()->address();
 
-    return {std::move(program), override_runtime_args_callback};
+        auto &receiver_runtime_args = GetRuntimeArgs(program, eth_receiver_kernel, eth_receiver_core);
+        receiver_runtime_args[0] = output.buffer()->address();
+    };
+
+    return {.program=std::move(program), .override_runtime_arguments_callback=override_runtime_arguments_callback};
 }
 
 }  // namespace tt_metal
