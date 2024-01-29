@@ -577,7 +577,7 @@ def to_memory_config(tensor, memory_config: MemoryConfig):
                 # reshard
                 def impl(ttl_tensor, sharded_memory_config):
                     ttl_tensor = ttl.tensor.sharded_to_interleaved(ttl_tensor, DRAM_MEMORY_CONFIG)
-                    return ttl.tensor.interleaved_to_sharded_core_range_set(
+                    return ttl.tensor.interleaved_to_sharded(
                         ttl_tensor,
                         sharded_memory_config.shard_spec.grid,
                         sharded_memory_config.shard_spec.shape,
@@ -592,7 +592,7 @@ def to_memory_config(tensor, memory_config: MemoryConfig):
         else:
 
             def impl(ttl_tensor, sharded_memory_config):
-                return ttl.tensor.interleaved_to_sharded_core_range_set(
+                return ttl.tensor.interleaved_to_sharded(
                     ttl_tensor,
                     sharded_memory_config.shard_spec.grid,
                     sharded_memory_config.shard_spec.shape,

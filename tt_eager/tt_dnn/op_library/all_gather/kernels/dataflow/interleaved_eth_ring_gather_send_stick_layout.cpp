@@ -74,7 +74,7 @@ void kernel_main() {
     };
 
     // TODO: Are these necessary?
-    const uint32_t num_bytes_per_send = 16;
+    const uint32_t num_bytes_per_send = 4096;
     const uint32_t num_bytes_per_send_word_size = num_bytes_per_send >> 4;
 
     uint32_t page_idx = 0;
@@ -87,7 +87,7 @@ void kernel_main() {
 
     if (rem_num_pages > 0) {
         // TODO: Are these necessary?
-        const uint32_t rem_num_bytes_per_send = 16;
+        const uint32_t rem_num_bytes_per_send = 4096;
         const uint32_t rem_num_bytes_per_send_word_size = rem_num_bytes_per_send >> 4;
         get_and_send_data(page_idx, rem_num_pages, rem_num_bytes, rem_num_bytes_per_send, rem_num_bytes_per_send_word_size);
     }

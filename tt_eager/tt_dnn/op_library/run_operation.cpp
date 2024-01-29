@@ -289,6 +289,8 @@ std::vector<Tensor> run_device_operation2(
                     if (do_profile) {
                         detail::setup_profiler(operation, input_tensors, program);
                     }
+                }
+                for (auto& [device, program]: programs) {
                     EnqueueProgram(tt::tt_metal::detail::GetCommandQueue(device), program, false);
                 }
                 for (auto& [device, program]: programs) {
