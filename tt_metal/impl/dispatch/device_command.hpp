@@ -23,7 +23,7 @@ class DeviceCommand {
     static constexpr uint32_t NUM_BYTES_IN_DEVICE_COMMAND = NUM_ENTRIES_IN_DEVICE_COMMAND * sizeof(uint32_t);
     static constexpr uint32_t PROGRAM_PAGE_SIZE = 2048;
     static constexpr uint32_t NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION = COMMAND_PTR_SHARD_IDX + NUM_MAX_CORES*NUM_ENTRIES_PER_SHARD;
-    static constexpr uint32_t NUM_POSSIBLE_BUFFER_TRANSFERS = 2;
+    static constexpr uint32_t NUM_POSSIBLE_BUFFER_TRANSFERS = 3;
 
     // Ensure any changes to this device command have asserts modified/extended
     static_assert(NUM_ENTRIES_IN_COMMAND_HEADER == 22);

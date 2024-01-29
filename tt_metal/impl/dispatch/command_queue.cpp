@@ -622,7 +622,7 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
     uint32_t num_go_signal_pages = this->program_to_dev_map.num_transfers_in_go_signal_pages.size();
     uint32_t num_host_data_pages = num_runtime_arg_pages + num_cb_config_pages;
     uint32_t num_cached_pages = num_program_binary_pages;
-    uint32_t total_num_pages = num_host_data_pages + num_cached_pages;
+    uint32_t total_num_pages = num_host_data_pages + num_cached_pages + num_go_signal_pages;
 
     command.set_page_size(DeviceCommand::PROGRAM_PAGE_SIZE);
     command.set_num_pages(DeviceCommand::TransferType::RUNTIME_ARGS, num_runtime_arg_pages);
@@ -633,7 +633,7 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
 
     command.set_data_size(
         DeviceCommand::PROGRAM_PAGE_SIZE *
-        num_host_data_pages);
+        (num_host_data_pages + num_go_signal_pages));
 
     const uint32_t page_index_offset = 0;
     if (num_host_data_pages) {
@@ -671,8 +671,9 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
         }
     }
 
+    uint32_t go_signal_src = host_data_src + num_host_data_pages * DeviceCommand::PROGRAM_PAGE_SIZE;
     command.add_buffer_transfer_interleaved_instruction(
-        host_data_src + DeviceCommand::PROGRAM_PAGE_SIZE * num_host_data_pages,
+        go_signal_src,
         dummy_dst_addr,
         num_go_signal_pages,
         DeviceCommand::PROGRAM_PAGE_SIZE,
