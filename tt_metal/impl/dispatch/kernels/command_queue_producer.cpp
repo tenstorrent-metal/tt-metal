@@ -76,7 +76,7 @@ void kernel_main() {
             consumer_cb_num_pages,
             page_size,
             consumer_cb_size);
-        relay_command<consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch, consumer_noc_encoding);
+        relay_command<command_start_addr, consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch, consumer_noc_encoding);
         if (stall) {
             while (*db_semaphore_addr != 2)
                 ;
