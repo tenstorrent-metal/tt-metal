@@ -147,8 +147,6 @@ std::vector<Tensor> NlpCreateHeads::create_output_tensors(const std::vector<Tens
         auto kv_mem_config = this->output_mem_config;
         kv_mem_config.shard_spec = kv_shard_spec;
         auto output_shapes = this->compute_output_shapes(input_tensors);
-        std::cout<<fmt::format("{}", q_shard_spec)<<std::endl;
-        std::cout<<fmt::format("{}", kv_shard_spec)<<std::endl;
         return {
             create_sharded_device_tensor(output_shapes[0], input_tensor.dtype(), input_tensor.layout(), input_tensor.device(), q_mem_config),
             create_sharded_device_tensor(output_shapes[1], input_tensor.dtype(), input_tensor.layout(), input_tensor.device(), kv_mem_config),
@@ -199,7 +197,7 @@ void NlpConcatHeads::validate(const std::vector<Tensor>& input_tensors) const {
         TT_FATAL(shard_spec.shape[1] == input_tensor.shape()[-1]);
         TT_FATAL(shard_spec.shape[0] % input_tensor.shape()[-2] == 0);
         TT_FATAL(input_tensor.shape()[1] % (shard_spec.shape[0] / input_tensor.shape()[-2]) == 0);
-        TT_FATAL(this->output_mem_config.memory_layout == TensorMemoryLayout::BLOCK_SHARDED);
+        TT_FATAL(this->output_mem_config.memory_layout != TensorMemoryLayout::HEIGHT_SHARDED);
     } else {
         TT_FATAL(this->output_mem_config.memory_layout == TensorMemoryLayout::INTERLEAVED);
     }
