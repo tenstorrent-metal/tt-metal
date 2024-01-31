@@ -8,6 +8,9 @@ test-list:
         num-shapes: 1
         num-samples: 128
         args-sampling-strategy: "all"
+      env:
+        TT_METAL_SLOW_DISPATCH_MODE: ["", "1"]
+        # TT_PCI_DMA_BUF_SIZE: "1048576"
       datagen:
         function: gen_rand
         dtype: bfloat16
@@ -23,6 +26,3 @@ test-list:
         buffer-type: ["DRAM", "L1", "SYSTEM_MEMORY"]
         out-buffer-type: ["DRAM"]
       output-file: split_last_dim_two_chunks_tiled_sweep.csv
-      env:
-        TT_METAL_SLOW_DISPATCH_MODE: ["", "1"]
-        # TT_PCI_DMA_BUF_SIZE: "1048576"
