@@ -13,9 +13,9 @@ from pathlib import Path
 from transformers import AutoTokenizer
 import os
 
-from models.demos.falcon7b.tt.falcon_causallm import TtFalconCausalLM
-from models.demos.falcon7b.reference.hf_modeling_falcon import FalconConfig, FalconForCausalLM
-from models.demos.falcon7b.tt.model_config import get_model_config, get_tt_cache_path, model_config_entries
+from models.demos.falcon40b.tt.falcon_causallm import TtFalconCausalLM
+from models.demos.falcon40b.reference.hf_modeling_falcon import FalconConfig, FalconForCausalLM
+from models.demos.falcon40b.tt.model_config import get_model_config, get_tt_cache_path, model_config_entries
 from models.utility_functions import (
     disable_compilation_reports,
     disable_persistent_kernel_cache,
@@ -109,8 +109,8 @@ def run_falcon_demo_kv(
     # State dict is needed for embeddings
     logger.info("Loading weights...")
     profiler.start(f"loading_weights")
-    if (tt_cache_path == Path(f"models/demos/falcon7b/datasets/{model_version}")) and (
-        len(os.listdir(f"models/demos/falcon7b/datasets/{model_version}")) < 260
+    if (tt_cache_path == Path(f"models/demos/falcon40b/datasets/{model_version}")) and (
+        len(os.listdir(f"models/demos/falcon40b/datasets/{model_version}")) < 260
     ):
         logger.info("Weights not found on machine; downloading weights...")
         model_name = model_location_generator(model_version, model_subdir="Falcon")
@@ -422,11 +422,11 @@ def test_demo(
 ):
     disable_persistent_kernel_cache()
     disable_compilation_reports()
-    tt_lib.profiler.set_profiler_location(f"tt_metal/tools/profiler/logs/falcon7b")
+    tt_lib.profiler.set_profiler_location(f"tt_metal/tools/profiler/logs/falcon40b")
 
     return run_falcon_demo_kv(
         user_input=user_input,
-        model_version="tiiuae/falcon-7b-instruct",
+        model_version="tiiuae/falcon-40b-instruct",
         batch_size=32,
         num_layers=32,
         max_seq_len=1024,
