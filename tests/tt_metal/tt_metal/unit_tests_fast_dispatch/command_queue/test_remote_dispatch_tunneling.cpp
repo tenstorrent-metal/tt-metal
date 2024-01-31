@@ -48,7 +48,6 @@ TEST_F(CommandQueueMultiDeviceFixture, TestCommandReachesRemoteCommandProcessor)
         uint32_t num_bytes_in_cmd_header = DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER * sizeof(uint32_t);
 
         std::vector<uint32_t> cq_header(DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER);
-
         tt::Cluster::instance().read_sysmem(cq_header.data(), num_bytes_in_cmd_header, CQ_START, mmio_device_id, channel);
 
         tt_cxy_pair issue_q_reader_location = dispatch_core_manager::get(num_hw_cqs).issue_queue_reader_core(device->id(), channel, cq_id);
@@ -79,6 +78,11 @@ TEST_F(CommandQueueMultiDeviceFixture, TestCommandReachesRemoteCommandProcessor)
         std::vector<uint32_t> remote_cmd_processor_header(DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER);
         tt::Cluster::instance().read_core(remote_cmd_processor_header.data(), num_bytes_in_cmd_header, tt_cxy_pair(remote_processor_location.chip, remote_processor_physical_core), L1_UNRESERVED_BASE);
         EXPECT_EQ(cq_header, remote_cmd_processor_header) << "Remote command processor on remote chip did not receive expected command!";
+
+        tt_cxy_pair remote_dispatcher_location = dispatch_core_manager::get(num_hw_cqs).command_dispatcher_core(device->id(), channel, cq_id);
+        CoreCoord remote_dispatcher_physical_core = tt::get_physical_core_coordinate(remote_dispatcher_location, CoreType::WORKER);
+        std::vector<uint32_t> remote_dispatcher_header(DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER);
+        tt::Cluster::instance().read_core(remote_dispatcher_header.data(), num_bytes_in_cmd_header, tt_cxy_pair(remote_dispatcher_location.chip, remote_dispatcher_physical_core), L1_UNRESERVED_BASE);
     }
 }
 
