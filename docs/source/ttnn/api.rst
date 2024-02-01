@@ -72,6 +72,19 @@ Pointwise Binary
    ttnn/sub
    ttnn/pow
 
+Pointwise Relational
+====================
+
+.. toctree::
+   :maxdepth: 1
+
+   ttnn/gt
+   ttnn/gte
+   ttnn/lt
+   ttnn/lte
+   ttnn/eq
+   ttnn/ne
+
 Reduction
 =========
 
