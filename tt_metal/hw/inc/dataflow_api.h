@@ -23,6 +23,7 @@
 
 #include "debug/status.h"
 #include "debug/sanitize_noc.h"
+#include "debug/dprint.h"
 
 extern uint8_t noc_index;
 

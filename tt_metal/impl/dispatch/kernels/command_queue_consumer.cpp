@@ -53,8 +53,12 @@ void kernel_main() {
         uint32_t sharded_buffer_num_cores = header->sharded_buffer_num_cores;
         uint32_t wrap = header->wrap;
         uint32_t restart = header->restart;
-
+        uint32_t completion_data_size = header->completion_data_size;
+        // DPRINT << "RESERVE BACK: " << completion_data_size << ENDL();
+        completion_queue_reserve_back(completion_data_size);
+        write_event(uint32_t(&header->event));
         if ((DeviceCommand::WrapRegion)wrap == DeviceCommand::WrapRegion::COMPLETION) {
+            // DPRINT << "Wrap event: " << header->event << ENDL();
             cq_write_interface.completion_fifo_wr_ptr = completion_queue_start_addr >> 4;     // Head to the beginning of the completion region
             cq_write_interface.completion_fifo_wr_toggle = not cq_write_interface.completion_fifo_wr_toggle;
             notify_host_of_completion_queue_write_pointer<host_completion_queue_write_ptr_addr>();
@@ -70,14 +74,16 @@ void kernel_main() {
             write_and_launch_program(program_transfer_start_addr, num_pages, command_ptr, producer_noc_encoding, consumer_cb_size, consumer_cb_num_pages, producer_consumer_transfer_num_pages, db_buf_switch);
             wait_for_program_completion(num_workers);
         } else {
+            // DPRINT << "NUM BUF TRANSFERS: " << num_buffer_transfers << ENDL();
             command_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer_transfer_start_addr);
-            write_buffers<host_completion_queue_write_ptr_addr>(command_ptr, completion_queue_start_addr, num_buffer_transfers,  sharded_buffer_num_cores, consumer_cb_size, consumer_cb_num_pages, producer_noc_encoding, producer_consumer_transfer_num_pages, db_buf_switch);
+            write_buffers(command_ptr, num_buffer_transfers, sharded_buffer_num_cores, consumer_cb_size, consumer_cb_num_pages, producer_noc_encoding, producer_consumer_transfer_num_pages, db_buf_switch);
         }
 
         if (finish) {
             notify_host_complete<host_finish_addr>();
         }
 
+        completion_queue_push_back<completion_queue_start_addr, host_completion_queue_write_ptr_addr>(completion_data_size);
         if (not restart) {
             // notify producer that it has completed a command
             noc_semaphore_inc(producer_noc_encoding | get_semaphore(0), 1);

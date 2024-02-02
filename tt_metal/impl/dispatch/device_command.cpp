@@ -10,10 +10,13 @@
 
 DeviceCommand::DeviceCommand() {
     this->buffer_transfer_idx = 0;
-    this->program_transfer_idx = this->buffer_transfer_idx + DeviceCommand::NUM_POSSIBLE_BUFFER_TRANSFERS *
-                                                                      DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
+    this->program_transfer_idx = DeviceCommand::NUM_POSSIBLE_BUFFER_TRANSFERS * DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
     // Not sure why this the default, but not changing behaviour
     this->set_sharded_buffer_num_cores(1);
+}
+
+void DeviceCommand::set_event(uint32_t event) {
+    this->packet.header.event = event;
 }
 
 void DeviceCommand::set_restart() { this->packet.header.restart = 1; }
@@ -65,9 +68,13 @@ void DeviceCommand::set_num_pages(const DeviceCommand::TransferType transfer_typ
     }
 }
 
-void DeviceCommand::set_data_size(const uint32_t data_size) { this->packet.header.data_size = data_size; }
+void DeviceCommand::set_issue_data_size(const uint32_t data_size) { this->packet.header.issue_data_size = data_size; }
 
-uint32_t DeviceCommand::get_data_size() const { return this->packet.header.data_size; }
+void DeviceCommand::set_completion_data_size(const uint32_t data_size) { this->packet.header.completion_data_size = data_size; }
+
+uint32_t DeviceCommand::get_issue_data_size() const { return this->packet.header.issue_data_size; }
+
+uint32_t DeviceCommand::get_completion_data_size() const { return this->packet.header.completion_data_size; }
 
 void DeviceCommand::set_producer_consumer_transfer_num_pages(const uint32_t producer_consumer_transfer_num_pages) {
     this->packet.header.producer_consumer_transfer_num_pages = producer_consumer_transfer_num_pages;

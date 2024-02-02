@@ -509,14 +509,14 @@ namespace tt::tt_metal{
             tt::Cluster::instance().l1_barrier(device->id());
         }
 
-        inline void CompileCommandQueuePrograms(Device *device, vector<unique_ptr<Program, ProgramDeleter>>& command_queue_programs) {
+        inline void CompileCommandQueuePrograms(Device *device, vector<std::unique_ptr<Program, ProgramDeleter>>& command_queue_programs) {
             ZoneScoped;
 
             // TODO: Load dispatch kernels on dispatch cores of the remote chip
             //  https://github.com/tenstorrent-metal/tt-metal/issues/3953 and https://github.com/tenstorrent-metal/tt-metal/issues/3954
             TT_ASSERT(device->is_mmio_capable(), "Cannot compile a program for a non-mmio capable device TODO(abhullar)");
 
-            unique_ptr<Program, ProgramDeleter> command_queue_program_ptr(new Program);
+            std::unique_ptr<Program, ProgramDeleter> command_queue_program_ptr(new Program);
 
             for (const chip_id_t &device_id : tt::Cluster::instance().get_devices_controlled_by_mmio_device(device->id())) {
                 // TODO (abhullar): allow for multiple cqs on remote device, atm device initialization asserts one cq for the remote device

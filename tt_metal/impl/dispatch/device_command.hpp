@@ -8,6 +8,8 @@
 #include "dev_mem_map.h"
 #include "tt_metal/hostdevcommon/common_runtime_address_map.h"
 
+static constexpr uint32_t EVENT_PADDED_SIZE = 16;
+
 struct CommandHeader {
     uint32_t wrap = 0;
     uint32_t finish = 0;
@@ -17,6 +19,7 @@ struct CommandHeader {
     uint32_t stall = 0;
     uint32_t page_size = 0;
     uint32_t producer_cb_size = 0;
+    uint32_t event;
     uint32_t consumer_cb_size = 0;
     uint32_t producer_cb_num_pages = 0;
     uint32_t consumer_cb_num_pages = 0;
@@ -25,13 +28,16 @@ struct CommandHeader {
     uint32_t num_cb_config_pages = 0;
     uint32_t num_program_pages = 0;
     uint32_t num_go_signal_pages = 0;
-    uint32_t data_size = 0;
+    uint32_t issue_data_size = 0;
+    uint32_t completion_data_size = 0;
     uint32_t producer_consumer_transfer_num_pages = 0;
     uint32_t sharded_buffer_num_cores = 0;
     uint32_t restart = 0;
     uint32_t new_issue_queue_size = 0;
     uint32_t new_completion_queue_size = 0;
 };
+
+static_assert((offsetof(CommandHeader, event) % 32) == 0);
 
 class DeviceCommand {
    public:
@@ -59,6 +65,8 @@ class DeviceCommand {
         ISSUE = 1,
         COMPLETION = 2
     };
+
+    void set_event(uint32_t event);
 
     void set_restart();
 
@@ -92,11 +100,15 @@ class DeviceCommand {
 
     void set_num_pages(const DeviceCommand::TransferType transfer_type, const uint32_t num_pages);
 
-    void set_data_size(const uint32_t data_size);
+    void set_issue_data_size(const uint32_t data_size);
+
+    void set_completion_data_size(const uint32_t data_size);
 
     void set_producer_consumer_transfer_num_pages(const uint32_t producer_consumer_transfer_num_pages);
 
-    uint32_t get_data_size() const;
+    uint32_t get_issue_data_size() const;
+
+    uint32_t get_completion_data_size() const;
 
     void update_buffer_transfer_src(const uint8_t buffer_transfer_idx, const uint32_t new_src);
 

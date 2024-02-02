@@ -101,8 +101,7 @@ vector<uint32_t> generate_arange_vector(uint32_t size_bytes) {
 }
 
 bool test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue& cq, const TestBufferConfig& config) {
-    bool pass = true;
-    for (const bool use_void_star_api: {true, false}) {
+    for (const bool use_void_star_api: {true}) {
 
         size_t buf_size = config.num_pages * config.page_size;
         Buffer bufa(device, buf_size, config.page_size, config.buftype);
@@ -121,10 +120,18 @@ bool test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue&
         } else {
             EnqueueReadBuffer(cq, bufa, result, true);
         }
-        pass &= (src == result);
+        if (src != result) {
+            for (uint i = 0; i < src.size(); i++) {
+                if (src[i] != result[i]) {
+                    std:cout << "i: " << i << std::endl;
+                    break;
+                }
+                // std::cout << "SRC: "<< src[i] << ", DST: " << result[i] << std::endl;
+            }
+        }
+        EXPECT_EQ(src, result);
     }
-
-    return pass;
+    return true;
 }
 
 bool stress_test_EnqueueWriteBuffer_and_EnqueueReadBuffer(

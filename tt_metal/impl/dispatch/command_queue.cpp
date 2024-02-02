@@ -10,16 +10,33 @@
 #include "tt_metal/detail/tt_metal.hpp"
 #include "tt_metal/host_api.hpp"
 #include "tt_metal/impl/buffers/semaphore.hpp"
-#include "tt_metal/impl/debug/dprint_server.hpp"
 #include "tt_metal/impl/dispatch/dispatch_core_manager.hpp"
 #include "tt_metal/third_party/umd/device/tt_xy_pair.h"
 #include "dev_msgs.h"
 #include <algorithm> // for copy() and assign()
 #include <iterator> // for back_inserter
+#include "tt_metal/impl/debug/dprint_server.hpp"
+
+using std::pair;
+using std::set;
+using std::shared_ptr;
+using std::unique_ptr;
+using std::map;
+
+std::mutex finish_mutex;
+std::condition_variable finish_cv;
 
 namespace tt::tt_metal {
 
 #include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
+
+namespace detail {
+void EnqueueRestart(CommandQueue& cq) {
+    ZoneScoped;
+    detail::DispatchStateCheck(true);
+    cq.restart();
+}
+}
 
 uint32_t get_noc_multicast_encoding(const CoreCoord& top_left, const CoreCoord& bottom_right) {
     return NOC_MULTICAST_ENCODING(top_left.x, top_left.y, bottom_right.x, bottom_right.y);
@@ -310,29 +327,32 @@ ProgramMap ConstructProgramMap(const Device* device, Program& program) {
 }
 
 EnqueueRestartCommand::EnqueueRestartCommand(
-    uint32_t command_queue_channel,
+    uint32_t command_queue_id,
     Device* device,
-    SystemMemoryManager& manager
-): command_queue_channel(command_queue_channel), manager(manager) {
+    SystemMemoryManager& manager,
+    uint32_t event
+): command_queue_id(command_queue_id), manager(manager) {
     this->device = device;
+    this->event = event;
 }
 
 const DeviceCommand EnqueueRestartCommand::assemble_device_command(uint32_t) {
     DeviceCommand cmd;
     cmd.set_restart();
-    cmd.set_issue_queue_size(this->manager.get_issue_queue_size(this->command_queue_channel));
-    cmd.set_completion_queue_size(this->manager.get_completion_queue_size(this->command_queue_channel));
+    cmd.set_issue_queue_size(this->manager.get_issue_queue_size(this->command_queue_id));
+    cmd.set_completion_queue_size(this->manager.get_completion_queue_size(this->command_queue_id));
     cmd.set_finish();
+    cmd.set_event(this->event);
     return cmd;
 }
 
 void EnqueueRestartCommand::process() {
-    uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_channel);
+    uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
     const DeviceCommand cmd = this->assemble_device_command(0);
     uint32_t cmd_size = DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
-    this->manager.issue_queue_reserve_back(cmd_size, this->command_queue_channel);
+    this->manager.issue_queue_reserve_back(cmd_size, this->command_queue_id);
     this->manager.cq_write(cmd.data(), DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, write_ptr);
-    this->manager.issue_queue_push_back(cmd_size, false, this->command_queue_channel);
+    this->manager.issue_queue_push_back(cmd_size, false, this->command_queue_id);
 }
 
 // EnqueueReadBufferCommandSection
@@ -342,10 +362,12 @@ EnqueueReadBufferCommand::EnqueueReadBufferCommand(
     Buffer& buffer,
     void* dst,
     SystemMemoryManager& manager,
+    uint32_t event,
     uint32_t src_page_index,
     std::optional<uint32_t> pages_to_read) :
     command_queue_id(command_queue_id), dst(dst), manager(manager), buffer(buffer), src_page_index(src_page_index), pages_to_read(pages_to_read.has_value() ? pages_to_read.value() : buffer.num_pages()) {
     this->device = device;
+    this->event = event;
 }
 
 const DeviceCommand EnqueueReadShardedBufferCommand::create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) {
@@ -403,7 +425,6 @@ const DeviceCommand EnqueueReadInterleavedBufferCommand::create_buffer_transfer_
         uint32_t(BufferType::SYSTEM_MEMORY),
         this->src_page_index,
         dst_page_index);
-
     command.set_sharded_buffer_num_cores(1);
     return command;
 }
@@ -437,15 +458,16 @@ const DeviceCommand EnqueueReadBufferCommand::assemble_device_command(uint32_t d
     command.set_producer_cb_num_pages(producer_cb_num_pages);
     command.set_consumer_cb_num_pages(consumer_cb_num_pages);
     command.set_num_pages(num_pages);
+    command.set_completion_data_size(padded_page_size * num_pages + align(EVENT_PADDED_SIZE, 32));
+    command.set_event(this->event);
 
     return command;
 }
 
 void EnqueueReadBufferCommand::process() {
     uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
-    this->read_buffer_addr = this->manager.get_completion_queue_read_ptr(this->command_queue_id);
-
-    const DeviceCommand cmd = this->assemble_device_command(this->read_buffer_addr);
+    uint32_t read_buffer_addr = this->manager.get_next_completion_queue_write_ptr(this->command_queue_id) + align(EVENT_PADDED_SIZE, 32);
+    const DeviceCommand cmd = this->assemble_device_command(read_buffer_addr);
 
     this->manager.issue_queue_reserve_back(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, this->command_queue_id);
     this->manager.cq_write(cmd.data(), DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, write_ptr);
@@ -459,6 +481,7 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
     Buffer& buffer,
     const void* src,
     SystemMemoryManager& manager,
+    uint32_t event,
     uint32_t dst_page_index,
     std::optional<uint32_t> pages_to_write) :
     command_queue_id(command_queue_id), manager(manager), src(src), buffer(buffer), dst_page_index(dst_page_index), pages_to_write(pages_to_write.has_value() ? pages_to_write.value() : buffer.num_pages()) {
@@ -466,6 +489,7 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
         buffer.buffer_type() == BufferType::DRAM or buffer.buffer_type() == BufferType::L1,
         "Trying to write to an invalid buffer");
     this->device = device;
+    this->event = event;
 }
 
 
@@ -562,9 +586,9 @@ const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t 
     command.set_producer_cb_num_pages(producer_cb_num_pages);
     command.set_consumer_cb_num_pages(consumer_cb_num_pages);
     command.set_num_pages(num_pages);
-
-
-    command.set_data_size(padded_page_size * num_pages);
+    command.set_issue_data_size(padded_page_size * num_pages);
+    command.set_completion_data_size(align(EVENT_PADDED_SIZE, 32));
+    command.set_event(this->event);
     return command;
 }
 
@@ -573,7 +597,7 @@ void EnqueueWriteBufferCommand::process() {
     uint32_t system_memory_temporary_storage_address = write_ptr + DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
 
     const DeviceCommand cmd = this->assemble_device_command(system_memory_temporary_storage_address);
-    uint32_t data_size_in_bytes = cmd.get_data_size();
+    uint32_t data_size_in_bytes = cmd.get_issue_data_size();
 
     uint32_t cmd_size = DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + data_size_in_bytes;
     this->manager.issue_queue_reserve_back(cmd_size, this->command_queue_id);
@@ -602,6 +626,7 @@ EnqueueProgramCommand::EnqueueProgramCommand(
     Buffer& buffer,
     ProgramMap& program_to_dev_map,
     SystemMemoryManager& manager,
+    uint32_t event,
     const Program& program,
     bool stall,
     std::optional<std::reference_wrapper<Trace>> trace
@@ -609,6 +634,7 @@ EnqueueProgramCommand::EnqueueProgramCommand(
     command_queue_id(command_queue_id), buffer(buffer), program_to_dev_map(program_to_dev_map), manager(manager), program(program), stall(stall) {
     this->device = device;
     this->trace = trace;
+    this->event = event;
 }
 
 const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host_data_src) {
@@ -649,8 +675,9 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
     command.set_num_pages(DeviceCommand::TransferType::PROGRAM_PAGES, num_program_binary_pages);
     command.set_num_pages(DeviceCommand::TransferType::GO_SIGNALS, num_go_signal_pages);
     command.set_num_pages(total_num_pages);
+    command.set_completion_data_size(align(EVENT_PADDED_SIZE, 32));
 
-    command.set_data_size(
+    command.set_issue_data_size(
         DeviceCommand::PROGRAM_PAGE_SIZE *
         num_host_data_pages);
 
@@ -718,7 +745,7 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
 
     // This needs to be quite small, since programs are small
     command.set_producer_consumer_transfer_num_pages(4);
-
+    command.set_event(this->event);
     return command;
 }
 
@@ -728,7 +755,7 @@ void EnqueueProgramCommand::process() {
 
     const DeviceCommand cmd = this->assemble_device_command(system_memory_temporary_storage_address);
 
-    uint32_t data_size_in_bytes = cmd.get_data_size();
+    uint32_t data_size_in_bytes = cmd.get_issue_data_size();
     const uint32_t cmd_size = DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + data_size_in_bytes;
     this->manager.issue_queue_reserve_back(cmd_size, this->command_queue_id);
     this->manager.cq_write(cmd.data(), DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, write_ptr);
@@ -768,41 +795,28 @@ void EnqueueProgramCommand::process() {
 
     this->manager.issue_queue_push_back(cmd_size, LAZY_COMMAND_QUEUE_MODE, this->command_queue_id);
     if (tracing) {
-        Trace::TraceNode trace_node = {.command = cmd, .data = trace_host_data, .command_type = this->type(), .num_data_bytes = cmd.get_data_size()};
+        Trace::TraceNode trace_node = {.command = cmd, .data = trace_host_data, .command_type = this->type(), .num_data_bytes = cmd.get_issue_data_size()};
         Trace& trace_ = trace.value();
         trace_.record(trace_node);
     }
 }
 
-FinishCommand::FinishCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager) : command_queue_id(command_queue_id), manager(manager) { this->device = device; }
-
-const DeviceCommand FinishCommand::assemble_device_command(uint32_t) {
-    DeviceCommand command;
-    command.set_finish();
-    return command;
-}
-
-void FinishCommand::process() {
-    uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
-    const DeviceCommand cmd = this->assemble_device_command(0);
-    uint32_t cmd_size = DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
-    this->manager.issue_queue_reserve_back(cmd_size, this->command_queue_id);
-    this->manager.cq_write(cmd.data(), DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, write_ptr);
-    this->manager.issue_queue_push_back(cmd_size, false, this->command_queue_id);
-}
-
-// EnqueueWrapCommand section
-EnqueueWrapCommand::EnqueueWrapCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, DeviceCommand::WrapRegion wrap_region) : command_queue_id(command_queue_id), manager(manager), wrap_region(wrap_region) {
+EnqueueWrapCommand::EnqueueWrapCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager): command_queue_id(command_queue_id), manager(manager) {
     this->device = device;
 }
 
-const DeviceCommand EnqueueWrapCommand::assemble_device_command(uint32_t) {
+
+// EnqueueWrapCommand section
+EnqueueIssueWrapCommand::EnqueueIssueWrapCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager) : EnqueueWrapCommand(command_queue_id, device, manager) {
+}
+
+const DeviceCommand EnqueueIssueWrapCommand::assemble_device_command(uint32_t) {
     DeviceCommand command;
-    command.set_wrap(this->wrap_region);
+    command.set_wrap(DeviceCommand::WrapRegion::ISSUE);
     return command;
 }
 
-void EnqueueWrapCommand::process() {
+void EnqueueIssueWrapCommand::process() {
     uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
     uint32_t space_left_in_bytes = this->manager.get_issue_queue_limit(this->command_queue_id) - write_ptr;
     // There may not be enough space in the issue queue to submit another command
@@ -813,21 +827,37 @@ void EnqueueWrapCommand::process() {
     const DeviceCommand cmd = this->assemble_device_command(0);
     this->manager.issue_queue_reserve_back(wrap_packet_size_bytes, this->command_queue_id);
     this->manager.cq_write(cmd.data(), wrap_packet_size_bytes, write_ptr);
-    if (this->wrap_region == DeviceCommand::WrapRegion::COMPLETION) {
-        // Wrap the read pointers for completion queue because device will start writing data at head of completion queue and there are no more reads to be done at current completion queue write pointer
-        // If we don't wrap the read then the subsequent read buffer command may attempt to read past the total command queue size
-        // because the read buffer command will see updated write pointer to compute num pages to read but the local read pointer is pointing to tail of completion queue
-        this->manager.wrap_completion_queue_rd_ptr(this->command_queue_id);
-        this->manager.issue_queue_push_back(wrap_packet_size_bytes, LAZY_COMMAND_QUEUE_MODE, this->command_queue_id);
-    } else {
-        this->manager.wrap_issue_queue_wr_ptr(this->command_queue_id);
-    }
+
+    this->manager.wrap_issue_queue_wr_ptr(this->command_queue_id);
+}
+
+EnqueueCompletionWrapCommand::EnqueueCompletionWrapCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, uint32_t event) : EnqueueWrapCommand(command_queue_id, device, manager) {
+    this->event = event;
+}
+
+const DeviceCommand EnqueueCompletionWrapCommand::assemble_device_command(uint32_t) {
+    DeviceCommand command;
+    command.set_wrap(DeviceCommand::WrapRegion::COMPLETION);
+    command.set_event(this->event);
+    return command;
+}
+
+void EnqueueCompletionWrapCommand::process() {
+    uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
+    uint32_t space_left_in_bytes = this->manager.get_issue_queue_limit(this->command_queue_id) - write_ptr;
+    uint32_t wrap_packet_size_bytes = std::min(space_left_in_bytes, DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND);
+    const DeviceCommand cmd = this->assemble_device_command(0);
+    this->manager.issue_queue_reserve_back(wrap_packet_size_bytes, this->command_queue_id);
+    this->manager.cq_write(cmd.data(), wrap_packet_size_bytes, write_ptr);
+    this->manager.wrap_next_completion_queue_wr_ptr(this->command_queue_id);
+    this->manager.issue_queue_push_back(wrap_packet_size_bytes, LAZY_COMMAND_QUEUE_MODE, this->command_queue_id);
 }
 
 // CommandQueue section
 CommandQueue::CommandQueue(Device* device, uint32_t id): manager(*device->manager) {
     this->device = device;
     this->id = id;
+    this->num_issued_commands = 0;
 
     chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
@@ -838,14 +868,27 @@ CommandQueue::CommandQueue(Device* device, uint32_t id): manager(*device->manage
 
     this->issue_queue_reader_core = CoreCoord(issue_q_reader_location.x, issue_q_reader_location.y);
     this->completion_queue_writer_core = CoreCoord(completion_q_writer_location.x, completion_q_writer_location.y);
+
+    this->exit_condition = false;
+    std::thread completion_queue_thread = std::thread(&CommandQueue::read_completion_queue, this);
+    this->completion_queue_thread = std::move(completion_queue_thread);
 }
 
-CommandQueue::~CommandQueue() {}
+CommandQueue::~CommandQueue() {
+    this->exit_condition = true;
+    this->completion_queue_thread.join();
+    TT_ASSERT(this->issued_reads.size() == 0, "There should be no reads in flight after closing our completion queue thread");
+    TT_ASSERT(this->issued_completion_wraps.size() == 0, "There should be no completion wraps in flight after closing our completion queue thread");
+    TT_ASSERT(this->num_issued_commands == 0, "There shouldn't be any issued commands after closing our completion queue thread");
+}
 
 void CommandQueue::enqueue_command(Command& command, bool blocking) {
     // For the time-being, doing the actual work of enqueing in
     // the main thread.
     // TODO(agrebenisan): Perform the following in a worker thread
+    // std::cout << "NIC BEFORE INCR: " << this->num_issued_commands << std::endl;
+    this->num_issued_commands++;
+    // std::cout << "NIC AFTER INCR: " << this->num_issued_commands << std::endl;
     command.process();
 
     if (blocking) {
@@ -903,59 +946,43 @@ void CommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blocking)
     uint32_t total_pages_to_read = buffer.num_pages();
     uint32_t unpadded_dst_offset = 0;
     uint32_t src_page_index = 0;
-    while (total_pages_to_read > 0) {
+
+    const uint32_t command_completion_limit = this->manager.get_completion_queue_limit(this->id);
+    while (total_pages_to_read) {
         if ((this->manager.get_issue_queue_write_ptr(this->id)) + read_buffer_command_size >= this->manager.get_issue_queue_limit(this->id)) {
-            this->wrap(DeviceCommand::WrapRegion::ISSUE, blocking);
+            this->issue_wrap();
         }
 
-        const uint32_t command_completion_limit = this->manager.get_completion_queue_limit(this->id);
-        uint32_t num_pages_available = (command_completion_limit - get_cq_completion_wr_ptr<false>(this->device->id(), this->id, this->size_B)) / padded_page_size;
+        uint32_t completion_queue_write_ptr = this->manager.get_next_completion_queue_write_ptr(this->id);
+        if (completion_queue_write_ptr + padded_page_size + align(EVENT_PADDED_SIZE, 32) >= command_completion_limit) {
+            uint32_t wrap_completion_event = this->manager.get_next_event(this->id);
+
+            this->issued_completion_wraps.emplace(wrap_completion_event, wrap_completion_event);
+            this->completion_wrap(wrap_completion_event);
+        }
+
+        uint32_t num_pages_available = (command_completion_limit - this->manager.get_next_completion_queue_write_ptr(this->id) - align(EVENT_PADDED_SIZE, 32)) / padded_page_size;
         uint32_t pages_to_read = std::min(total_pages_to_read, num_pages_available);
-        if (pages_to_read == 0) {
-            // Wrap the completion region because a single page won't fit in available space
-            // Wrap needs to be blocking because host needs updated write pointer to compute how many pages can be read
-            this->wrap(DeviceCommand::WrapRegion::COMPLETION, true);
-            num_pages_available = (command_completion_limit - get_cq_completion_wr_ptr<false>(this->device->id(), this->id, this->size_B)) / padded_page_size;
-            pages_to_read = std::min(total_pages_to_read, num_pages_available);
-        }
-
-        tt::log_debug(tt::LogDispatch, "EnqueueReadBuffer for channel {}", this->id);
-        uint32_t command_read_buffer_addr;
+        TT_ASSERT(pages_to_read, "There should always be pages to read");
+        uint32_t read_event = this->manager.get_next_event(this->id);
+        this->issued_reads.emplace(read_event, detail::IssuedReadData(buffer, padded_page_size, (void*)(uint64_t(dst) + unpadded_dst_offset), pages_to_read));
         if (is_sharded(buffer.buffer_layout())) {
-            auto command = EnqueueReadShardedBufferCommand(this->id, this->device, buffer, dst, this->manager, src_page_index, pages_to_read);
-            this->enqueue_command(command, blocking);
-            command_read_buffer_addr = command.read_buffer_addr;
-        }
-        else {
-            auto command = EnqueueReadInterleavedBufferCommand(this->id, this->device, buffer, dst, this->manager, src_page_index, pages_to_read);
-            this->enqueue_command(command, blocking);
-            command_read_buffer_addr = command.read_buffer_addr;
-        }
-        this->manager.completion_queue_wait_front(this->id); // wait for device to write data
-
-        uint32_t bytes_read = pages_to_read * padded_page_size;
-        if ((buffer.page_size() % 32) != 0) {
-            // If page size is not 32B-aligned, we cannot do a contiguous copy
-            uint32_t dst_address_offset = unpadded_dst_offset;
-            for (uint32_t sysmem_address_offset = 0; sysmem_address_offset < bytes_read; sysmem_address_offset += padded_page_size) {
-                tt::Cluster::instance().read_sysmem((char*)dst + dst_address_offset, buffer.page_size(), command_read_buffer_addr + sysmem_address_offset, mmio_device_id, channel);
-                dst_address_offset += buffer.page_size();
-            }
+            auto command = EnqueueReadShardedBufferCommand(this->id, this->device, buffer, dst, this->manager, read_event, src_page_index, pages_to_read);
+            this->enqueue_command(command, false);
         } else {
-            tt::Cluster::instance().read_sysmem((char*)dst + unpadded_dst_offset, bytes_read, command_read_buffer_addr, mmio_device_id, channel);
+            auto command = EnqueueReadInterleavedBufferCommand(this->id, this->device, buffer, dst, this->manager, read_event, src_page_index, pages_to_read);
+            this->enqueue_command(command, false);
         }
+        uint32_t completion_num_bytes = align(EVENT_PADDED_SIZE + pages_to_read * padded_page_size, 32);
+        this->manager.completion_queue_push_back(completion_num_bytes, this->id);
 
-        this->manager.completion_queue_pop_front(bytes_read, this->id);
         total_pages_to_read -= pages_to_read;
         src_page_index += pages_to_read;
         unpadded_dst_offset += pages_to_read * buffer.page_size();
     }
 
-    if (buffer.buffer_layout() == TensorMemoryLayout::WIDTH_SHARDED or
-        buffer.buffer_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
-        convert_interleaved_to_sharded_on_host(dst,
-                                        buffer,
-                                        true);
+    if (blocking) {
+        this->finish();
     }
 }
 
@@ -987,23 +1014,28 @@ void CommandQueue::enqueue_write_buffer(Buffer& buffer, const void* src, bool bl
         uint32_t pages_to_write = std::min(total_pages_to_write, (uint32_t)num_pages_available);
         if (pages_to_write == 0) {
             // No space for command and data
-            this->wrap(DeviceCommand::WrapRegion::ISSUE, blocking);
+            this->issue_wrap();
             num_pages_available = (int32_t(command_issue_limit - this->manager.get_issue_queue_write_ptr(this->id)) - int32_t(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND)) / int32_t(padded_page_size);
             pages_to_write = std::min(total_pages_to_write, (uint32_t)num_pages_available);
         }
 
         tt::log_debug(tt::LogDispatch, "EnqueueWriteBuffer for channel {}", this->id);
+        uint32_t event = this->manager.get_next_event(this->id);
         if (is_sharded(buffer.buffer_layout())) {
-            auto command = EnqueueWriteShardedBufferCommand(this->id, this->device, buffer, src, this->manager, dst_page_index, pages_to_write);
-            this->enqueue_command(command, blocking);
+            auto command = EnqueueWriteShardedBufferCommand(this->id, this->device, buffer, src, this->manager, event, dst_page_index, pages_to_write);
+            this->enqueue_command(command, false);
+        } else {
+            auto command = EnqueueWriteInterleavedBufferCommand(this->id, this->device, buffer, src, this->manager, event, dst_page_index, pages_to_write);
+            this->enqueue_command(command, false);
         }
-        else {
-            auto command = EnqueueWriteInterleavedBufferCommand(this->id, this->device, buffer, src, this->manager, dst_page_index, pages_to_write);
-            this->enqueue_command(command, blocking);
-        }
+        this->manager.completion_queue_push_back(align(EVENT_PADDED_SIZE, 32), this->id);
 
         total_pages_to_write -= pages_to_write;
         dst_page_index += pages_to_write;
+    }
+
+    if (blocking) {
+        this->finish();
     }
 }
 
@@ -1051,7 +1083,7 @@ void CommandQueue::enqueue_program(Program& program, std::optional<std::referenc
         this->manager.get_issue_queue_size(this->id)) {
         TT_FATAL(
             host_data_and_device_command_size <= this->manager.get_issue_queue_size(this->id) - CQ_START, "EnqueueProgram command size too large");
-        this->wrap(DeviceCommand::WrapRegion::ISSUE, blocking);
+        this->issue_wrap();
     }
 
     EnqueueProgramCommand command(
@@ -1060,60 +1092,110 @@ void CommandQueue::enqueue_program(Program& program, std::optional<std::referenc
         *this->program_to_buffer(this->device->id()).at(program_id),
         this->program_to_dev_map(this->device->id()).at(program_id),
         this->manager,
+        this->manager.get_next_event(this->id),
         program,
         stall,
         trace);
 
     this->enqueue_command(command, blocking);
+    this->manager.completion_queue_push_back(align(EVENT_PADDED_SIZE, 32), this->id);
 }
 
-void CommandQueue::wait_finish() {
+void CommandQueue::copy_into_user_space(uint32_t event, uint32_t read_ptr, chip_id_t mmio_device_id, uint16_t channel) {
+    const auto& [buffer, padded_page_size, num_pages_read, dst] = this->issued_reads.at(event);
+    uint32_t bytes_read = num_pages_read * padded_page_size;
+    if ((buffer.page_size() % 32) == 0 or buffer.page_size() == buffer.size()) {
+        tt::Cluster::instance().read_sysmem(dst, bytes_read, read_ptr + align(EVENT_PADDED_SIZE, 32), mmio_device_id, channel);
+    } else {
+        uint32_t dst_offset = 0;
+        uint32_t read_src = read_ptr + align(EVENT_PADDED_SIZE, 32);
+        for (uint32_t offset = 0; offset < padded_page_size * num_pages_read; offset += padded_page_size) {
+            tt::Cluster::instance().read_sysmem((char*)(uint64_t(dst) + dst_offset), buffer.page_size(), read_src + offset, mmio_device_id, channel);
+            dst_offset += buffer.page_size();
+        }
+    }
+    if (buffer.buffer_layout() == TensorMemoryLayout::WIDTH_SHARDED or
+        buffer.buffer_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
+        TT_ASSERT(false, "Not supporting partial sharded conversions yet");
+    }
+    this->manager.completion_queue_pop_front(align(bytes_read, 32), this->id);
+    this->issued_reads.erase(event);
+}
+
+void CommandQueue::read_completion_queue() {
     chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(this->device->id());
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(this->device->id());
+    while (true) {
+        if (this->num_issued_commands) {
+            uint32_t num_issued_commands_snapshot = this->num_issued_commands;
+            for (uint32_t i = 0; i < num_issued_commands_snapshot; i++) {
+                this->manager.completion_queue_wait_front(this->id, this->exit_condition);
+                if (this->exit_condition) { // Early exit
+                    return;
+                }
+                uint32_t event;
+                uint32_t read_ptr = this->manager.get_completion_queue_read_ptr(this->id);;
+                uint32_t read_toggle = this->manager.get_completion_queue_read_toggle(this->id);
+                tt::Cluster::instance().read_sysmem(&event, 4, read_ptr, mmio_device_id, channel);
+                if (this->issued_completion_wraps.count(event)) {
+                    this->manager.wrap_completion_queue_rd_ptr(this->id);
+                    this->manager.send_completion_queue_read_ptr(this->id);
+                    this->issued_completion_wraps.erase(event);
+                } else {
+                    if (this->issued_reads.count(event)) {
+                        this->copy_into_user_space(event, read_ptr, mmio_device_id, channel);
+                    }
+                    this->manager.completion_queue_pop_front(align(EVENT_PADDED_SIZE, 32), this->id);
+                }
+            }
 
-    // Poll to check that we're done.
-    uint32_t finish_addr_offset = this->id * this->size_B;
-    uint32_t finish;
-    do {
-        tt::Cluster::instance().read_sysmem(&finish, 4, HOST_CQ_FINISH_PTR + finish_addr_offset, mmio_device_id, channel);
-
-        // There's also a case where the device can be hung due to an unanswered DPRINT WAIT and
-        // a full print buffer. Poll the print server for this case and throw if it happens.
-        if (DPrintServerHangDetected()) {
-            TT_THROW("Command Queue could not finish: device hang due to unanswered DPRINT WAIT.");
+            TT_ASSERT(num_issued_commands_snapshot <= this->num_issued_commands);
+            this->num_issued_commands -= num_issued_commands_snapshot;
+            finish_cv.notify_one();
+        } else if (this->exit_condition) {
+            return;
         }
-    } while (finish != 1);
-    // Reset this value to 0 before moving on
-    finish = 0;
-    tt::Cluster::instance().write_sysmem(&finish, 4, HOST_CQ_FINISH_PTR + finish_addr_offset, mmio_device_id, channel);
+    }
 }
 
 void CommandQueue::finish() {
     ZoneScopedN("CommandQueue_finish");
-    if ((this->manager.get_issue_queue_write_ptr(this->id)) + DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND >=
-        this->manager.get_issue_queue_limit(this->id)) {
-        this->wrap(DeviceCommand::WrapRegion::ISSUE, false);
-    }
     tt::log_debug(tt::LogDispatch, "Finish for command queue {}", this->id);
-
-    FinishCommand command(this->id, this->device, this->manager);
-    this->enqueue_command(command, false);
-    this->wait_finish();
+    volatile std::atomic<uint32_t> volatile_num_issued_commands = this->num_issued_commands;
+    while (volatile_num_issued_commands) {
+        if (DPrintServerHangDetected) {
+            this->exit_condition = true;
+            TT_THROW("Command Queue could not finish: device hang due to unanswered DPRINT WAIT.");
+        }
+    }
+    // if (this->num_issued_commands) {
+    //     std::unique_lock finish_lock(finish_mutex);
+    //     finish_cv.wait(finish_lock, [this]() {
+    //         return this->num_issued_commands == 0;
+    //     });
+    // }
 }
 
-void CommandQueue::wrap(DeviceCommand::WrapRegion wrap_region, bool blocking) {
+void CommandQueue::issue_wrap() {
     ZoneScopedN("CommandQueue_wrap");
     tt::log_debug(tt::LogDispatch, "EnqueueWrap for channel {}", this->id);
-    EnqueueWrapCommand command(this->id, this->device, this->manager, wrap_region);
-    this->enqueue_command(command, blocking);
+    EnqueueIssueWrapCommand command(this->id, this->device, this->manager);
+    command.process();
+}
+
+void CommandQueue::completion_wrap(uint32_t event) {
+    ZoneScopedN("CommandQueue_wrap");
+    tt::log_debug(tt::LogDispatch, "EnqueueWrap for channel {}", this->id);
+    EnqueueCompletionWrapCommand command(this->id, this->device, this->manager, event);
+    this->enqueue_command(command, false);
 }
 
 void CommandQueue::restart() {
     ZoneScopedN("CommandQueue_restart");
     tt::log_debug(tt::LogDispatch, "EnqueueRestart for channel {}", this->id);
-    EnqueueRestartCommand command(this->id, this->device, this->manager);
+    EnqueueRestartCommand command(this->id, this->device, this->manager, this->manager.get_next_event(this->id));
     this->enqueue_command(command, false);
-    this->wait_finish();
+    this->finish();
 
     // Reset the manager
     this->manager.reset(this->id);
@@ -1208,7 +1290,6 @@ void ClearProgramCache(CommandQueue& cq) {
 Trace BeginTrace(CommandQueue& command_queue) {
     // Resets the command queue state
     command_queue.restart();
-
     return Trace(command_queue);
 }
 
@@ -1235,16 +1316,6 @@ void EnqueueTrace(Trace& trace, bool blocking) {
     if (blocking) {
         command_queue.manager.issue_queue_reserve_back(trace_size, command_queue.id);
     }
-}
-
-namespace detail {
-
-void EnqueueRestart(CommandQueue& cq) {
-    ZoneScoped;
-    detail::DispatchStateCheck(true);
-    cq.restart();
-}
-
 }
 
 }  // namespace tt::tt_metal

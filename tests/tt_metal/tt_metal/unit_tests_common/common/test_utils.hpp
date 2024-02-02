@@ -28,7 +28,7 @@ inline bool FileContainsAllStrings(string file_name, vector<string> &must_contai
         return false;
 
     // Construct a set of required strings, we'll remove each one when it's found.
-    set<string> must_contain_set(must_contain.begin(), must_contain.end());
+    std::set<string> must_contain_set(must_contain.begin(), must_contain.end());
 
     if (log_file.is_open()) {
         string line;

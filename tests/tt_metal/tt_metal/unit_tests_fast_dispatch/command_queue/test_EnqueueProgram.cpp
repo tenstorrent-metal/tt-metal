@@ -74,6 +74,9 @@ bool cb_config_successful(Device* device, const DummyProgramMultiCBConfig & prog
                 bool addr_match = cb_config_vector.at(index) == ((cb_addr) >> 4);
                 bool size_match = cb_config_vector.at(index + 1) == (cb_size >> 4);
                 bool num_pages_match = cb_config_vector.at(index + 2) == cb_num_pages;
+                std::cout << "ADDR RECV: " << cb_config_vector.at(index) << ", ADDR: " << (cb_addr >> 4) << std::endl;
+                std::cout << "SIZE RECV: " << cb_config_vector.at(index + 1) << ", SIZE: " << (cb_size >> 4) << std::endl;
+                std::cout << "NUM PAGES RECV: " << cb_config_vector.at(index + 2) << ", NUM PAGES: " << (cb_num_pages) << std::endl;
                 pass &= (addr_match and size_match and num_pages_match);
 
                 cb_addr += cb_size;
@@ -105,8 +108,6 @@ bool test_dummy_EnqueueProgram_with_cbs(Device* device, CommandQueue& cq, DummyP
 
     initialize_dummy_kernels(program, program_config.cr_set);
     EnqueueProgram(cq, program, false);
-
-
     Finish(cq);
     return cb_config_successful(device, program_config);
 
@@ -131,6 +132,7 @@ bool test_dummy_EnqueueProgram_with_cbs_update_size(Device* device, CommandQueue
 
     initialize_dummy_kernels(program, program_config.cr_set);
     EnqueueProgram(cq, program, false);
+    Finish(cq);
     auto pass_1 = cb_config_successful(device, program_config);
 
     DummyProgramMultiCBConfig program_config_2 = program_config;
