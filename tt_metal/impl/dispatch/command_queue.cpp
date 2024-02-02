@@ -875,11 +875,15 @@ CommandQueue::CommandQueue(Device* device, uint32_t id): manager(*device->manage
 }
 
 CommandQueue::~CommandQueue() {
-    this->exit_condition = true;
-    this->completion_queue_thread.join();
-    TT_ASSERT(this->issued_reads.size() == 0, "There should be no reads in flight after closing our completion queue thread");
-    TT_ASSERT(this->issued_completion_wraps.size() == 0, "There should be no completion wraps in flight after closing our completion queue thread");
-    TT_ASSERT(this->num_issued_commands == 0, "There shouldn't be any issued commands after closing our completion queue thread");
+    if (this->exit_condition) {
+        this->completion_queue_thread.join();
+    } else {
+        this->exit_condition = true;
+        this->completion_queue_thread.join();
+        TT_ASSERT(this->issued_reads.size() == 0, "There should be no reads in flight after closing our completion queue thread");
+        TT_ASSERT(this->issued_completion_wraps.size() == 0, "There should be no completion wraps in flight after closing our completion queue thread");
+        TT_ASSERT(this->num_issued_commands == 0, "There shouldn't be any issued commands after closing our completion queue thread");
+    }
 }
 
 void CommandQueue::enqueue_command(Command& command, bool blocking) {
@@ -1162,18 +1166,18 @@ void CommandQueue::finish() {
     ZoneScopedN("CommandQueue_finish");
     tt::log_debug(tt::LogDispatch, "Finish for command queue {}", this->id);
     volatile std::atomic<uint32_t> volatile_num_issued_commands = this->num_issued_commands;
-    while (volatile_num_issued_commands) {
-        if (DPrintServerHangDetected) {
-            this->exit_condition = true;
-            TT_THROW("Command Queue could not finish: device hang due to unanswered DPRINT WAIT.");
-        }
-    }
-    // if (this->num_issued_commands) {
-    //     std::unique_lock finish_lock(finish_mutex);
-    //     finish_cv.wait(finish_lock, [this]() {
-    //         return this->num_issued_commands == 0;
-    //     });
+    // while (volatile_num_issued_commands) {
+    //     if (DPrintServerHangDetected) {
+    //         this->exit_condition = true;
+    //         TT_THROW("Command Queue could not finish: device hang due to unanswered DPRINT WAIT.");
+    //     }
     // }
+    if (this->num_issued_commands) {
+        std::unique_lock finish_lock(finish_mutex);
+        finish_cv.wait(finish_lock, [this]() {
+            return this->num_issued_commands == 0;
+        });
+    }
 }
 
 void CommandQueue::issue_wrap() {
