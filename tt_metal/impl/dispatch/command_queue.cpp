@@ -903,25 +903,35 @@ void CommandQueue::enqueue_command(Command& command, bool blocking) {
 
 //TODO: Currently converting page ordering from interleaved to sharded and then doing contiguous read/write
 // Look into modifying command to do read/write of a page at a time to avoid doing copy
+template <bool read>
 void convert_interleaved_to_sharded_on_host(const void * host,
                                         const Buffer & buffer,
-                                        bool read=false) {
+                                        TensorMemoryLayout memory_layout = TensorMemoryLayout::HEIGHT_SHARDED,
+                                        uint32_t offset=0,
+                                        std::optional<uint32_t> num_pages_in = std::nullopt) {
 
-    const uint32_t num_pages = buffer.num_pages();
+    uint32_t num_pages;
+    if(num_pages_in.has_value()){
+        num_pages = num_pages_in.value();
+    }
+    else {
+        num_pages = buffer.num_pages();
+    }
     const uint32_t page_size = buffer.page_size();
 
+    //TODO use std::slice to reduce num memcpys
+    // std::slice has strided memcpy
     const uint32_t size_in_bytes = num_pages * page_size;
-
     void * temp = malloc(size_in_bytes);
     memcpy(temp, host, size_in_bytes);
-
     const void * dst = host;
     std::set<uint32_t> pages_seen;
-    for (uint32_t host_page_id = 0; host_page_id < num_pages; host_page_id++) {
-        auto dev_page_id = buffer.get_mapped_page_id(host_page_id);
 
+
+    for (uint32_t host_page_id = offset; host_page_id < num_pages; host_page_id++) {
+        auto dev_page_id = buffer.get_mapped_page_id(host_page_id);
         TT_ASSERT(dev_page_id < num_pages and dev_page_id >= 0);
-        if (read) {
+        if constexpr(read) {
             memcpy((char* )dst + dev_page_id*page_size,
                 (char *)temp + host_page_id*page_size,
                 page_size
@@ -1001,9 +1011,7 @@ void CommandQueue::enqueue_write_buffer(Buffer& buffer, const void* src, bool bl
 
     if (buffer.buffer_layout() == TensorMemoryLayout::WIDTH_SHARDED or
         buffer.buffer_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
-        convert_interleaved_to_sharded_on_host(src,
-                                    buffer
-                                    );
+        convert_interleaved_to_sharded_on_host<false>(src, buffer);
     }
 
     uint32_t padded_page_size = align(buffer.page_size(), 32);
