@@ -560,8 +560,6 @@ namespace tt::tt_metal{
                         TT_ASSERT(issue_q_reader_location.chip == device->id() and completion_q_writer_location.chip == device->id(),
                             "Issue queue interface is on device {} and completion queue interface is on device {} but they are expected to be on device {}", issue_q_reader_location.chip, completion_q_writer_location.chip, device->id());
 
-                        CoreCoord issue_q_logical_core(issue_q_reader_location.x, issue_q_reader_location.y);
-                        CoreCoord completion_q_logical_core(completion_q_writer_location.x, completion_q_writer_location.y);
                         CoreCoord issue_q_physical_core = get_physical_core_coordinate(issue_q_reader_location, CoreType::WORKER);
                         CoreCoord completion_q_physical_core = get_physical_core_coordinate(completion_q_writer_location, CoreType::WORKER);
 
@@ -615,7 +613,7 @@ namespace tt::tt_metal{
                         tt::tt_metal::CreateKernel(
                             *command_queue_program_ptr,
                             issue_q_reader_kernel,
-                            issue_q_logical_core,
+                            issue_q_reader_location,
                             tt::tt_metal::DataMovementConfig {
                                 .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
                                 .noc = tt::tt_metal::NOC::RISCV_0_default,
@@ -624,7 +622,7 @@ namespace tt::tt_metal{
 
 
                         uint32_t num_command_slots = (device_id == device->id()) ? num_tensix_command_slots : num_eth_command_slots;
-                        tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, issue_q_logical_core, num_command_slots);
+                        tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, issue_q_reader_location, num_command_slots);
 
                         // Currently remote device dispatch completion queue interface has not been brought up
                         // This will be updated with https://github.com/tenstorrent-metal/tt-metal/issues/3949
@@ -632,14 +630,14 @@ namespace tt::tt_metal{
                             tt::tt_metal::CreateKernel(
                                 *command_queue_program_ptr,
                                 "tt_metal/impl/dispatch/kernels/command_queue_consumer.cpp",
-                                completion_q_logical_core,
+                                completion_q_writer_location,
                                 tt::tt_metal::DataMovementConfig {
                                     .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
                                     .noc = tt::tt_metal::NOC::RISCV_0_default,
                                     .compile_args = consumer_compile_args,
                                     .defines = consumer_defines});
 
-                            tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, completion_q_logical_core, 0);
+                            tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, completion_q_writer_location, 0);
                         }
                     }
                 }
@@ -655,13 +653,12 @@ namespace tt::tt_metal{
                 tt_cxy_pair remote_processor_location = dispatch_core_manager::get(num_hw_cqs).remote_processor_core(device->id(), channel, cq_id);
                 tt_cxy_pair dispatch_location = dispatch_core_manager::get(num_hw_cqs).command_dispatcher_core(device->id(), channel, cq_id);
                 tt_cxy_pair remote_signaller_location = dispatch_core_manager::get(num_hw_cqs).remote_signaller_core(device->id(), channel, cq_id);
-                CoreCoord remote_processor_logical_core(remote_processor_location.x, remote_processor_location.y);
-                CoreCoord dispatch_logical_core(dispatch_location.x, dispatch_location.y);
-                CoreCoord remote_signaller_logical_core(remote_signaller_location.x, remote_signaller_location.y);
+
                 CoreCoord remote_processor_physical_core = get_physical_core_coordinate(remote_processor_location, CoreType::WORKER);
                 CoreCoord dispatch_physical_core = get_physical_core_coordinate(dispatch_location, CoreType::WORKER);
                 CoreCoord remote_signaller_physical_core = get_physical_core_coordinate(remote_signaller_location, CoreType::WORKER);
 
+                // Set up the dst router to receive commands on the forward path
                 CoreCoord logical_eth_router_dst = tt::Cluster::instance().get_eth_core_for_dispatch_core(
                     remote_processor_location, EthRouterMode::FD_DST, mmio_device_id);
                 CoreCoord physical_eth_router_dst = device->ethernet_core_from_logical_core(logical_eth_router_dst);
@@ -669,6 +666,12 @@ namespace tt::tt_metal{
                 uint32_t dst_router_sem_value = num_eth_command_slots;
                 tt::Cluster::instance().write_core(&dst_router_sem_value, sizeof(uint32_t), tt_cxy_pair(device->id(), physical_eth_router_dst), eth_l1_mem::address_map::SEMAPHORE_BASE);
                 tt::Cluster::instance().configure_eth_core_for_dispatch_core(remote_processor_location, EthRouterMode::FD_DST, mmio_device_id);
+
+                // Set up the src router on remote device to send commands on the return path
+                CoreCoord logical_eth_router_src = tt::Cluster::instance().get_eth_core_for_dispatch_core(
+                    remote_signaller_location, EthRouterMode::FD_SRC, mmio_device_id);
+                CoreCoord physical_eth_router_src = device->ethernet_core_from_logical_core(logical_eth_router_src);
+                tt::Cluster::instance().configure_eth_core_for_dispatch_core(remote_signaller_location, EthRouterMode::FD_SRC, mmio_device_id);
 
                 std::vector<uint32_t> processor_compile_args = {
                     cmd_start_tensix,
@@ -691,7 +694,7 @@ namespace tt::tt_metal{
                 tt::tt_metal::CreateKernel(
                     *command_queue_program_ptr,
                     "tt_metal/impl/dispatch/kernels/remote_command_processor.cpp",
-                    remote_processor_logical_core,
+                    remote_processor_location,
                     tt::tt_metal::DataMovementConfig {
                         .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
                         .noc = tt::tt_metal::NOC::RISCV_0_default,
@@ -699,9 +702,9 @@ namespace tt::tt_metal{
                         .defines = processor_defines});
 
                 // first semaphore is between ethernet router and the processor core to signal whether processor can receive commands
-                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_processor_logical_core, 0);
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_processor_location, 0);
                 // second semaphore is between processor and dispatcher to detect whether dispatcher can accept commands
-                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_processor_logical_core, num_tensix_command_slots);
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_processor_location, num_tensix_command_slots);
 
                 std::vector<uint32_t> dispatcher_compile_args = {cmd_start_tensix, consumer_data_buffer_size_tensix, cmd_start_tensix, consumer_data_buffer_size_tensix};
 
@@ -716,7 +719,7 @@ namespace tt::tt_metal{
                 tt::tt_metal::CreateKernel(
                     *command_queue_program_ptr,
                     "tt_metal/impl/dispatch/kernels/remote_dispatcher.cpp",
-                    dispatch_logical_core,
+                    dispatch_location,
                     tt::tt_metal::DataMovementConfig {
                         .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
                         .noc = tt::tt_metal::NOC::RISCV_0_default,
@@ -724,10 +727,42 @@ namespace tt::tt_metal{
                         .defines = dispatcher_defines});
 
                 // First semaphore is between processor and dispatcher to signal whether the latter can receive commands
-                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_logical_core, 0);
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_location, 0);
                 // second semaphore is between dispatcher and remote completion signaller to signal if the former can send data
-                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_logical_core, num_tensix_command_slots);
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_location, num_tensix_command_slots);
 
+                std::vector<uint32_t> signaller_compile_args = {
+                    cmd_start_tensix,
+                    data_section_addr_tensix,
+                    consumer_data_buffer_size_tensix,
+                    cmd_start_tensix,
+                    consumer_data_buffer_size_tensix,
+                    cmd_start_eth,
+                    producer_data_buffer_size_eth,
+                };
+
+                std::map<string, string> signaller_defines = {
+                    {"DISPATCH_KERNEL", "1"},
+                    {"PRODUCER_NOC_X", std::to_string(dispatch_physical_core.x)},
+                    {"PRODUCER_NOC_Y", std::to_string(dispatch_physical_core.y)},
+                    {"CONSUMER_NOC_X", std::to_string(physical_eth_router_src.x)},
+                    {"CONSUMER_NOC_Y", std::to_string(physical_eth_router_src.y)},
+                };
+
+                tt::tt_metal::CreateKernel(
+                    *command_queue_program_ptr,
+                    "tt_metal/impl/dispatch/kernels/remote_command_signaller.cpp",
+                    remote_signaller_location,
+                    tt::tt_metal::DataMovementConfig {
+                        .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+                        .noc = tt::tt_metal::NOC::RISCV_0_default,
+                        .compile_args = signaller_compile_args,
+                        .defines = signaller_defines});
+
+                // First semaphore is between dispatcher and signaller to signal whether the latter can receive commands
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_signaller_location, 0);
+                // Second semaphore is between signaller and src eth router to signal if the former can send data
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, remote_signaller_location, num_eth_command_slots);
             }
             CompileProgram(device, *command_queue_program_ptr);
             command_queue_programs.push_back(std::move(command_queue_program_ptr));
