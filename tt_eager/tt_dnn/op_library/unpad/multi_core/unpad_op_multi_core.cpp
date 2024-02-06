@@ -174,8 +174,8 @@ operation::ProgramWithCallbacks get_program(
 
     CoreRange total_cores = {.start = {0, 0}, .end = {num_cores_x - 1, num_cores_y - 1}};
     uint32_t num_cores_total = num_cores_x * num_cores_y;
-    auto [num_cores, all_cores, core_group_1, core_group_2, num_sticks_per_core_group_1, num_sticks_per_core_group_2] =
-        split_work_to_cores(compute_with_storage_grid_size, num_unpadded_sticks);
+    //auto [num_cores, all_cores, core_group_1, core_group_2, num_sticks_per_core_group_1, num_sticks_per_core_group_2] =
+    //    split_work_to_cores(compute_with_storage_grid_size, num_unpadded_sticks);
 
     tt_metal::Buffer *src0_buffer = a.buffer();
 
@@ -195,25 +195,19 @@ operation::ProgramWithCallbacks get_program(
     uint32_t cb_page_size = round_up(unpadded_row_size_bytes, TILE_WIDTH);
     tt_metal::CBHandle cb_src0;
 
-    std::optional<uint32_t> num_pages_per_shard_height;
-    std::optional<uint32_t> num_pages_per_shard_height_last;
-    std::optional<uint32_t> num_pages_per_shard_width;
-
     if (output.is_sharded()) {
         auto shard_shape = output.shard_spec().value().shape;
-        num_pages_per_shard_height = shard_shape[0];
+        auto num_pages_per_shard_height = shard_shape[0];
         uint32_t num_pages_height = output.volume() / output_shape[-1];
-        num_pages_per_shard_height_last =
-            num_pages_per_shard_height.value() -
-            (round_up(num_pages_height, num_pages_per_shard_height.value()) - num_pages_height);
-        num_pages_per_shard_width = shard_shape[1] / output_shape[-1];
+        auto num_pages_per_shard_width = shard_shape[1] / output_shape[-1];
 
         tt_metal::CircularBufferConfig cb_src0_config =
             tt_metal::CircularBufferConfig(
-                num_pages_per_shard_height.value() * num_pages_per_shard_width.value() * cb_page_size,
+                (num_pages_per_shard_height * num_pages_per_shard_width) * cb_page_size,
                 {{src0_cb_index, cb_data_format}})
                 .set_page_size(src0_cb_index, cb_page_size)
                 .set_globally_allocated_address(*output.buffer());
+
         cb_src0 = tt_metal::CreateCircularBuffer(program, total_cores, cb_src0_config);
 
     } else {
@@ -273,7 +267,6 @@ operation::ProgramWithCallbacks get_program(
         uint32_t unpadded_row_size_bytes = dst_tensor.shape()[-1] * dst_tensor.element_size();
         uint32_t cb_page_size = round_up(unpadded_row_size_bytes, TILE_WIDTH);
 
-        std::optional<CoreCoord> end_core;
         if (dst_tensor.is_sharded()) {
             auto dst_buffer = dst_tensor.buffer();
             UpdateDynamicCircularBufferAddress(program, cb_src0, *dst_buffer);

@@ -37,7 +37,8 @@ void validate_buffer_size_and_page_size(uint64_t size, uint64_t page_size, const
 }
 
 
-inline std::vector< std::vector<uint32_t> > core_to_host_pages(
+inline std::tuple < std::vector< std::vector<uint32_t> > , std::vector<uint32_t>, std::vector<uint32_t>> get_mappings(
+                                                    const int & total_pages,
                                                     const int & pages_per_shard,
                                                     const int & num_shards,
                                                     const TensorMemoryLayout & layout,
@@ -47,42 +48,76 @@ inline std::vector< std::vector<uint32_t> > core_to_host_pages(
 {
 
 
-    auto total_pages = pages_per_shard * num_shards;
-    std::vector < std::vector<uint32_t> > ret_vec(num_shards, std::vector<uint32_t>(pages_per_shard));
+
+    std::vector < std::vector<uint32_t> > core_host_dev_mapping;
+    std::vector <uint32_t> dev_page_to_host_page_mappings(total_pages);
+    std::vector <uint32_t> dev_page_to_core_mapping(total_pages);
 
 
     std::array<uint32_t, 2> shard_in_pages = {shard_shape[0]/page_shape[0], shard_shape[1]/page_shape[1]};
     if( layout == TensorMemoryLayout::WIDTH_SHARDED){
+        core_host_dev_mapping = std::vector < std::vector<uint32_t> > (num_shards, std::vector<uint32_t>(pages_per_shard));
+        if(total_pages != num_shards*pages_per_shard) {
+            core_host_dev_mapping[core_host_dev_mapping.size() - 1] = std::vector<uint32_t>(total_pages % pages_per_shard);
+        }
         int page_id  = 0;
         for(int i =0 ; i<num_shards; i++){
-            for(int j=0; j<pages_per_shard; j++){
-                ret_vec[i][j]= i*pages_per_shard + j;
+            for(int j=0; j<core_host_dev_mapping[i].size(); j++){
+                core_host_dev_mapping[i][j]= i*pages_per_shard + j;
+                TT_ASSERT(page_id < dev_page_to_host_page_mappings.size());
+                TT_ASSERT(page_id < dev_page_to_core_mapping.size());
+                dev_page_to_host_page_mappings[page_id] = i*pages_per_shard + j;
+                dev_page_to_core_mapping[page_id] = i;
+                page_id++;
             }
         }
     }
     else if( layout == TensorMemoryLayout:: HEIGHT_SHARDED){
+        core_host_dev_mapping = std::vector < std::vector<uint32_t> > (num_shards, std::vector<uint32_t>(pages_per_shard));
+        if(total_pages != num_shards*pages_per_shard) {
+            core_host_dev_mapping[core_host_dev_mapping.size() - 1] = std::vector<uint32_t>(total_pages % pages_per_shard);
+        }
         int page_id = 0;
         for(int i =0 ; i<num_shards; i++){
-            for(int j=0; j<pages_per_shard; j++){
-                ret_vec[i][j]= page_id++;
+            for(int j=0; j<core_host_dev_mapping[i].size(); j++){
+                core_host_dev_mapping[i][j]= page_id;
+                TT_ASSERT(page_id < dev_page_to_host_page_mappings.size());
+                TT_ASSERT(page_id < dev_page_to_core_mapping.size());
+                dev_page_to_host_page_mappings[page_id] = page_id;
+                dev_page_to_core_mapping[page_id] = i;
+                page_id++;
             }
         }
     }
     else if(layout == TensorMemoryLayout::BLOCK_SHARDED){
+        core_host_dev_mapping = std::vector < std::vector<uint32_t> > (num_shards, std::vector<uint32_t>());
+
         int i_offset = 0;
         int j_offset = 0;
 
+        int num_shard_columns = tensor2d_size[0]/shard_in_pages[0];
+        if(tensor2d_size[0] % shard_in_pages[0] != 0) {
+            num_shard_columns++;
+        }
+
+        int page_id = 0;
         for(int shard_idx=0; shard_idx<num_shards; shard_idx++){
             int host_idx = 0;
             for(int i=i_offset; i<(shard_in_pages[1] + i_offset); i++){
+                if(i >= tensor2d_size[1]) {
+                    break;
+                }
                 //Shard reached end of row
-                for(int j=j_offset; j<(shard_in_pages[0] + j_offset); j++){
+                for(int j=j_offset; j<(shard_in_pages[0] + j_offset) and j<(tensor2d_size[0]); j++){
                     auto host_page = i*tensor2d_size[0] + j;
-                    ret_vec[shard_idx][host_idx] = host_page;
+                    core_host_dev_mapping[shard_idx].push_back(host_page);
+                    dev_page_to_host_page_mappings[page_id] = host_page;
+                    dev_page_to_core_mapping[page_id] = shard_idx;
                     host_idx++;
+                    page_id++;
                 }
             }
-            if(((shard_idx + 1) % (tensor2d_size[0]/shard_in_pages[0])) == 0){
+            if(((shard_idx + 1) % num_shard_columns) == 0){
                 j_offset = 0;
                 i_offset += shard_in_pages[1];
             }
@@ -91,9 +126,8 @@ inline std::vector< std::vector<uint32_t> > core_to_host_pages(
             }
         }
 
-
     }
-    return ret_vec;
+    return {core_host_dev_mapping, dev_page_to_host_page_mappings, dev_page_to_core_mapping};
 }
 
 
@@ -126,7 +160,7 @@ std::string Buffer::get_shard_info() const {
         core_index++;
     }
     ret_str += "Dev page mappings:\n";;
-    uint32_t num_pages = all_cores_.size() * sspec.size();
+    uint32_t num_pages = all_cores_.size() * sspec.num_pages();
     for(uint32_t dev_page_id = 0; dev_page_id < num_pages; dev_page_id ++){
         ret_str += "Dev page: " + std::to_string(dev_page_id) +
             " mapped to core " + all_cores_[dev_page_to_core_mapping_[dev_page_id]].str() +
@@ -164,23 +198,18 @@ Buffer::Buffer(Device *device, uint64_t size, uint64_t page_size, const BufferTy
             this->core_to_core_id_.insert({core, core_id });
             core_id++;
         }
-        core_host_page_indices_ = core_to_host_pages(shard_spec().size(), this->num_cores(), buffer_layout, shard_spec().page_shape, shard_spec().shape(), shard_spec().tensor2d_shape);
-        core_bank_indices_.reserve(this->num_cores());
 
-        auto total_dev_pages = this->num_cores() * shard_spec().size();
-        dev_page_to_host_page_mapping_ = std::vector<uint32_t>(total_dev_pages);
-        dev_page_to_core_mapping_ = std::vector<uint32_t>(total_dev_pages);
+
+        auto mappings = get_mappings(size/page_size, shard_spec().num_pages(), this->num_cores(), buffer_layout, shard_spec().page_shape, shard_spec().shape(), shard_spec().tensor2d_shape);
+
+        core_host_page_indices_ = std::get<0>(mappings);
+        dev_page_to_host_page_mapping_ = std::get<1>(mappings);
+        dev_page_to_core_mapping_ = std::get<2>(mappings);
+        core_bank_indices_.reserve(this->num_cores());
         for(auto core : all_cores_){
             core_bank_indices_.push_back(device->bank_ids_from_logical_core(core)[0]);
         }
-        int dev_page_index = 0;
-        for(int core_index = 0; core_index < core_host_page_indices_.size() ; core_index++){
-            for(int host_page_index = 0; host_page_index < core_host_page_indices_[core_index].size() ; host_page_index++){
-                dev_page_to_core_mapping_[dev_page_index] = core_index;
-                dev_page_to_host_page_mapping_[dev_page_index] = core_host_page_indices_[core_index][host_page_index];
-                dev_page_index++;
-            }
-        }
+
     }
 
     #ifdef DEBUG_SHARD_PRINT
@@ -307,7 +336,7 @@ uint64_t Buffer::page_address(uint32_t page_index) const {
         this->address_ :
         this->address_ + this->device_->l1_bank_offset_from_bank_id(bank_id);
 
-    int pages_offset_within_bank = page_index % shard_spec().size();
+    int pages_offset_within_bank = page_index % shard_spec().num_pages();
     auto offset = (round_up(this->page_size_, ADDRESS_ALIGNMENT) * pages_offset_within_bank);
     return base_page_address + offset;
 }

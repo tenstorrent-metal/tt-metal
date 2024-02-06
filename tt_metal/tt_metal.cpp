@@ -313,11 +313,6 @@ void CloseDevices(std::map<chip_id_t, Device *> devices) {
         TensorMemoryLayout buffer_layout = buffer.buffer_layout();
 
         auto device = buffer.device();
-        #ifdef DEBUG_PRINT_SHARD
-            std::cout << "Reading From Device Height Sharded " << std::endl;
-        #endif
-
-
         int output_page_index = 0;
         auto total_pages = buffer.num_pages();
         uint32_t page_size = buffer.page_size();
@@ -327,7 +322,7 @@ void CloseDevices(std::map<chip_id_t, Device *> devices) {
         host_buffer = std::vector<uint32_t>(total_pages * num_entries_per_page);
 
 
-        for(int dev_page_id=0; dev_page_id<total_pages; dev_page_id++){
+        for(uint32_t dev_page_id=0; dev_page_id<total_pages; dev_page_id++){
             auto bank_id = buffer.get_bank_id_from_page_id(dev_page_id);
             auto host_page_id = buffer.get_mapped_page_id(dev_page_id);
             if(!shard_order){
@@ -407,7 +402,7 @@ void CloseDevices(std::map<chip_id_t, Device *> devices) {
         host_buffer.clear();  // overwrite the data
 
         uint32_t num_entries_per_page = buffer.page_size() / sizeof(uint32_t);
-        uint32_t num_entries_per_shard = num_entries_per_page * buffer.shard_spec().size();
+        uint32_t num_entries_per_shard = num_entries_per_page * buffer.shard_spec().num_pages();
         host_buffer = std::vector<uint32_t>(num_entries_per_shard);
 
         auto page_ids = buffer.dev_pages_in_shard(core_id);
