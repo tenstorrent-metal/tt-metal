@@ -61,6 +61,8 @@ namespace kernel_profiler {
 uint32_t wIndex __attribute__((used));
 }
 
+constexpr uint64_t DELAY_CYCLES_PER_Y = 0;
+
 void enable_power_management() {
     // Mask and Hyst taken from tb_tensix math_tests
     uint32_t pm_mask = 0xFFFF;
@@ -321,6 +323,9 @@ int main() {
         // Invalidate the i$ now the kernels have loaded and before running
         volatile tt_reg_ptr uint32_t* cfg_regs = core.cfg_regs_base(0);
         cfg_regs[RISCV_IC_INVALIDATE_InvalidateAll_ADDR32] = RISCV_IC_BRISC_MASK | RISCV_IC_TRISC_ALL_MASK;
+
+        uint64_t now = core.read_wall_clock();
+        while (core.read_wall_clock() - now < DELAY_CYCLES_PER_Y * my_y[0]);
 
         run_triscs();
 
