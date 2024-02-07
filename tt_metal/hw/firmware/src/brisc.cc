@@ -285,8 +285,15 @@ int main() {
 
     risc_init();
     device_setup();
-    kernel_profiler::mark_BR_fw_first_start();
     noc_init();
+
+    uint32_t noc_x = my_x[0];
+    uint32_t noc_y = my_y[0];
+
+    if ((noc_x == 1) && (noc_y == 1))
+    {
+        kernel_profiler::mark_BR_fw_first_start();
+    }
 
     // Set ncrisc's resume address to 0 so we know when ncrisc has overwritten it
     mailboxes->ncrisc_halt.resume_addr = 0;
@@ -300,6 +307,10 @@ int main() {
     DEBUG_STATUS('I', 'N', 'D');
 
     mailboxes->launch.run = RUN_MSG_DONE;
+    if ((noc_x != 1) || (noc_y != 1))
+    {
+        kernel_profiler::mark_BR_fw_first_start();
+    }
 
     while (1) {
 

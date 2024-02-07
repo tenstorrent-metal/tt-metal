@@ -98,6 +98,7 @@ class DeviceProfiler {
 
         //Smallest timestamp
         uint64_t smallest_timestamp = (1lu << 63);
+        uint64_t largest_timestamp = 0;
 
         // Output Dir for device Profile Logs
         std::filesystem::path output_dir;

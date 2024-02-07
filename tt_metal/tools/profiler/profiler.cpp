@@ -56,25 +56,6 @@ void DeviceProfiler::readRiscProfilerResults(
         riscEndIndices.push_back(kernel_profiler::HOST_BUFFER_END_INDEX_T1);
         riscEndIndices.push_back(kernel_profiler::HOST_BUFFER_END_INDEX_T2);
 
-        //std::cout << worker_core.x << "," << worker_core.y  << "," << coreFlatID << "," <<  output_dram_buffer.address() << std::endl
-            //<< control_buffer[kernel_profiler::NOC_X] << "," << control_buffer[kernel_profiler::NOC_Y]
-            //<< "," << control_buffer[kernel_profiler::FLAT_ID]
-            //<< "," << control_buffer[kernel_profiler::DRAM_PROFILER_ADDRESS]
-            //<< "," << control_buffer[kernel_profiler::RUN_COUNTER]
-            //<< "," << control_buffer[kernel_profiler::HOST_BUFFER_END_INDEX_BR]
-            //<< "," << control_buffer[kernel_profiler::DEVICE_BUFFER_END_INDEX_BR]<< std::endl;
-
-        //vector<std::uint32_t> profile_buffer_L1;
-        //profile_buffer_L1 = tt::llrt::read_hex_vec_from_core(
-                //device_id,
-                //worker_core,
-                //PROFILER_L1_BUFFER_BR,
-                //kernel_profiler::CUSTOM_MARKERS * sizeof(uint32_t));
-        //for (int i = kernel_profiler::ID_HH; i < kernel_profiler::CUSTOM_MARKERS; i++)
-        //{
-             //std::cout << profile_buffer_L1[i] << ",";
-        //}
-        //std::cout << std::endl<< std::endl;
     }
     else
     {
@@ -93,6 +74,11 @@ void DeviceProfiler::readRiscProfilerResults(
     {
         return;
     }
+    uint32_t time_H = control_buffer[kernel_profiler::FW_RESET_H] & 0xFFF;
+    uint32_t time_L = control_buffer[kernel_profiler::FW_RESET_L];
+    uint64_t timeStamp = (uint64_t(time_H) << 32) | time_L;
+    //std::cout << worker_core.x <<":" << worker_core.y<< ":" << timeStamp << "," << time_H << "," << time_L << std::endl;
+    firstTimestamp(timeStamp);
 
     int riscNum = 0;
     for (auto riscEndIndex : riscEndIndices) {
@@ -203,6 +189,13 @@ void DeviceProfiler::firstTimestamp(uint64_t timestamp)
     {
         smallest_timestamp = timestamp;
     }
+    if (timestamp > largest_timestamp)
+    {
+        largest_timestamp = timestamp;
+    }
+    uint64_t hostSideDiff = TracyGetSyncDiffTime();
+
+    std::cout << hostSideDiff << "," << largest_timestamp << "," << smallest_timestamp << "," << (double)(largest_timestamp - smallest_timestamp) /hostSideDiff << std::endl;
 }
 
 void DeviceProfiler::dumpResultToFile(
@@ -246,7 +239,7 @@ void DeviceProfiler::dumpResultToFile(
         device_core_data[deviceCore].data.emplace(runID, eventMap);
     }
 
-    firstTimestamp(timestamp);
+    //firstTimestamp(timestamp);
 
     if (new_log || !std::filesystem::exists(log_path))
     {
@@ -295,8 +288,6 @@ DeviceProfiler::DeviceProfiler()
     new_log = true;
     output_dir = std::filesystem::path(string(PROFILER_RUNTIME_ROOT_DIR) + string(PROFILER_LOGS_DIR_NAME));
     std::filesystem::create_directories(output_dir);
-
-    TracySetCpuTime();
 
 #endif
 }
@@ -380,7 +371,7 @@ void DeviceProfiler::pushTracyDeviceResults(std::pair<uint32_t,CoreCoord> device
     TT_ASSERT (device_core_data.find(device_core) != device_core_data.end(), "Device {}, core {},{} not present in recorded data" , device_core.first, device_core.second.x, device_core.second.y);
     if (!device_core_data[device_core].contextPopulated)
     {
-        device_core_data[device_core].tracyContext->PopulateTTContext( smallest_timestamp, 1000.f / (float)device_core_frequency);
+        device_core_data[device_core].tracyContext->PopulateTTContext( smallest_timestamp, 1030.f / (float)device_core_frequency);
         device_core_data[device_core].contextPopulated = true;
     }
 
@@ -443,9 +434,6 @@ void DeviceProfiler::pushTracyDeviceResults(std::pair<uint32_t,CoreCoord> device
             TracyTTCollect(device_core_data[device_core].tracyContext, device_core_data[device_core].data);
         }
     }
-    device_core_data[device_core].data.clear();
-    device_core_data[device_core].runCounter = 0;
-
 #endif
 }
 

@@ -51,6 +51,7 @@ void InitDeviceProfiler(Device *device){
     }
 
     std::vector<uint32_t> control_buffer(PROFILER_L1_CONTROL_VECTOR_SIZE, 0);
+    std::vector<uint32_t> control_buffer_read(PROFILER_L1_CONTROL_VECTOR_SIZE, 0);
     control_buffer[kernel_profiler::DRAM_PROFILER_ADDRESS] = tt_metal_device_profiler.output_dram_buffer.address();
 
     const metal_SocDescriptor& soc_d = tt::Cluster::instance().get_soc_desc(device_id);
@@ -60,6 +61,13 @@ void InitDeviceProfiler(Device *device){
     {
         if (std::find(ethCores.begin(), ethCores.end(), core.first) == ethCores.end())
         {
+            control_buffer_read = tt::llrt::read_hex_vec_from_core(
+                device_id,
+                core.first,
+                PROFILER_L1_BUFFER_CONTROL,
+                PROFILER_L1_CONTROL_BUFFER_SIZE);
+            control_buffer[kernel_profiler::FW_RESET_H] = control_buffer_read[kernel_profiler::FW_RESET_H];
+            control_buffer[kernel_profiler::FW_RESET_L] = control_buffer_read[kernel_profiler::FW_RESET_L];
             tt::llrt::write_hex_vec_to_core(
                     device_id,
                     core.first,

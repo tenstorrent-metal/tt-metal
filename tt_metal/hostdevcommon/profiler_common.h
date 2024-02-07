@@ -32,10 +32,10 @@ namespace kernel_profiler{
         DEVICE_BUFFER_END_INDEX_T1,
         DEVICE_BUFFER_END_INDEX_T2,
         DEVICE_BUFFER_END_INDEX_ER,
+        RUN_COUNTER,
         FW_RESET_H,
         FW_RESET_L,
         DRAM_PROFILER_ADDRESS,
-        RUN_COUNTER,
         NOC_X,
         NOC_Y,
         FLAT_ID

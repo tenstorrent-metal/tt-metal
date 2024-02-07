@@ -6,6 +6,7 @@
 #include "tt_metal/common/core_descriptor.hpp"
 #include "tt_metal/hostdevcommon/common_runtime_address_map.h"
 #include "tt_metal/third_party/tracy/public/tracy/Tracy.hpp"
+#include "tt_metal/third_party/tracy/public/tracy/TracyTTDevice.hpp"
 #include "tt_metal/detail/tt_metal.hpp"
 #include "impl/debug/dprint_server.hpp"
 #include "tt_metal/third_party/umd/device/util.hpp"
@@ -218,6 +219,10 @@ void Device::initialize_and_launch_firmware() {
             if (!this->storage_only_cores_.count(logical_core)) {
                 CoreCoord worker_core = this->worker_core_from_logical_core(logical_core);
                 this->initialize_firmware(worker_core, &launch_msg);
+                if ((x==1) && (y == 1))
+                {
+                    TracySetCpuTime();
+                }
                 not_done_cores.insert(worker_core);
             }
         }
@@ -241,6 +246,7 @@ void Device::initialize_and_launch_firmware() {
     log_debug("Waiting for firmware init complete");
     llrt::internal_::wait_until_cores_done(this->id(), RUN_MSG_INIT, not_done_cores);
     log_debug("Firmware init complete");
+
 }
 
 void Device::clear_l1_state() {

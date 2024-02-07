@@ -5,6 +5,7 @@
 #include "llrt.hpp"
 #include "hostdevcommon/common_runtime_address_map.h"
 #include "hostdevcommon/common_values.hpp"
+#include "tt_metal/third_party/tracy/public/tracy/TracyTTDevice.hpp"
 
 #include "jit_build/settings.hpp"
 
@@ -302,6 +303,7 @@ void wait_until_cores_done(chip_id_t device_id,
                            int run_state,
                            std::unordered_set<CoreCoord>& not_done_phys_cores) {
 
+    ZoneScoped;
     // poll the cores until the set of not done cores is empty
     int loop_count = 1;
     while (!not_done_phys_cores.empty()) {
@@ -322,6 +324,8 @@ void wait_until_cores_done(chip_id_t device_id,
             if (is_done) {
                 log_debug(tt::LogMetal, "Phys cores just done: {}", phys_core.str());
                 it = not_done_phys_cores.erase(it);
+                TracySetCpuTime();
+                std::cout << phys_core.str() << std::endl;
             } else {
                 ++it;
             }
