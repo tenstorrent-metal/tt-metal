@@ -193,7 +193,7 @@ namespace tt::tt_metal::detail{
                 "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
         )doc");
 
-        m_tensor.def("untilize_with_halo_v2", &untilize_with_halo_v2,
+        m_tensor.def("untilize_with_halo", &untilize_with_halo,
             py::arg("input_tensor").noconvert(),
             py::arg("local_pad_start_and_size").noconvert(),
             py::arg("ll_data_start_and_size").noconvert(),
@@ -218,18 +218,6 @@ namespace tt::tt_metal::detail{
             py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
             R"doc(
                 Untilizes input tiled data to row major format and constructs halo'd output shards.
-            )doc");
-
-        m_tensor.def("untilize_with_halo", &untilize_with_halo,
-            py::arg("input").noconvert(),
-            py::arg("pad_val"),
-            py::arg("in_b").noconvert(),
-            py::arg("in_h").noconvert(),
-            py::arg("in_w").noconvert(),
-            py::arg("stride") = 1,
-            py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
-            R"doc(
-                Untilizes input tiled data to row major format.
             )doc");
 
         m_tensor.def("untilize_with_unpadding", &untilize_with_unpadding,
