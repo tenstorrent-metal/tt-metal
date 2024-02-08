@@ -16,6 +16,22 @@ def get_atol_rtol_pcc(golden, calculated):
         golden = golden.to(torch.float)
         calculated = calculated.to(torch.float)
 
+    # Calculate atol and rtol =======================
+    absolute_diff = torch.abs(golden - calculated)
+    absolute_cond = absolute_diff > 1
+    indices = absolute_cond.nonzero()
+    max_index = torch.argmax(absolute_diff)
+
+    logger.debug(
+        f"Total number of elements larger than 1 (non-close to zero), for calculated tensor, is: {len(indices)}"
+    )
+    logger.debug(f"Position of the MAX element in absolute-diff tensor is: {max_index}")
+    logger.debug(f"Golden element in position {max_index} is: {golden.flatten()[max_index]}")
+    logger.debug(f"Calculated element in position {max_index} is: {calculated.flatten()[max_index]}")
+    logger.debug(f"Abs-diff in position {max_index} (Max ATOL Delta) is: {absolute_diff.flatten()[max_index]}")
+
+    # ===============================================
+
     # Calculate atol and rtol
     cal_atol = torch.max(torch.abs(golden - calculated)).item()
     cal_rtol = torch.max(torch.abs(golden - calculated) / torch.abs(calculated)).item()

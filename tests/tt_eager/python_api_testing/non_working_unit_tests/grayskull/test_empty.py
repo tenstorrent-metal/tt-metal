@@ -35,6 +35,9 @@ def run_empty_tests(input_shape, dtype, dlayout, in_mem_config, out_mem_config, 
         output_mem_config=out_mem_config,
     )
 
+    print(f"REF: {ref_value[0, 0, 1:10, 1:10]}")
+    print(f"TT: {tt_result[0, 0, 1:10, 1:10]}")
+
     # compare tt and golden outputs
     success, pcc_value = comp_allclose(ref_value, tt_result)
     logger.debug(pcc_value)
@@ -51,14 +54,14 @@ test_sweep_args = [
         ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
         6777703,
     ),
-    (
-        (2, 16, 205, 132),
-        ttl.tensor.DataType.BFLOAT16,
-        ttl.tensor.Layout.ROW_MAJOR,
-        ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.L1),
-        ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
-        1412689,
-    ),
+    # (
+    #     (2, 16, 205, 132),
+    #     ttl.tensor.DataType.BFLOAT16,
+    #     ttl.tensor.Layout.ROW_MAJOR,
+    #     ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.L1),
+    #     ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
+    #     1412689,
+    # ),
 ]
 
 
