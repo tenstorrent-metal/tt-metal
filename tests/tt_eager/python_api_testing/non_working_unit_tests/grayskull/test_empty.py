@@ -38,6 +38,21 @@ def run_empty_tests(input_shape, dtype, dlayout, in_mem_config, out_mem_config, 
     print(f"REF: {ref_value[0, 0, 1:10, 1:10]}")
     print(f"TT: {tt_result[0, 0, 1:10, 1:10]}")
 
+    # Calculate Max element for ATOL =======================
+    absolute_diff = torch.abs(ref_value - tt_result)
+    absolute_cond = absolute_diff > 1
+    indices = absolute_cond.nonzero()
+    max_index = torch.argmax(absolute_diff)
+
+    logger.debug(
+        f"Total number of elements larger than 1 (non-close to zero), for calculated tensor, is: {len(indices)}"
+    )
+    logger.debug(f"Position of the MAX element in absolute-diff tensor is: {max_index}")
+    logger.debug(f"Golden element in position {max_index} is: {ref_value.flatten()[max_index]}")
+    logger.debug(f"Calculated element in position {max_index} is: {tt_result.flatten()[max_index]}")
+    logger.debug(f"Abs-diff in position {max_index} (Max ATOL Delta) is: {absolute_diff.flatten()[max_index]}")
+    # Calculate Max element for ATOL =======================
+
     # compare tt and golden outputs
     success, pcc_value = comp_allclose(ref_value, tt_result)
     logger.debug(pcc_value)
