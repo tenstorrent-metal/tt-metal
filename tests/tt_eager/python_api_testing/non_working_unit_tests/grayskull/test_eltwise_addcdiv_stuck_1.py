@@ -12,6 +12,7 @@ from tests.tt_eager.python_api_testing.sweep_tests.tt_lib_ops import setup_tt_te
 from models.utility_functions import tt2torch_tensor
 
 
+# NB: memory use of complex ops is quadruple the tensor size
 def run_addcdiv(input_shape, dtype, dlayout, buffer_type, output_mem_config, data_seed, scalar):
     random.seed(0)
     torch.manual_seed(data_seed)

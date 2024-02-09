@@ -11,6 +11,7 @@ from tests.tt_eager.python_api_testing.sweep_tests.tt_lib_ops import setup_tt_te
 from models.utility_functions import tt2torch_tensor
 
 
+# NB: memory use of complex ops is quadruple the tensor size
 def run_addcdiv(input_shape, dtype, dlayout, buffer_type, output_mem_config, data_seed, scalar):
     random.seed(0)
     torch.manual_seed(data_seed)
@@ -84,8 +85,14 @@ def test_addcdiv_test():
         (2, 24, 39, 462),
         dtype=[ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.BFLOAT16],
         dlayout=[ttl.tensor.Layout.ROW_MAJOR, ttl.tensor.Layout.ROW_MAJOR, ttl.tensor.Layout.ROW_MAJOR],
-        buffer_type=[ttl.tensor.BufferType.L1, ttl.tensor.BufferType.DRAM, ttl.tensor.BufferType.L1],
-        output_mem_config=ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.L1),
+        buffer_type=[
+            ttl.tensor.BufferType.L1,
+            ttl.tensor.BufferType.DRAM,
+            ttl.tensor.BufferType.L1,
+        ],  # too large for L1
+        output_mem_config=ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.L1
+        ),  # too large for L1
         data_seed=10406825,
         scalar=-42.25,
     )
