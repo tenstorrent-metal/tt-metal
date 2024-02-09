@@ -42,6 +42,9 @@ void multicore_eth_cb_wait_front(db_cb_config_t *eth_db_cb_config, int32_t num_p
     uint16_t pages_received;
     do {
         pages_received = uint16_t(eth_db_cb_config->recv - eth_db_cb_config->ack);
+        internal_::risc_context_switch(); // AL: hopefully we can remove this...
+        erisc_info->unused_arg1 = 0x02130000 + pages_received;
+        erisc_info->unused_arg2 = 0x02130000 + num_pages;
     } while (pages_received < num_pages);
     DEBUG_STATUS('C', 'R', 'B', 'D');
 }
@@ -182,11 +185,15 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                 internal_::send_fd_packets();
             }
 
+            erisc_info->unused_arg0 = 210;
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
+                erisc_info->unused_arg1 = i;
                 const uint32_t num_pages = command_ptr[2];
                 uint32_t num_pages_tunneled = 0;
                 while (num_pages_tunneled != num_pages) {
                     uint32_t num_to_write = min(num_pages, producer_consumer_transfer_num_pages);
+                    erisc_info->unused_arg1 = num_to_write;
+                    erisc_info->unused_arg2 = num_pages;
                     multicore_eth_cb_wait_front(eth_db_cb_config, num_to_write);
                     // contains device command, maybe just send pages, and send cmd once at the start
                     internal_::send_fd_packets();
@@ -225,22 +232,29 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             // The consumer is the remote command processor which acts like a producer from the perspective of the dispatch core
             uint32_t consumer_cb_num_pages = header->producer_cb_num_pages;
             uint32_t consumer_cb_size = header->producer_cb_size;
-            eth_program_consumer_cb<command_start_addr, data_buffer_size, consumer_cmd_base_addr, consumer_data_buffer_size>(
-                eth_db_cb_config,
-                remote_dst_db_cb_config,
-                db_buf_switch,
-                ((uint64_t)relay_dst_noc_encoding << 32),
-                consumer_cb_num_pages,
-                page_size,
-                consumer_cb_size);
-            relay_command<command_start_addr, consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch, ((uint64_t)relay_dst_noc_encoding << 32));
+            uint32_t num_buffer_transfers = header->num_buffer_transfers;
+            if (num_pages_transferred == 0) {   // new command
+                eth_program_consumer_cb<command_start_addr, data_buffer_size, consumer_cmd_base_addr, consumer_data_buffer_size>(
+                    eth_db_cb_config,
+                    remote_dst_db_cb_config,
+                    db_buf_switch,
+                    ((uint64_t)relay_dst_noc_encoding << 32),
+                    consumer_cb_num_pages,
+                    page_size,
+                    consumer_cb_size);
+                relay_command<command_start_addr, consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch, ((uint64_t)relay_dst_noc_encoding << 32));
+                num_relayed[0] = num_relayed[0] + 1;
 
-            update_producer_consumer_sync_semaphores(((uint64_t)eth_router_noc_encoding << 32), ((uint64_t)relay_dst_noc_encoding << 32), eth_db_semaphore_addr, get_semaphore(0));
+                update_producer_consumer_sync_semaphores(((uint64_t)eth_router_noc_encoding << 32), ((uint64_t)relay_dst_noc_encoding << 32), eth_db_semaphore_addr, get_semaphore(0));
+            }
 
             // Send the data that was in this packet
             uint32_t total_num_pages = header->num_pages;
             uint32_t num_pages_to_tx = 0;
-            if (num_pages_transferred < total_num_pages) {
+           // for (uint32_t i = 0; i < num_buffer_transfers; i++) {
+              //internal_::wait_for_fd_packet(1+1);
+              if (num_pages_transferred < total_num_pages) {
+                // AL: change to while loop?
                 uint32_t src_addr = eth_db_cb_config->rd_ptr_16B << 4;
                 uint64_t dst_noc_addr = ((uint64_t)relay_dst_noc_encoding << 32) | (eth_db_cb_config->wr_ptr_16B << 4);
 
@@ -260,15 +274,17 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     l1_consumer_fifo_limit_16B,
                     num_pages_to_tx
                 );
-            }
-            num_pages_transferred += num_pages_to_tx;
-            if (num_pages_transferred == total_num_pages) {
+              }
+                num_pages_transferred += num_pages_to_tx;
+              if (num_pages_transferred == total_num_pages) {
                 // Done sending all data associated with this command, reset `num_pages_transferred` for next command
-                num_pages_transferred = 0;
-            }
+                  num_pages_transferred = 0;
+                  // debug[0] = 3118;
+               }
+                // Signal to FD_SRC router that packet has been processed
+                internal_::ack_fd_packet();
+          //  }
 
-            // Signal to FD_SRC router that packet has been processed
-            internal_::ack_fd_packet();
         } else {
             internal_::risc_context_switch();
         }

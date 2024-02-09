@@ -47,7 +47,7 @@ void kernel_main() {
         uint32_t producer_cb_size = header->producer_cb_size;
         uint32_t consumer_cb_size = header->router_cb_size;
         uint32_t producer_cb_num_pages = header->producer_cb_num_pages;
-        uint32_t consumer_cb_num_pages = header->router_cb_num_pages;
+        uint32_t consumer_cb_num_pages = header->router_cb_num_pages; // AL: is this zero?
         uint32_t num_pages = header->num_pages;
         uint32_t producer_consumer_transfer_num_pages = header->producer_router_transfer_num_pages;
         uint32_t sharded_buffer_num_cores = header->sharded_buffer_num_cores;

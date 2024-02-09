@@ -315,6 +315,8 @@ void produce_for_eth_src_router(
         uint32_t num_writes_completed = 0;
         uint32_t src_page_id = src_page_index;
 
+    DPRINT << " DPRINT local command q producer, num to read " <<num_to_read << " " <<  num_pages <<" " << consumer_cb_num_pages << ENDL();
+    DPRINT << " DPRINT local command q producer, num to write " <<num_to_write << " " <<  num_pages <<" " << producer_consumer_transfer_num_pages << ENDL();
         Buffer buffer;
         if ((BufferType)src_buf_type == BufferType::SYSTEM_MEMORY or not(sharded)) {
             buffer.init((BufferType)src_buf_type, bank_base_address, page_size);
@@ -326,6 +328,7 @@ void produce_for_eth_src_router(
         while (num_writes_completed != num_pages) {
             // Context switch between reading in pages and sending them to the consumer.
             // These APIs are non-blocking to allow for context switching.
+            DPRINT << " num_reads " << num_to_read << " " << num_pages <<  " availb? " << (uint32_t)cb_producer_space_available(num_to_read) << ENDL();//" fix? " <<(uint32_t)cb_consumer_space_available(eth_db_cb_config, num_to_write) << ENDL();
             if (cb_producer_space_available(num_to_read) and num_reads_issued < num_pages) {
                 uint32_t l1_write_ptr = get_write_ptr(0);
                 buffer.noc_async_read_buffer(l1_write_ptr, src_page_id, num_to_read);
@@ -337,7 +340,8 @@ void produce_for_eth_src_router(
                 num_to_read = min(num_pages_left, fraction_of_producer_cb_num_pages);
             }
 
-            if (num_reads_issued > num_writes_completed and cb_consumer_space_available(db_cb_config, num_to_write)) {
+            DPRINT << " num_reads " << num_reads_issued << " " << num_writes_completed <<  " availb? " << (uint32_t)cb_consumer_space_available(db_cb_config, num_to_write) << ENDL();//" fix? " <<(uint32_t)cb_consumer_space_available(eth_db_cb_config, num_to_write) << ENDL();
+              if (num_reads_issued > num_writes_completed and cb_consumer_space_available(db_cb_config, num_to_write)) {
                 if (num_writes_completed == num_reads_completed) {
                     noc_async_read_barrier();
                     num_reads_completed = num_reads_issued;
@@ -347,6 +351,7 @@ void produce_for_eth_src_router(
                 uint64_t dst_noc_addr = eth_consumer_noc_encoding | dst_addr;
                 uint32_t l1_read_ptr = get_read_ptr(0);
                 noc_async_write(l1_read_ptr, dst_noc_addr, page_size * num_to_write);
+                DPRINT << " DPRINT local command q producer,  cb_push_back  " << num_to_write<< ENDL();
                 multicore_cb_push_back(
                     db_cb_config,
                     eth_db_cb_config,
