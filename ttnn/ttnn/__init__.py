@@ -152,6 +152,7 @@ from ttnn.operations.activation import (
     clip,
     elu,
     hardshrink,
+    hardsigmoid,
     hardswish,
     hardtanh,
     heaviside,
@@ -182,6 +183,15 @@ from ttnn.operations.math import (
     log2,
     multigammaln,
     neg,
+    abs,
+    cbrt,
+    deg2rad,
+    digamma,
+    erf,
+    erfc,
+    erfinv,
+    exp2,
+    expm1,
 )
 
 from ttnn.operations.normalization import (

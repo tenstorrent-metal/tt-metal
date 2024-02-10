@@ -190,6 +190,7 @@ brisc
 cachable
 cb
 cbid
+cbrt
 cd
 cin
 ckernel
@@ -223,6 +224,7 @@ dest
 dev
 devs
 dfb
+digamma
 dir
 dnn
 doxygendefine

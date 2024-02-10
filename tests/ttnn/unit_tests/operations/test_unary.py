@@ -139,7 +139,6 @@ def test_atanh(device, h, w):
 def test_clone(device, h, w):
     run_unary_test(device, h, w, ttnn.clone, torch.clone)
 
-
 def run_unary_test_with_float(device, h, w, scalar, ttnn_function, torch_function, pcc=0.9999):
     torch.manual_seed(0)
 

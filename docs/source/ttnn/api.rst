@@ -81,6 +81,22 @@ Pointwise Binary
    ttnn/sub
    ttnn/pow
 
+Math
+====
+
+.. toctree::
+   :maxdepth: 1
+
+   ttnn/abs
+   ttnn/cbrt
+   ttnn/deg2rad
+   ttnn/digamma
+   ttnn/erf
+   ttnn/erfc
+   ttnn/erfinv
+   ttnn/exp2
+   ttnn/expm1
+
 Pointwise Relational
 ====================
 
@@ -143,6 +159,7 @@ Activation
    ttnn/softshrink
    ttnn/softsign
    ttnn/swish
+   ttnn/hardsigmoid
 
 Reduction
 =========
