@@ -126,7 +126,7 @@ std::string Buffer::get_shard_info() const {
         core_index++;
     }
     ret_str += "Dev page mappings:\n";;
-    uint32_t num_pages = all_cores_.size() * sspec.size();
+    uint32_t num_pages = all_cores_.size() * sspec.num_pages();
     for(uint32_t dev_page_id = 0; dev_page_id < num_pages; dev_page_id ++){
         ret_str += "Dev page: " + std::to_string(dev_page_id) +
             " mapped to core " + all_cores_[dev_page_to_core_mapping_[dev_page_id]].str() +
@@ -164,10 +164,10 @@ Buffer::Buffer(Device *device, uint64_t size, uint64_t page_size, const BufferTy
             this->core_to_core_id_.insert({core, core_id });
             core_id++;
         }
-        core_host_page_indices_ = core_to_host_pages(shard_spec().size(), this->num_cores(), buffer_layout, shard_spec().page_shape, shard_spec().shape(), shard_spec().tensor2d_shape);
+        core_host_page_indices_ = core_to_host_pages(shard_spec().num_pages(), this->num_cores(), buffer_layout, shard_spec().page_shape, shard_spec().shape(), shard_spec().tensor2d_shape);
         core_bank_indices_.reserve(this->num_cores());
 
-        auto total_dev_pages = this->num_cores() * shard_spec().size();
+        auto total_dev_pages = this->num_cores() * shard_spec().num_pages();
         dev_page_to_host_page_mapping_ = std::vector<uint32_t>(total_dev_pages);
         dev_page_to_core_mapping_ = std::vector<uint32_t>(total_dev_pages);
         for(auto core : all_cores_){
@@ -307,7 +307,7 @@ uint64_t Buffer::page_address(uint32_t page_index) const {
         this->address_ :
         this->address_ + this->device_->l1_bank_offset_from_bank_id(bank_id);
 
-    int pages_offset_within_bank = page_index % shard_spec().size();
+    int pages_offset_within_bank = page_index % shard_spec().num_pages();
     auto offset = (round_up(this->page_size_, ADDRESS_ALIGNMENT) * pages_offset_within_bank);
     return base_page_address + offset;
 }
