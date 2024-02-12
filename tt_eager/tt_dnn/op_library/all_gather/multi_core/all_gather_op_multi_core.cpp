@@ -108,6 +108,8 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
 
     for (uint32_t i = 0; i < num_links; ++i) {
         auto eth_sender_core = device->get_ethernet_sockets(receiver_device_id)[sender_socket_idx];
+            std::cout<<device->ethernet_core_from_logical_core(eth_sender_core).str()<<std::endl;
+
         eth_sender_cores.push_back(eth_sender_core);
         auto eth_receiver_core = device->get_ethernet_sockets(sender_device_id)[receiver_socket_idx];
         eth_receiver_cores.push_back(eth_receiver_core);

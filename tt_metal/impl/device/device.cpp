@@ -597,9 +597,9 @@ bool Device::close() {
         }
     }
 
-    if (llrt::OptionsG.get_clear_l1()) {
-        this->clear_l1_state();
-    }
+    // if (llrt::OptionsG.get_clear_l1()) {
+    //     this->clear_l1_state();
+    // }
     tt::Cluster::instance().l1_barrier(id_);
     allocator::clear(*this->allocator_);
 
