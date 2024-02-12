@@ -176,6 +176,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             volatile tt_l1_ptr CommandHeader *header = (CommandHeader *)command_ptr;
             uint32_t num_buffer_transfers = header->num_buffer_transfers;
             uint32_t producer_consumer_transfer_num_pages = header->producer_router_transfer_num_pages;
+            bool is_program = header->is_program_buffer;
             command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
 
             if (num_buffer_transfers == 0) {
@@ -185,6 +186,14 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
 
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
                 const uint32_t num_pages = command_ptr[2];
+                const uint32_t src_buf_type = command_ptr[4];
+
+                if (is_program & ((BufferType)src_buf_type == BufferType::DRAM)) {
+                    continue;
+                }
+
+                erisc_info->unused_arg2 = 800 + num_pages *10 + num_buffer_transfers;
+                erisc_info->unused_arg2 = (uint32_t) (&command_ptr[2]);
                 uint32_t num_pages_tunneled = 0;
                 while (num_pages_tunneled != num_pages) {
                     uint32_t num_to_write = min(num_pages, producer_consumer_transfer_num_pages);
@@ -245,18 +254,26 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             // Send the data that was in this packet
             uint32_t total_num_pages = header->num_pages;
             uint32_t num_pages_to_tx = 0;
+            bool is_program = header->is_program_buffer;
             command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER; // jump to buffer transfer region
-            if (num_buffer_transfers ==0) {
+            if (num_buffer_transfers == 0 | is_program) {
                 internal_::ack_fd_packet();
             }
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
-            uint32_t num_pages_transferred = 0;
-              //internal_::wait_for_fd_packet(1+1);
-              const uint32_t num_pages = command_ptr[2];
+                uint32_t num_pages_transferred = 0;
+                const uint32_t num_pages = command_ptr[2];
+                const uint32_t src_buf_type = command_ptr[4];
+
+                if (is_program & ((BufferType)src_buf_type == BufferType::DRAM)) {
+                    // don't send data
+                    continue;
+                }
+
               while (num_pages_transferred != num_pages) {
                 if(num_pages_transferred != 0) {
                   while (routing_info->fd_buffer_msgs_sent != 1) {
                     // maybe contesxt switch
+                    internal_::risc_context_switch();
                   }
                 }
                 uint32_t src_addr = eth_db_cb_config->rd_ptr_16B << 4;
@@ -277,6 +294,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     num_pages_to_tx
                 );
                 internal_::ack_fd_packet();
+                eth_db_cb_config->rd_ptr_16B += page_size * num_pages_to_tx;
                 num_pages_transferred += num_pages_to_tx;
               }
               command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION; // jump to buffer transfer region
