@@ -20,12 +20,10 @@ namespace tt_metal {
 
 operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor, Tensor& output_tensor, const uint32_t dim, const uint32_t num_links, const uint32_t ring_size, const uint32_t ring_index, const chip_id_t receiver_device_id, const chip_id_t sender_device_id) {
 
-    constexpr uint32_t header_size = 32;
     constexpr uint32_t semaphore_offset = 32;
-    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset) / 2, 32) - header_size;
+    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset), 32);
     constexpr size_t sem_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
     constexpr size_t src_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + semaphore_offset;
-    constexpr size_t dst_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + semaphore_offset + header_size + MAX_BUFFER;
 
     tt_metal::Program program{};
 
@@ -86,25 +84,30 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
     bool input_is_dram = input_buffer->buffer_type() == BufferType::DRAM;
     bool output_is_dram = output_buffer->buffer_type() == BufferType::DRAM;
 
+    uint32_t total_output_pages = output_buffer->size() / output_buffer->page_size();
+
     uint32_t input_page_idx = 0;
-    uint32_t output_page_idx = 0;
     uint32_t output_page_offset = 0;
     uint32_t col_idx = 0;
     uint32_t row_idx = 0;
+    uint32_t output_page_shift = 0;
 
     if (rm) {
         if (width) {
             output_page_offset = ring_index * input_buffer->page_size();
         } else {
-            output_page_idx = ring_index * num_rows;
+            output_page_shift = num_rows;
         }
     } else {
         if (width) {
-            output_page_idx = ring_index * num_cols;
+            output_page_shift = num_cols;
         } else {
-            output_page_idx = ring_index * num_tiles;
+            output_page_shift = num_tiles;
         }
     }
+    uint32_t output_page_idx = ring_index * output_page_shift;
+    uint32_t last_output_page_shift = (ring_size - 1) * output_page_shift;
+    uint32_t receiver_ring_index = ring_index == 0 ? ring_size - 1 : ring_index - 1;
 
     for (uint32_t i = 0; i < num_links; ++i) {
         auto eth_sender_core = device->get_ethernet_sockets(receiver_device_id)[sender_socket_idx];
@@ -131,6 +134,13 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
             rem_pages = pages_per_link[i];
         }
 
+        uint32_t receiver_output_page_idx = output_page_idx;
+        if (ring_index == 0) {
+            receiver_output_page_idx += last_output_page_shift;
+        } else {
+            receiver_output_page_idx -= output_page_shift;
+        }
+
         string sender_kernel, receiver_kernel;
         std::vector<uint32_t> sender_ct_args, sender_rt_args, receiver_ct_args, receiver_rt_args;
         if (rm) {
@@ -144,9 +154,9 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(num_full_chunks),
                 static_cast<uint32_t>(input_buffer->page_size()),
                 static_cast<uint32_t>(pages_per_chunk),
-                static_cast<uint32_t>(bytes_per_chunk + header_size),
+                static_cast<uint32_t>(bytes_per_chunk),
                 static_cast<uint32_t>(rem_pages),
-                static_cast<uint32_t>(rem_bytes + header_size),
+                static_cast<uint32_t>(rem_bytes),
                 static_cast<uint32_t>(input_page_idx),
                 static_cast<uint32_t>(output_page_idx),
                 static_cast<uint32_t>(row_idx),
@@ -157,7 +167,6 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
             sender_rt_args = {static_cast<uint32_t>(input_buffer->address()),
                 static_cast<uint32_t>(output_buffer->address()),
                 static_cast<uint32_t>(src_eth_l1_byte_address),
-                static_cast<uint32_t>(dst_eth_l1_byte_address),
                 static_cast<uint32_t>(sem_l1_byte_address)
                 };
 
@@ -170,24 +179,21 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(num_full_chunks),
                 static_cast<uint32_t>(input_buffer->page_size()),
                 static_cast<uint32_t>(pages_per_chunk),
-                static_cast<uint32_t>(bytes_per_chunk + header_size),
+                static_cast<uint32_t>(bytes_per_chunk),
                 static_cast<uint32_t>(rem_pages),
-                static_cast<uint32_t>(rem_bytes + header_size),
+                static_cast<uint32_t>(rem_bytes),
                 static_cast<uint32_t>(output_buffer->page_size()),
                 static_cast<uint32_t>(row_offset),
                 static_cast<uint32_t>(num_rows)};
             receiver_rt_args = {
                 static_cast<uint32_t>(output_buffer->address()),
                 static_cast<uint32_t>(src_eth_l1_byte_address),
-                static_cast<uint32_t>(dst_eth_l1_byte_address),
                 static_cast<uint32_t>(sem_l1_byte_address)
 
             };
         } else {
             sender_kernel = "tt_eager/tt_dnn/op_library/all_gather/kernels/dataflow/interleaved_eth_ring_gather_send.cpp";
             sender_ct_args = {
-                static_cast<uint32_t>(device->ethernet_core_from_logical_core(eth_receiver_core).x),
-                static_cast<uint32_t>(device->ethernet_core_from_logical_core(eth_receiver_core).y),
                 static_cast<uint32_t>(input_is_dram),
                 static_cast<uint32_t>(output_is_dram),
                 static_cast<uint32_t>(df),
@@ -195,9 +201,9 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(num_full_chunks),
                 static_cast<uint32_t>(input_buffer->page_size()),
                 static_cast<uint32_t>(pages_per_chunk),
-                static_cast<uint32_t>(bytes_per_chunk + header_size),
+                static_cast<uint32_t>(bytes_per_chunk),
                 static_cast<uint32_t>(rem_pages),
-                static_cast<uint32_t>(rem_bytes + header_size),
+                static_cast<uint32_t>(rem_bytes),
                 static_cast<uint32_t>(input_page_idx),
                 static_cast<uint32_t>(output_page_idx),
                 static_cast<uint32_t>(row_idx),
@@ -205,11 +211,13 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(row_offset),
                 static_cast<uint32_t>(col_offset),
                 static_cast<uint32_t>(num_rows),
-                static_cast<uint32_t>(num_cols)};
+                static_cast<uint32_t>(num_cols),
+                static_cast<uint32_t>(last_output_page_shift),
+                static_cast<uint32_t>(output_page_shift),
+                static_cast<uint32_t>(ring_index)};
             sender_rt_args = {static_cast<uint32_t>(input_buffer->address()),
                 static_cast<uint32_t>(output_buffer->address()),
                 static_cast<uint32_t>(src_eth_l1_byte_address),
-                static_cast<uint32_t>(dst_eth_l1_byte_address),
                 static_cast<uint32_t>(sem_l1_byte_address)
                 };
 
@@ -223,17 +231,22 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(num_full_chunks),
                 static_cast<uint32_t>(input_buffer->page_size()),
                 static_cast<uint32_t>(pages_per_chunk),
-                static_cast<uint32_t>(bytes_per_chunk + header_size),
+                static_cast<uint32_t>(bytes_per_chunk),
                 static_cast<uint32_t>(rem_pages),
-                static_cast<uint32_t>(rem_bytes + header_size),
+                static_cast<uint32_t>(rem_bytes),
+                static_cast<uint32_t>(receiver_output_page_idx),
+                static_cast<uint32_t>(row_idx),
+                static_cast<uint32_t>(col_idx),
                 static_cast<uint32_t>(row_offset),
                 static_cast<uint32_t>(col_offset),
                 static_cast<uint32_t>(num_rows),
-                static_cast<uint32_t>(num_cols)};
+                static_cast<uint32_t>(num_cols),
+                static_cast<uint32_t>(last_output_page_shift),
+                static_cast<uint32_t>(output_page_shift),
+                static_cast<uint32_t>(receiver_ring_index)};
             receiver_rt_args = {
                 static_cast<uint32_t>(output_buffer->address()),
                 static_cast<uint32_t>(src_eth_l1_byte_address),
-                static_cast<uint32_t>(dst_eth_l1_byte_address),
                 static_cast<uint32_t>(sem_l1_byte_address)
             };
         }
