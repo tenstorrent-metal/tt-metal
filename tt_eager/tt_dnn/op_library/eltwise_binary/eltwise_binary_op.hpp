@@ -64,11 +64,11 @@ struct EltwiseBinary {
 
 template <BinaryOpType binary_op_type>
 struct make_eltwise_binary {
-     Tensor operator()(const Tensor& input_tensor_a, const Tensor& input_tensor_b, std::optional<std::vector<UnaryWithParam>> fused_activations = std::nullopt, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, std::optional<const DataType> output_dtype=std::nullopt) const {
-         TT_FATAL(input_tensor_a.shape() == input_tensor_b.shape(), "Input shapes must be the same!");
-         return operation::run_with_autoformat(EltwiseBinary{binary_op_type, fused_activations, output_mem_config, output_dtype.value_or(input_tensor_a.dtype()), false}, {input_tensor_a, input_tensor_b}).at(0);
-     }
- };
+    Tensor operator()(const Tensor& input_tensor_a, const Tensor& input_tensor_b, std::optional<std::vector<UnaryWithParam>> fused_activations = std::nullopt, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, std::optional<const DataType> output_dtype=std::nullopt) const {
+        TT_FATAL(input_tensor_a.shape() == input_tensor_b.shape(), "Input shapes must be the same!");
+        return operation::run_with_autoformat(EltwiseBinary{binary_op_type, fused_activations, output_mem_config, output_dtype.value_or(input_tensor_a.dtype()), false}, {input_tensor_a, input_tensor_b}).at(0);
+    }
+};
 
 // TODO: in_place should not take output args
 inline Tensor add_without_autoformat(const Tensor& input_tensor_a, const Tensor& input_tensor_b, std::optional<std::vector<UnaryWithParam>> fused_activations = std::nullopt, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, std::optional<const DataType> output_dtype=std::nullopt, bool in_place=false) {
@@ -81,28 +81,49 @@ inline Tensor add_without_autoformat(const Tensor& input_tensor_a, const Tensor&
     }
 }
 
- // arithmetic binary ops
- constexpr auto add = make_eltwise_binary<BinaryOpType::ADD>{};
- constexpr auto sub = make_eltwise_binary<BinaryOpType::SUB>{};
- constexpr auto mul = make_eltwise_binary<BinaryOpType::MUL>{};
- constexpr auto squared_difference = make_eltwise_binary<BinaryOpType::SQUARED_DIFFERENCE>{};
- constexpr auto bias_gelu = make_eltwise_binary<BinaryOpType::BIAS_GELU>{};
- constexpr auto logaddexp = make_eltwise_binary<BinaryOpType::LOGADDEXP>{};
- constexpr auto ldexp = make_eltwise_binary<BinaryOpType::LDEXP>{};
- constexpr auto logaddexp2 = make_eltwise_binary<BinaryOpType::LOGADDEXP2>{};
+// arithmetic binary ops
+constexpr auto add = make_eltwise_binary<BinaryOpType::ADD>{};
+constexpr auto sub = make_eltwise_binary<BinaryOpType::SUB>{};
+constexpr auto mul = make_eltwise_binary<BinaryOpType::MUL>{};
+constexpr auto squared_difference = make_eltwise_binary<BinaryOpType::SQUARED_DIFFERENCE>{};
+constexpr auto bias_gelu = make_eltwise_binary<BinaryOpType::BIAS_GELU>{};
+constexpr auto logaddexp = make_eltwise_binary<BinaryOpType::LOGADDEXP>{};
+constexpr auto ldexp = make_eltwise_binary<BinaryOpType::LDEXP>{};
+constexpr auto logaddexp2 = make_eltwise_binary<BinaryOpType::LOGADDEXP2>{};
 
- // comparative binary ops
- constexpr auto lt = make_eltwise_binary<BinaryOpType::LT>{};
- constexpr auto gt = make_eltwise_binary<BinaryOpType::GT>{};
- constexpr auto lte = make_eltwise_binary<BinaryOpType::LTE>{};
- constexpr auto gte = make_eltwise_binary<BinaryOpType::GTE>{};
- constexpr auto eq = make_eltwise_binary<BinaryOpType::EQ>{};
- constexpr auto ne = make_eltwise_binary<BinaryOpType::NE>{};
+// comparative binary ops
+constexpr auto lt = make_eltwise_binary<BinaryOpType::LT>{};
+constexpr auto gt = make_eltwise_binary<BinaryOpType::GT>{};
+constexpr auto lte = make_eltwise_binary<BinaryOpType::LTE>{};
+constexpr auto gte = make_eltwise_binary<BinaryOpType::GTE>{};
+constexpr auto eq = make_eltwise_binary<BinaryOpType::EQ>{};
+constexpr auto ne = make_eltwise_binary<BinaryOpType::NE>{};
 
- // logical ops
- constexpr auto logical_and = make_eltwise_binary<BinaryOpType::LOGICAL_AND>{};
- constexpr auto logical_or = make_eltwise_binary<BinaryOpType::LOGICAL_OR>{};
+// logical ops
+constexpr auto logical_and = make_eltwise_binary<BinaryOpType::LOGICAL_AND>{};
+constexpr auto logical_or = make_eltwise_binary<BinaryOpType::LOGICAL_OR>{};
 }  // namespace tt_metal
+
+namespace operations {
+
+namespace primary {
+
+template <BinaryOpType binary_op_type>
+struct make_eltwise_binary {
+    Tensor operator()(const Tensor& input_tensor_a, const Tensor& input_tensor_b, std::optional<std::vector<UnaryWithParam>> fused_activations = std::nullopt, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, std::optional<const DataType> output_dtype=std::nullopt, bool in_place=false) const {
+        TT_FATAL(input_tensor_a.shape() == input_tensor_b.shape(), "Input shapes must be the same!");
+        auto output = operation::run_without_autoformat(EltwiseBinary{binary_op_type, fused_activations, output_mem_config, output_dtype.value_or(input_tensor_a.dtype()), in_place}, {input_tensor_a, input_tensor_b});
+        if (in_place) {
+            return input_tensor_a;
+        } else {
+            return output.at(0);
+        }
+    }
+};
+
+}
+
+}
 
 }  // namespace tt
 
