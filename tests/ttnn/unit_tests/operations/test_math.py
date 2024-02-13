@@ -93,6 +93,18 @@ def test_neg(device, h, w):
     run_math_unary_test(device, h, w, ttnn.neg, torch.neg)
 
 
+@pytest.mark.parametrize("h", [64])
+@pytest.mark.parametrize("w", [128])
+def test_tril(device, h, w):
+    run_math_unary_test(device, h, w, ttnn.tril, torch.tril)
+
+
+@pytest.mark.parametrize("h", [64])
+@pytest.mark.parametrize("w", [128])
+def test_triu(device, h, w):
+    run_math_unary_test(device, h, w, ttnn.triu, torch.triu)
+
+
 def run_math_unary_test_range(device, h, w, ttnn_function, torch_function, pcc=0.9999):
     torch.manual_seed(0)
     low = 1.6

@@ -1,4 +1,4 @@
-personal_ws-1.1 en 484 
+personal_ws-1.1 en 489
 ABI
 ADDI
 API
@@ -369,6 +369,7 @@ quickstart
 randint
 randn
 rb
+rdiv
 recip
 reconfig
 regs
@@ -379,6 +380,7 @@ resnet
 riscv
 rms
 rmsg
+rpow
 rsqrt
 rst
 rsub
@@ -429,6 +431,7 @@ sudo
 svg
 sys
 tanh
+tanhshrink
 teardown
 tensix
 tensor's
@@ -441,8 +444,10 @@ toctree
 todo
 tracy
 transp
+tril
 trisc
 triscs
+triu
 tt
 ttDNN
 ttl

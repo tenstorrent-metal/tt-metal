@@ -33,6 +33,8 @@ def register_ttl_math_op_function_unary(name, ttl_math_op_function, op_name):
             "log2": torch.log2,
             "multigammaln": torch_multigammaln,
             "neg": torch.neg,
+            "tril": torch.tril,
+            "triu": torch.triu,
         }
         torch_function = name_to_torch_function[name]
         input_tensor = ttnn.to_torch(input_tensor)
@@ -107,6 +109,8 @@ TTL_MATH_OP_FUNCTIONS_UNARY = [
     ("log2", ttl.tensor.log2, "log2"),
     ("multigammaln", ttl.tensor.multigammaln, "multigammaln"),
     ("neg", ttl.tensor.neg, "neg"),
+    ("tril", ttl.tensor.tril, "tril"),
+    ("triu", ttl.tensor.triu, "triu"),
 ]
 
 

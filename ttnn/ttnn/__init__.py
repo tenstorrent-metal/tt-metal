@@ -125,6 +125,10 @@ from ttnn.operations.unary import (
     logical_noti,
     logit,
     clone,
+    rpow,
+    rdiv,
+    rsub,
+    transpose,
 )
 
 from ttnn.operations.binary import (
@@ -171,6 +175,8 @@ from ttnn.operations.activation import (
     softshrink,
     softsign,
     swish,
+    tanhshrink,
+    threshold,
 )
 
 from ttnn.operations.math import (
@@ -186,6 +192,8 @@ from ttnn.operations.math import (
     log2,
     multigammaln,
     neg,
+    tril,
+    triu,
 )
 
 from ttnn.operations.normalization import (

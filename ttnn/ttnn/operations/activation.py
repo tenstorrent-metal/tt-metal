@@ -132,6 +132,8 @@ def register_ttl_activation_function_with_float(name, ttl_activation_function, o
             "relu_max": torch_relu_max,
             "relu_min": torch_relu_min,
             "softshrink": F.softshrink,
+            "tanhshrink": F.tanhshrink,
+            "threshold": F.threshold,
         }
         torch_function = name_to_torch_function[name]
         input_tensor = ttnn.to_torch(input_tensor)
@@ -287,6 +289,7 @@ TTL_ACTIVATION_FUNCTIONS_UNARY = [
     ("sign", ttl.tensor.sign, "sign"),
     ("softsign", ttl.tensor.softsign, "softsign"),
     ("swish", ttl.tensor.swish, "swish"),
+    ("tanhshrink", ttl.tensor.tanhshrink, "tanhshrink"),
 ]
 
 TTL_ACTIVATION_FUNCTIONS_WITH_FLOAT_PARAM = [
@@ -302,6 +305,7 @@ TTL_ACTIVATION_FUNCTIONS_WITH_FLOAT_PARAM = [
 
 TTL_ACTIVATION_FUNCTIONS_WITH_TWO_FLOAT_PARAM = [
     ("clip", ttl.tensor.clip, "Clip", "min", "max"),
+    ("threshold", ttl.tensor.threshold, "threshold", "value", "threshold"),
 ]
 
 for activation_function_name, ttl_activation_function, name, param in TTL_ACTIVATION_FUNCTIONS_WITH_FLOAT_PARAM:

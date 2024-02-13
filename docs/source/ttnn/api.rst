@@ -69,6 +69,10 @@ Pointwise Unary
    ttnn/logical_noti
    ttnn/logit
    ttnn/clone
+   ttnn/rdiv
+   ttnn/rsub
+   ttnn/rpow
+   ttnn/transpose
 
 Pointwise Binary
 ================
@@ -118,6 +122,8 @@ Pointwise Math
    ttnn/log2
    ttnn/multigammaln
    ttnn/neg
+   ttnn/tril
+   ttnn/triu
 
 Activation
 ==========
@@ -143,6 +149,8 @@ Activation
    ttnn/softshrink
    ttnn/softsign
    ttnn/swish
+   ttnn/tanhshrink
+   ttnn/threshold
 
 Reduction
 =========
