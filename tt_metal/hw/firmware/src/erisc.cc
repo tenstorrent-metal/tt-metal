@@ -141,7 +141,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
         reinterpret_cast<volatile tt_l1_ptr uint32_t *>(eth_get_semaphore(0));
 
     static constexpr uint32_t command_start_addr = eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE;
-    static constexpr uint32_t data_buffer_size = MEM_ETH_SIZE - (DeviceCommand::NUM_ENTRIES_IN_DEVICE_COMMAND * sizeof(uint32_t)) - eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE;
+    static constexpr uint32_t data_buffer_size = eth_l1_mem::address_map::ERISC_APP_RESERVED_SIZE - (DeviceCommand::NUM_ENTRIES_IN_DEVICE_COMMAND * sizeof(uint32_t));
 
     bool db_buf_switch = false;
     db_cb_config_t *eth_db_cb_config = get_local_db_cb_config(eth_l1_mem::address_map::CQ_CONSUMER_CB_BASE, false);
@@ -194,17 +194,19 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     continue;
                 }
 
+                uint32_t num_to_write = min(num_pages, producer_consumer_transfer_num_pages);
+
                 erisc_info->unused_arg2 = 800 + num_pages *10 + num_buffer_transfers;
                 erisc_info->unused_arg2 = (uint32_t) (&command_ptr[2]);
                 uint32_t num_pages_tunneled = 0;
                 while (num_pages_tunneled != num_pages) {
-                    uint32_t num_to_write = min(num_pages, producer_consumer_transfer_num_pages);
                     multicore_eth_cb_wait_front(eth_db_cb_config, num_to_write);
                     // contains device command, maybe just send pages, and send cmd once at the start
                     internal_::send_fd_packets();
                     multicore_eth_cb_pop_front(
                         eth_db_cb_config, remote_src_db_cb_config, ((uint64_t)relay_src_noc_encoding << 32), num_to_write);
                     num_pages_tunneled += num_to_write;
+                    num_to_write = min(num_pages - num_pages_tunneled, producer_consumer_transfer_num_pages);
                 }
                 command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
             }
@@ -254,15 +256,17 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
          //   }
 
             // Send the data that was in this packet
-            uint32_t total_num_pages = header->num_pages;
-            uint32_t num_pages_to_tx = 0;
             bool is_program = header->is_program_buffer;
             command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER; // jump to buffer transfer region
             // if (num_buffer_transfers == 0 | is_program) { removed this when sending fd packet unconditionally from src even if there is data to tx
                 internal_::ack_fd_packet();
             // }
+            uint32_t producer_consumer_transfer_num_pages = header->producer_router_transfer_num_pages;
+            uint32_t l1_consumer_fifo_limit_16B =
+                (get_db_buf_addr<consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch) + consumer_cb_size) >> 4;
+            uint32_t local_cb_size_16B = header->router_cb_size >> 4;
+            uint32_t local_fifo_limit_16B = (get_db_buf_addr<command_start_addr, data_buffer_size>(db_buf_switch) >> 4) + local_cb_size_16B;
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
-                //internal_::wait_for_fd_packet(1+1);
                 const uint32_t num_pages = command_ptr[2];
                 const uint32_t src_buf_type = command_ptr[4];
 
@@ -270,6 +274,8 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     // don't send data
                     continue;
                 }
+                // producer_consumer_transfer_num_pages is the total num of data pages that could fit in a FD packet
+                uint32_t num_pages_to_tx = min(num_pages, producer_consumer_transfer_num_pages);
                 uint32_t num_pages_transferred = 0;
 
               while (num_pages_transferred != num_pages) {
@@ -282,13 +288,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                 uint32_t src_addr = eth_db_cb_config->rd_ptr_16B << 4;
                 uint64_t dst_noc_addr = ((uint64_t)relay_dst_noc_encoding << 32) | (eth_db_cb_config->wr_ptr_16B << 4);
 
-                uint32_t producer_consumer_transfer_num_pages = header->producer_router_transfer_num_pages;
-                // producer_consumer_transfer_num_pages is the total num of data pages that could fit in a FD packet
-                num_pages_to_tx = min(num_pages, producer_consumer_transfer_num_pages);
-
                 noc_async_write(src_addr, dst_noc_addr, page_size * num_pages_to_tx);
-                uint32_t l1_consumer_fifo_limit_16B =
-                    (get_db_buf_addr<consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch) + consumer_cb_size) >> 4;
                 multicore_cb_push_back(
                     eth_db_cb_config,
                     remote_dst_db_cb_config,
@@ -297,8 +297,12 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     num_pages_to_tx
                 );
                 internal_::ack_fd_packet();
-                eth_db_cb_config->rd_ptr_16B += page_size * num_pages_to_tx;
+                eth_db_cb_config->rd_ptr_16B += eth_db_cb_config->page_size_16B * num_pages_to_tx;
+                if (eth_db_cb_config->rd_ptr_16B >= local_fifo_limit_16B) {
+                    eth_db_cb_config->rd_ptr_16B -= local_cb_size_16B;
+                }
                 num_pages_transferred += num_pages_to_tx;
+                num_pages_to_tx = min(num_pages - num_pages_transferred, producer_consumer_transfer_num_pages);
               }
               command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION; // jump to buffer transfer region
             }

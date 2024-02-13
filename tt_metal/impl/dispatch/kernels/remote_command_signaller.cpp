@@ -49,7 +49,6 @@ void kernel_main() {
             // Received this command just to signal that it finished
             // This is hacky(!) but here we clear out cmd metadata so ethernet routers and completion queue write interface do not expect incoming data
             header->num_buffer_transfers = 0;
-            header->num_pages = 0;
         }
 
         relay_command<cmd_base_addr, consumer_cmd_base_addr, consumer_data_buffer_size>(tx_buf_switch, ((uint64_t)eth_consumer_noc_encoding << 32));
@@ -87,12 +86,13 @@ void kernel_main() {
                 num_buffer_transfers,
                 page_size,
                 producer_cb_size,
-                (get_db_buf_addr<producer_cmd_base_addr, producer_data_buffer_size>(db_rx_buf_switch) + producer_cb_size) >> 4,
+                (get_db_buf_addr<producer_cmd_base_addr, producer_data_buffer_size>(false) + producer_cb_size) >> 4,
                 ((uint64_t)producer_noc_encoding << 32),
                 consumer_cb_size,
-                (get_db_buf_addr<consumer_cmd_base_addr, consumer_data_buffer_size>(tx_buf_switch) + consumer_cb_size) >> 4,
+                (get_db_buf_addr<consumer_cmd_base_addr, consumer_data_buffer_size>(false) + consumer_cb_size) >> 4,
                 ((uint64_t)eth_consumer_noc_encoding << 32),
-                consumer_router_transfer_num_pages);
+                consumer_router_transfer_num_pages,
+                (get_db_buf_addr<cmd_base_addr, data_buffer_size>(false) + producer_cb_size) >> 4);
         }
 
         // Notify to dispatcher that is has completed a command

@@ -377,7 +377,8 @@ void transfer(
     uint32_t consumer_cb_size,
     uint32_t l1_consumer_fifo_limit_16B,
     uint64_t consumer_noc_encoding,
-    uint32_t producer_consumer_transfer_num_pages) {
+    uint32_t producer_consumer_transfer_num_pages,
+    uint32_t l1_fifo_limit_16B) {
     /*
         This API sends data from circular buffer in its L1 and writes data to the consumer core. On the consumer,
         we partition the data space into 2 via double-buffering. There are two command slots, and two
@@ -437,9 +438,12 @@ void transfer(
                     num_to_transfer,
                     rx_db_cb_config->page_size_16B);
             }
+            tx_db_cb_config->rd_ptr_16B += tx_db_cb_config->page_size_16B * num_to_transfer;
+            if (tx_db_cb_config->rd_ptr_16B >= l1_fifo_limit_16B) {
+                tx_db_cb_config->rd_ptr_16B -= rx_db_cb_config->total_size_16B;
+            }
             num_transfers_completed += num_to_transfer;
             num_to_transfer = min(num_pages - num_transfers_completed, producer_consumer_transfer_num_pages);
-            tx_db_cb_config->rd_ptr_16B += page_size * num_to_transfer;
         }
         command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
     }
