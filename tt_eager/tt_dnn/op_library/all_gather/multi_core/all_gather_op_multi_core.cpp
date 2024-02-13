@@ -153,7 +153,8 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(output_page_offset),
                 static_cast<uint32_t>(output_buffer->page_size()),
                 static_cast<uint32_t>(row_offset),
-                static_cast<uint32_t>(num_rows)};
+                static_cast<uint32_t>(num_rows),
+                static_cast<uint32_t>(device->id())};
             sender_rt_args = {static_cast<uint32_t>(input_buffer->address()),
                 static_cast<uint32_t>(output_buffer->address()),
                 static_cast<uint32_t>(src_eth_l1_byte_address),

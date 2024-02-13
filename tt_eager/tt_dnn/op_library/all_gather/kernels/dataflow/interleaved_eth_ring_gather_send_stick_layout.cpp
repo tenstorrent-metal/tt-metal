@@ -4,7 +4,7 @@
 
 #include <cstdint>
 #include "dataflow_api.h"
-
+#include "debug/dprint.h"
 void kernel_main() {
     const uint32_t src_addr = get_arg_val<uint32_t>(0);
     const uint32_t dst_addr = get_arg_val<uint32_t>(1);
@@ -32,6 +32,7 @@ void kernel_main() {
     constexpr uint32_t out_page_size = get_compile_time_arg_val(15);
     constexpr uint32_t row_offset = get_compile_time_arg_val(16);
     constexpr uint32_t num_rows = get_compile_time_arg_val(17);
+    constexpr uint32_t device_id = get_compile_time_arg_val(18);
 
     const InterleavedAddrGen<src_is_dram> s = {
         .bank_base_address = src_addr, .page_size = page_size};
@@ -59,6 +60,10 @@ void kernel_main() {
         header[1] = output_start_offset;
         header[2] = row_idx;
         eth_noc_async_read_barrier();
+        for (volatile uint32_t i = 0; i < 100000; i++);
+        // if constexpr(device_id == 2) {
+        //     DPRINT<<BF16(reinterpret_cast<volatile tt_l1_ptr uint32_t *>(local_eth_l1_curr_src_addr - page_size)[0])<<ENDL();
+        // }
 
         local_eth_l1_curr_src_addr = buffer_addrs[curr_buffer_idx] + 32;
 
