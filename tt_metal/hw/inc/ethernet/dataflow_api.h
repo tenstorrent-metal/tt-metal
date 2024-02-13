@@ -188,7 +188,12 @@ void eth_noc_semaphore_wait(volatile tt_l1_ptr uint32_t* sem_addr, uint32_t val)
         run_routing();
     }
 }
-
+FORCE_INLINE
+void eth_noc_semaphore_wait_v2(volatile tt_l1_ptr uint32_t* sem_addr, uint32_t val) {
+    while ((*sem_addr) < val) {
+        run_routing();
+    }
+}
 /**
  * This blocking call waits for all the outstanding enqueued *noc_async_read*
  * calls issued on the current Tensix core to complete. After returning from

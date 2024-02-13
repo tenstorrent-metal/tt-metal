@@ -17,9 +17,8 @@ namespace tt {
 namespace tt_metal {
 
 void AllGather::validate(const std::vector<Tensor> &input_tensors) const {
-    constexpr uint32_t header_size = 32;
     constexpr uint32_t semaphore_offset = 32;
-    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset) / 2, 32) - header_size;
+    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset), 32);
     TT_FATAL(input_tensors.size() == 1);
     const auto& layout = input_tensors[0].layout();
     const auto& dtype = input_tensors[0].dtype();
