@@ -179,10 +179,12 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             bool is_program = header->is_program_buffer;
             command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
 
-            if (num_buffer_transfers == 0) {
+            // if (num_buffer_transfers == 0) { removed this when sending fd packet unconditionally even if there is data to tx
+            //                                      because there are cases where programs only have one buffer tx (from dram)
+            //                                      and in that case we weren't sending the cmd at all (because of is_program continue below)
                  // send cmd even if there is no data associated
-                internal_::send_fd_packets();
-            }
+                internal_::send_fd_packets(1); // TODO: AL, is this right?
+            // }
 
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
                 const uint32_t num_pages = command_ptr[2];
@@ -256,11 +258,11 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             uint32_t num_pages_to_tx = 0;
             bool is_program = header->is_program_buffer;
             command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER; // jump to buffer transfer region
-            if (num_buffer_transfers == 0 | is_program) {
+            // if (num_buffer_transfers == 0 | is_program) { removed this when sending fd packet unconditionally from src even if there is data to tx
                 internal_::ack_fd_packet();
-            }
+            // }
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
-                uint32_t num_pages_transferred = 0;
+                //internal_::wait_for_fd_packet(1+1);
                 const uint32_t num_pages = command_ptr[2];
                 const uint32_t src_buf_type = command_ptr[4];
 
@@ -268,14 +270,15 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     // don't send data
                     continue;
                 }
+                uint32_t num_pages_transferred = 0;
 
               while (num_pages_transferred != num_pages) {
-                if(num_pages_transferred != 0) {
+                // if (num_pages_transferred != 0) { removed this when sending fd packet unconditionally from src even if there is data to tx
                   while (routing_info->fd_buffer_msgs_sent != 1) {
                     // maybe contesxt switch
                     internal_::risc_context_switch();
                   }
-                }
+                // }
                 uint32_t src_addr = eth_db_cb_config->rd_ptr_16B << 4;
                 uint64_t dst_noc_addr = ((uint64_t)relay_dst_noc_encoding << 32) | (eth_db_cb_config->wr_ptr_16B << 4);
 
@@ -298,12 +301,6 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                 num_pages_transferred += num_pages_to_tx;
               }
               command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION; // jump to buffer transfer region
-              //if (num_pages_transferred == total_num_pages) {
-                // Done sending all data associated with this command, reset `num_pages_transferred` for next command
-                //  num_pages_transferred = 0;
-                  // debug[0] = 3118;
-               //}
-                // Signal to FD_SRC router that packet has been processed
             }
 
         } else {
