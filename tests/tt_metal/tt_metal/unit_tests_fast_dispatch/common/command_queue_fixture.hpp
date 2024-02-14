@@ -14,6 +14,7 @@ class CommandQueueFixture : public ::testing::Test {
    protected:
     tt::ARCH arch_;
     Device* device_;
+    Device *mmio_device_;
     uint32_t pcie_id;
     std::unique_ptr<CommandQueue> cmd_queue;
     void SetUp() override {
@@ -24,14 +25,20 @@ class CommandQueueFixture : public ::testing::Test {
         }
         this->arch_ = tt::get_arch_from_string(tt::test_utils::get_env_arch_name());
 
-        const int device_id = 0;
+        this->mmio_device_ = tt::tt_metal::CreateDevice(0);
+
+        const int device_id = 1;
+
         this->device_ = tt::tt_metal::CreateDevice(device_id);
         this->cmd_queue = std::make_unique<CommandQueue> ( device_, 0);
-        this->pcie_id = 0;
+
+        tt::Cluster::instance().set_internal_routing_info_for_ethernet_cores(true);
     }
 
     void TearDown() override {
         if (!getenv("TT_METAL_SLOW_DISPATCH_MODE")){
+            tt::Cluster::instance().set_internal_routing_info_for_ethernet_cores(false);
+            tt::tt_metal::CloseDevice(this->mmio_device_);
             tt::tt_metal::CloseDevice(this->device_);
         }
     }
@@ -106,6 +113,47 @@ class CommandQueuePCIDevicesFixture : public ::testing::Test {
 
     std::vector<tt::tt_metal::Device*> devices_;
     std::map<chip_id_t, tt::tt_metal::Device*> reserved_devices_;
+    tt::ARCH arch_;
+    size_t num_devices_;
+};
+
+class CommandQueueSingleCardFixture : public ::testing::Test {
+   protected:
+    void SetUp() override {
+        auto slow_dispatch = getenv("TT_METAL_SLOW_DISPATCH_MODE");
+        if (slow_dispatch) {
+            TT_THROW("This suite can only be run with fast dispatch or TT_METAL_SLOW_DISPATCH_MODE unset");
+            GTEST_SKIP();
+        }
+        arch_ = tt::get_arch_from_string(tt::test_utils::get_env_arch_name());
+
+        const chip_id_t mmio_device_id = 0;
+        std::vector<chip_id_t> device_ids_to_open = {mmio_device_id};
+
+        std::set<chip_id_t> controlled_remote_devices = tt::Cluster::instance().get_devices_controlled_by_mmio_device(mmio_device_id);
+        for (chip_id_t remote_device_id : controlled_remote_devices) {
+            device_ids_to_open.push_back(remote_device_id);
+            break;
+        }
+
+        num_devices_ = device_ids_to_open.size();
+
+        for (chip_id_t id : device_ids_to_open) {
+            auto* device = tt::tt_metal::CreateDevice(id);
+            devices_.push_back(device);
+        }
+
+        tt::Cluster::instance().set_internal_routing_info_for_ethernet_cores(true);
+    }
+
+    void TearDown() override {
+        tt::Cluster::instance().set_internal_routing_info_for_ethernet_cores(false);
+        for (unsigned int id = 0; id < devices_.size(); id++) {
+            tt::tt_metal::CloseDevice(devices_.at(id));
+        }
+    }
+
+    std::vector<tt::tt_metal::Device*> devices_;
     tt::ARCH arch_;
     size_t num_devices_;
 };
