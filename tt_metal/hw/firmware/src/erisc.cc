@@ -158,7 +158,6 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             kernel_profiler::mark_time(CC_MAIN_END);
         }
         if (my_routing_mode == EthRouterMode::FD_SRC) {
-          // TODO: EnqueueRead is sending garbage data
             eth_db_acquire(eth_db_semaphore_addr, ((uint64_t)eth_router_noc_encoding << 32));
             if (erisc_info->launch_user_kernel == 1) {
                 continue;
@@ -184,7 +183,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             //                                      because there are cases where programs only have one buffer tx (from dram)
             //                                      and in that case we weren't sending the cmd at all (because of is_program continue below)
                  // send cmd even if there is no data associated
-                internal_::send_fd_packets(1); // TODO: AL, is this right?
+                internal_::send_fd_packets(); // TODO: AL, is this right?
             // }
 
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
@@ -276,7 +275,6 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                 (get_db_buf_addr<consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch) + consumer_cb_size) >> 4;
             uint32_t local_cb_size_16B = header->router_cb_size >> 4;
             uint32_t local_fifo_limit_16B = (get_db_buf_addr<command_start_addr, data_buffer_size>(db_buf_switch) >> 4) + local_cb_size_16B;
-            erisc_info->unused_arg2 = local_fifo_limit_16B;
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
                 const uint32_t num_pages = command_ptr[2];
                 const uint32_t src_buf_type = command_ptr[4];

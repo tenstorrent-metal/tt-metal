@@ -71,7 +71,7 @@ void kernel_main() {
 
         // Relay command to remote signaller
         wait_consumer_space_available(db_tx_semaphore_addr);    // Check that there is space in the remote signaller
-        relay_command<signaller_cmd_base_addr, signaller_data_buffer_size>(command_start_addr, db_tx_buf_switch, ((uint64_t)signaller_noc_encoding << 32));
+        relay_command<cmd_base_addr, signaller_cmd_base_addr, signaller_data_buffer_size>(db_tx_buf_switch, ((uint64_t)signaller_noc_encoding << 32));
         update_producer_consumer_sync_semaphores(((uint64_t)dispatcher_noc_encoding << 32), ((uint64_t)signaller_noc_encoding << 32), db_tx_semaphore_addr, get_semaphore(1));
 
         if (reading_buffer) {
