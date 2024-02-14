@@ -305,9 +305,15 @@ void produce_for_eth_src_router(
         const uint32_t src_buf_type = command_ptr[4];
         const uint32_t src_page_index = command_ptr[6];
 
-        uint32_t fraction_of_producer_cb_num_pages = consumer_cb_num_pages / 2;
+        bool read_from_sysmem = (BufferType)src_buf_type == BufferType::SYSTEM_MEMORY;
+        if (!read_from_sysmem) {
+            // Data needs to come from target remote device
+            continue;
+        }
 
-        uint32_t num_to_read = min(num_pages, fraction_of_producer_cb_num_pages);
+        // uint32_t fraction_of_producer_cb_num_pages = consumer_cb_num_pages / 2;
+
+        uint32_t num_to_read = min(num_pages, producer_consumer_transfer_num_pages);
         uint32_t num_to_write =
             min(num_pages, producer_consumer_transfer_num_pages);  // This must be a bigger number for perf.
         uint32_t num_reads_issued = 0;
@@ -316,7 +322,7 @@ void produce_for_eth_src_router(
         uint32_t src_page_id = src_page_index;
 
         Buffer buffer;
-        if ((BufferType)src_buf_type == BufferType::SYSTEM_MEMORY or not(sharded)) {
+        if (read_from_sysmem or not(sharded)) {
             buffer.init((BufferType)src_buf_type, bank_base_address, page_size);
         } else {
             buffer.init_sharded(
@@ -334,7 +340,7 @@ void produce_for_eth_src_router(
                 src_page_id += num_to_read;
 
                 uint32_t num_pages_left = num_pages - num_reads_issued;
-                num_to_read = min(num_pages_left, fraction_of_producer_cb_num_pages);
+                num_to_read = min(num_pages_left, producer_consumer_transfer_num_pages);
             }
 
               if (num_reads_issued > num_writes_completed and cb_consumer_space_available(db_cb_config, num_to_write)) {
@@ -363,13 +369,14 @@ void produce_for_eth_src_router(
     }
 }
 
+template <bool forward_path>
 void transfer(
     db_cb_config_t* rx_db_cb_config,
     db_cb_config_t* tx_db_cb_config,
     const db_cb_config_t* remote_producer_db_cb_config,
     const db_cb_config_t* remote_consumer_db_cb_config,
     volatile tt_l1_ptr uint32_t* command_ptr,
-    uint32_t num_srcs,
+    uint32_t num_buffer_transfers,
     uint32_t page_size,
     uint32_t producer_cb_size,
     uint32_t l1_producer_fifo_limit_16B,
@@ -378,7 +385,8 @@ void transfer(
     uint32_t l1_consumer_fifo_limit_16B,
     uint64_t consumer_noc_encoding,
     uint32_t producer_consumer_transfer_num_pages,
-    uint32_t l1_fifo_limit_16B) {
+    uint32_t l1_fifo_limit_16B)
+{
     /*
         This API sends data from circular buffer in its L1 and writes data to the consumer core. On the consumer,
         we partition the data space into 2 via double-buffering. There are two command slots, and two
@@ -392,17 +400,23 @@ void transfer(
 
     command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
 
-    for (uint32_t i = 0; i < num_srcs; i++) {
+    for (uint32_t i = 0; i < num_buffer_transfers; i++) {
         const uint32_t bank_base_address = command_ptr[0];
         const uint32_t num_pages = command_ptr[2];
         const uint32_t page_size = command_ptr[3];
         const uint32_t src_buf_type = command_ptr[4];
+        const uint32_t dst_buf_type = command_ptr[5];
         const uint32_t src_page_index = command_ptr[6];
         uint32_t src_page_id = src_page_index;
 
+        bool skip_tx = forward_path & (BufferType)dst_buf_type == BufferType::SYSTEM_MEMORY & !is_program;
+        if (skip_tx) {
+            continue;
+        }
+
         Buffer buffer;
-        bool send_cached_program_data = is_program & ((BufferType)src_buf_type == BufferType::DRAM);
-        if (send_cached_program_data) {
+        bool read_local_buffer = forward_path & (BufferType)src_buf_type != BufferType::SYSTEM_MEMORY & is_program;
+        if (read_local_buffer) {
             buffer.init((BufferType)src_buf_type, bank_base_address, page_size);
         }
 
@@ -412,8 +426,9 @@ void transfer(
         while (num_transfers_completed != num_pages) {
             // Wait for data to be received in local CB
             uint32_t src_addr = (tx_db_cb_config->rd_ptr_16B) << 4;
-            if (send_cached_program_data) {
+            if (read_local_buffer) {
                 buffer.noc_async_read_buffer(src_addr, src_page_id, num_to_transfer);
+                noc_async_read_barrier();
             } else {
                 multicore_cb_wait_front(rx_db_cb_config, num_to_transfer);
             }
@@ -421,6 +436,7 @@ void transfer(
             // Transfer data to consumer CB
             uint32_t dst_addr = (tx_db_cb_config->wr_ptr_16B << 4);
             uint64_t dst_noc_addr = consumer_noc_encoding | dst_addr;
+            while (!cb_consumer_space_available(tx_db_cb_config, num_to_transfer));
             noc_async_write(src_addr, dst_noc_addr, page_size * num_to_transfer);
             multicore_cb_push_back( // this should be the other db config
                 tx_db_cb_config,
@@ -429,7 +445,7 @@ void transfer(
                 l1_consumer_fifo_limit_16B,
                 num_to_transfer);
             noc_async_write_barrier();
-            if (not send_cached_program_data) {
+            if (not read_local_buffer) {
                 multicore_cb_pop_front(
                     rx_db_cb_config,
                     remote_producer_db_cb_config,

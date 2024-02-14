@@ -70,7 +70,7 @@ void kernel_main() {
         uint32_t producer_consumer_transfer_num_pages = header->producer_router_transfer_num_pages;
 
         // get_db_buf_addr is set up to get address of first CQ slot only because currently remote FD does not have any cmd double buffering
-        transfer(
+        transfer<true>(
             rx_db_cb_config,
             tx_db_cb_config,
             eth_db_cb_config,
@@ -85,8 +85,7 @@ void kernel_main() {
             (get_db_buf_addr<dispatcher_cmd_base_addr, dispatcher_data_buffer_size>(false) + consumer_cb_size) >> 4,
             ((uint64_t)dispatcher_noc_encoding << 32),
             producer_consumer_transfer_num_pages,
-            (get_db_buf_addr<cmd_base_addr, data_buffer_size>(false) + consumer_cb_size) >> 4
-        );
+            (get_db_buf_addr<cmd_base_addr, data_buffer_size>(false) + header->producer_cb_size) >> 4);
 
         // Notify producer ethernet router that it has completed transferring a command
         noc_semaphore_inc(((uint64_t)producer_noc_encoding << 32) | eth_get_semaphore(0), 1);

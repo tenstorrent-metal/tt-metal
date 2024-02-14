@@ -93,6 +93,5 @@ void kernel_main() {
             eth_db_cb_config);
 
         issue_queue_pop_front<host_issue_queue_read_ptr_addr>(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + data_size);
-
     }
 }

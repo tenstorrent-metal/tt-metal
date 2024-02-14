@@ -4,6 +4,7 @@
 
 #include "tt_metal/impl/dispatch/kernels/command_queue_consumer.hpp"
 #include "tt_metal/impl/dispatch/kernels/command_queue_producer.hpp"
+#include "debug/dprint.h"
 
 // Dispatches fast dispatch commands to worker cores. Currently only runs on remote devices
 void kernel_main() {
@@ -34,6 +35,7 @@ void kernel_main() {
         uint32_t command_start_addr = get_command_slot_addr<cmd_base_addr, data_buffer_size>(db_rx_buf_switch);
         volatile tt_l1_ptr uint32_t* command_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(command_start_addr);
         volatile tt_l1_ptr CommandHeader* header = (CommandHeader*)command_ptr;
+        header->fwd_path = 0; // hacky
 
         wait_consumer_space_available(tx_semaphore_addr);   // Check that there is space in the eth router
 
@@ -77,7 +79,9 @@ void kernel_main() {
             // Use consumer_cb_size_idx because this kernel is on the return path but device command sets up producer/consumer from fwd path pov
             uint32_t producer_cb_size = header->consumer_cb_size;
             uint32_t consumer_router_transfer_num_pages = header->consumer_router_transfer_num_pages;
-            transfer(
+            uint32_t num_buffer_transfers = header->num_buffer_transfers;
+            // get_db_buf_addr is set up to get address of first CQ slot only because currently remote FD does not have any cmd double buffering
+            transfer<false>(
                 rx_db_cb_config,
                 tx_db_cb_config,
                 dispatcher_db_cb_config,
