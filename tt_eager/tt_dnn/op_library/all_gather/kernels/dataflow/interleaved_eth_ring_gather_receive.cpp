@@ -79,14 +79,16 @@ void kernel_main() {
                 eth_wait_for_bytes(num_bytes);
                 write_chunk(output_page_idx, col_idx, row_idx, local_eth_l1_base_src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
                 eth_receiver_done();
+                noc_semaphore_inc(sender_semaphore_noc_addr, 1);
             }
         }
         if constexpr (rem_num_pages > 0) {
             eth_wait_for_bytes(rem_num_bytes);
             write_chunk(output_page_idx, col_idx, row_idx, local_eth_l1_base_src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
             eth_receiver_done();
+            noc_semaphore_inc(sender_semaphore_noc_addr, 1);
         }
-        noc_semaphore_inc(sender_semaphore_noc_addr, 1);
+
          if (input_ring_idx == 0) {
             input_ring_idx = num_transfers;
             output_base_page_idx += last_output_page_shift;

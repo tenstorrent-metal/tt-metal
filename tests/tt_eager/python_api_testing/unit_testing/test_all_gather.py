@@ -26,6 +26,7 @@ from models.utility_functions import skip_for_grayskull
         # ([8, 8, 256, 384], 3, ttl.tensor.Layout.ROW_MAJOR),
         # ([8, 8, 256, 384], 3, ttl.tensor.Layout.TILE),
         # MLP AllGather
+        ([1, 1, 640, 32768], 3, ttl.tensor.Layout.TILE),
         ([1, 1, 32, 32768], 3, ttl.tensor.Layout.TILE),
         # Input, Selfout, Final AllGather
         ([1, 1, 32, 8192], 3, ttl.tensor.Layout.TILE),
