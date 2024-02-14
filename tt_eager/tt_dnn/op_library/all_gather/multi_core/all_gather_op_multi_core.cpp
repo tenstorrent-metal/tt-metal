@@ -21,9 +21,10 @@ namespace tt_metal {
 operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor, Tensor& output_tensor, const uint32_t dim, const uint32_t num_links, const uint32_t ring_size, const uint32_t ring_index, const chip_id_t receiver_device_id, const chip_id_t sender_device_id) {
 
     constexpr uint32_t semaphore_offset = 32;
-    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset), 32);
+    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset) / 2 - 32, 32);
     constexpr size_t sem_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
     constexpr size_t src_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + semaphore_offset;
+    constexpr size_t src_eth_l1_byte_address2 = src_eth_l1_byte_address + MAX_BUFFER;
 
     tt_metal::Program program{};
 
@@ -218,6 +219,7 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
             sender_rt_args = {static_cast<uint32_t>(input_buffer->address()),
                 static_cast<uint32_t>(output_buffer->address()),
                 static_cast<uint32_t>(src_eth_l1_byte_address),
+                static_cast<uint32_t>(src_eth_l1_byte_address2),
                 static_cast<uint32_t>(sem_l1_byte_address)
                 };
 
@@ -247,6 +249,7 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
             receiver_rt_args = {
                 static_cast<uint32_t>(output_buffer->address()),
                 static_cast<uint32_t>(src_eth_l1_byte_address),
+                static_cast<uint32_t>(src_eth_l1_byte_address2),
                 static_cast<uint32_t>(sem_l1_byte_address)
             };
         }

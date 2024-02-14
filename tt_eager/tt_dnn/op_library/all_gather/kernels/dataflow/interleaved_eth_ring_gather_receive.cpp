@@ -33,8 +33,9 @@ FORCE_INLINE void write_chunk(uint32_t& output_page_idx, uint32_t& col_idx, uint
 
 void kernel_main() {
     const uint32_t dst_addr = get_arg_val<uint32_t>(0);
-    const uint32_t local_eth_l1_base_src_addr = get_arg_val<uint32_t>(1);
-    const uint32_t sem_addr = get_arg_val<uint32_t>(2);
+    const uint32_t buffer0 = get_arg_val<uint32_t>(1);
+    const uint32_t buffer1 = get_arg_val<uint32_t>(2);
+    const uint32_t sem_addr = get_arg_val<uint32_t>(3);
 
     constexpr uint32_t sender_noc_x = get_compile_time_arg_val(0);
     constexpr uint32_t sender_noc_y = get_compile_time_arg_val(1);
@@ -73,20 +74,28 @@ void kernel_main() {
     uint32_t output_page_idx = output_base_page_idx;
     uint32_t col_idx = col_start_idx;
     uint32_t row_idx = row_start_idx;
+
+    volatile tt_l1_ptr uint32_t* curr_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer0);
+    volatile tt_l1_ptr uint32_t* next_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer1);
+
     for (uint32_t i = 0; i < num_transfers; ++i) {
         if constexpr (num_full_chunks > 0) {
             for (uint32_t c = 0; c < num_full_chunks; ++c) {
-                eth_wait_for_bytes(num_bytes);
-                write_chunk(output_page_idx, col_idx, row_idx, local_eth_l1_base_src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
-                eth_receiver_done();
+                uint32_t src_addr = uint32_t(curr_addr + 32);
+                eth_wait_for_bytes_v2(curr_addr, num_bytes);
+                write_chunk(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
+                eth_receiver_done_v2(curr_addr);
                 noc_semaphore_inc(sender_semaphore_noc_addr, 1);
+                std::swap(curr_addr, next_addr);
             }
         }
         if constexpr (rem_num_pages > 0) {
-            eth_wait_for_bytes(rem_num_bytes);
-            write_chunk(output_page_idx, col_idx, row_idx, local_eth_l1_base_src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
-            eth_receiver_done();
+            uint32_t src_addr = uint32_t(curr_addr + 32);
+            eth_wait_for_bytes_v2(curr_addr, rem_num_bytes);
+            write_chunk(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
+            eth_receiver_done_v2(curr_addr);
             noc_semaphore_inc(sender_semaphore_noc_addr, 1);
+            std::swap(curr_addr, next_addr);
         }
 
          if (input_ring_idx == 0) {
