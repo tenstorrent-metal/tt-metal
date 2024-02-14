@@ -164,7 +164,7 @@ void run_routing() {
         internal_::risc_context_switch();
     } else if (my_routing_mode == EthRouterMode::SD) {
         // slow dispatch mode
-        internal_::risc_context_switch();
+        // internal_::risc_context_switch();
     } else {
         internal_::risc_context_switch();
     }
@@ -288,6 +288,7 @@ void eth_wait_for_receiver_done() {
  * | dst_local_l1_addr           | Address in local L1 memory                                | uint32_t | 0..1MB                                                        | True     |
  * | size                        | Size of data transfer in bytes                            | uint32_t | 0..1MB                                                        | True     |
  */
+// TODO: Deprecate / remove this function
 template<bool write_barrier = false>
 FORCE_INLINE
 void eth_wait_for_remote_receiver_done_and_get_local_receiver_data(
@@ -349,5 +350,55 @@ void eth_receiver_done() {
         0,
         ((uint32_t)(&(erisc_info->user_buffer_bytes_sent))) >> 4,
         ((uint32_t)(&(erisc_info->user_buffer_bytes_sent))) >> 4,
+        1);
+}
+
+FORCE_INLINE
+void eth_send_bytes_v2(
+    volatile tt_l1_ptr uint32_t* addr,
+    uint32_t src_addr,
+    uint32_t dst_addr,
+    uint32_t num_bytes,
+    uint32_t num_bytes_per_send = 16,
+    uint32_t num_bytes_per_send_word_size = 1) {
+    uint32_t num_bytes_sent = 0;
+    while (num_bytes_sent < num_bytes) {
+        internal_::eth_send_packet(
+            0, ((num_bytes_sent + src_addr) >> 4), ((num_bytes_sent + dst_addr) >> 4), num_bytes_per_send_word_size);
+        num_bytes_sent += num_bytes_per_send;
+    }
+    (*addr) += num_bytes;
+}
+
+FORCE_INLINE
+void eth_send_done_v2(volatile tt_l1_ptr uint32_t* addr) {
+    internal_::eth_send_packet(
+        0,
+        ((uint32_t)(addr)) >> 4,
+        ((uint32_t)(addr)) >> 4,
+        1);
+}
+
+FORCE_INLINE
+void eth_wait_for_receiver_done_v2(volatile tt_l1_ptr uint32_t* addr) {
+    while (*addr != 0) {
+        run_routing();
+    }
+}
+
+FORCE_INLINE
+void eth_wait_for_bytes_v2(volatile tt_l1_ptr uint32_t* addr, uint32_t num_bytes) {
+    while (*addr != num_bytes) {
+        run_routing();
+    }
+}
+
+FORCE_INLINE
+void eth_receiver_done_v2(volatile tt_l1_ptr uint32_t* addr) {
+    (*addr)= 0;
+    internal_::eth_send_packet(
+        0,
+        ((uint32_t)(addr)) >> 4,
+        ((uint32_t)(addr)) >> 4,
         1);
 }
