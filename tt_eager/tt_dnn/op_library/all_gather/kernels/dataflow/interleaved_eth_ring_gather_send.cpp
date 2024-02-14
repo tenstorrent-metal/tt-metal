@@ -126,9 +126,10 @@ void kernel_main() {
         eth_noc_async_write_barrier();
     }
 
+    uint32_t sem_idx = 1;
+
     // num_transfers = num_devices - 1
     for (uint32_t i = 1; i < num_transfers; ++i) {
-        eth_noc_semaphore_wait_v2(sender_semaphore_addr_ptr, i);
         if (input_ring_idx == 0) {
             input_ring_idx = num_transfers;
             output_base_page_idx += last_output_page_shift;
@@ -141,6 +142,8 @@ void kernel_main() {
         row_idx = row_start_idx;
         if constexpr(num_full_chunks > 0) {
             for (uint32_t c = 0; c < num_full_chunks; ++c) {
+                eth_noc_semaphore_wait_v2(sender_semaphore_addr_ptr, sem_idx);
+                sem_idx++;
                 // This function also increments input_page_idx
                 read_chunk<dst_is_dram>(output_page_idx, col_idx, row_idx, local_eth_l1_base_src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
                 eth_send_bytes(local_eth_l1_base_src_addr, local_eth_l1_base_src_addr, num_bytes, num_bytes_per_send, num_bytes_per_send_word_size);
@@ -148,6 +151,8 @@ void kernel_main() {
             }
         }
         if constexpr(rem_num_pages > 0) {
+            eth_noc_semaphore_wait_v2(sender_semaphore_addr_ptr, sem_idx);
+            sem_idx++;
             read_chunk<dst_is_dram>(output_page_idx, col_idx, row_idx, local_eth_l1_base_src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
             eth_send_bytes(local_eth_l1_base_src_addr, local_eth_l1_base_src_addr, rem_num_bytes, rem_num_bytes_per_send, rem_num_bytes_per_send_word_size);
             eth_wait_for_receiver_done();
