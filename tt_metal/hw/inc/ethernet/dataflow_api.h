@@ -144,7 +144,7 @@ void wait_for_fd_packet() {
     // DPRINT << "Waiting for signal at " << (uint32_t)(&(routing_info->fd_buffer_msgs_sent)) << ENDL();
     while (routing_info->fd_buffer_msgs_sent != 1 && routing_info->routing_enabled && erisc_info->launch_user_kernel == 0) {
         // TODO: add timer to restrict this
-        // DPRINT << "FD BUFFER MSGS SENT " << routing_info->fd_buffer_msgs_sent << ENDL();
+        DPRINT << "FD BUFFER MSGS SENT " << routing_info->fd_buffer_msgs_sent << ENDL();
         risc_context_switch();
         // for (volatile int i = 0; i < 1000000000; i++);
     }
