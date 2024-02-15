@@ -113,32 +113,43 @@ void disable_erisc_app() { flag_disable[0] = 0; }
 
 FORCE_INLINE
 void send_fd_packets() {
+    // // DPRINT << "SENDING COMMAND PACKET to " << eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE << ENDL();
     internal_::eth_send_packet(
         0,
         (eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE) >> 4,
         ((eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE)) >> 4,
         (eth_l1_mem::address_map::ERISC_APP_RESERVED_SIZE) >> 4);
     routing_info->fd_buffer_msgs_sent = 1;
+    // DPRINT << "SENDING MSGS SENT PACKET to " << (uint32_t)(&(routing_info->fd_buffer_msgs_sent)) << ENDL();
     internal_::eth_send_packet(
         0,
         ((uint32_t)(&(routing_info->fd_buffer_msgs_sent))) >> 4,
         ((uint32_t)(&(routing_info->fd_buffer_msgs_sent))) >> 4,
         1);
     // There should always be a valid cmd here, since eth_db_acquire completed
+    DPRINT << "About to ctx switch" << ENDL();
     while (routing_info->fd_buffer_msgs_sent != 0) {
         // TODO: add timer to restrict this
         risc_context_switch();
     }
+    // DPRINT << "EXIT" << ENDL();
+    // while (true);
 }
 
 FORCE_INLINE
 void wait_for_fd_packet() {
     // There may not be a valid cmd here, since DST router is always polling
     // This should only happen on cluster close
+    DPRINT << "WAIT FOR FD PACKET" << ENDL();
+    // DPRINT << "Waiting for signal at " << (uint32_t)(&(routing_info->fd_buffer_msgs_sent)) << ENDL();
     while (routing_info->fd_buffer_msgs_sent != 1 && routing_info->routing_enabled && erisc_info->launch_user_kernel == 0) {
         // TODO: add timer to restrict this
+        // DPRINT << "FD BUFFER MSGS SENT " << routing_info->fd_buffer_msgs_sent << ENDL();
         risc_context_switch();
+        // for (volatile int i = 0; i < 1000000000; i++);
     }
+    // DPRINT << "DONE WAIT" << ENDL();
+    // while(true);
 }
 
 FORCE_INLINE

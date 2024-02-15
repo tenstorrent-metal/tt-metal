@@ -12,6 +12,7 @@
 #include "tt_metal/impl/dispatch/device_command.hpp"
 #include "tt_metal/impl/dispatch/kernels/command_queue_common.hpp"
 #include "tt_metal/impl/dispatch/kernels/command_queue_producer.hpp"
+#include "debug/dprint.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -148,7 +149,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
     const db_cb_config_t *remote_src_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, false);
     const db_cb_config_t *remote_dst_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, true);
 
-
+    DPRINT << "ETH CORE PRINT" << ENDL();
     while (routing_info->routing_enabled) {
         // FD: assume that no more host -> remote writes are pending
         if (erisc_info->launch_user_kernel == 1) {
@@ -165,10 +166,12 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             if (routing_info->routing_enabled == 0) {
                 break;
             }
+            DPRINT << "NOC INC" << ENDL();
             noc_semaphore_inc(
                 ((uint64_t)eth_router_noc_encoding << 32) | uint32_t(eth_db_semaphore_addr),
                 -1);  // Two's complement addition
             noc_async_write_barrier();
+            DPRINT << "NOC INC RECV" << ENDL();
 
             volatile tt_l1_ptr uint32_t *command_ptr =
                 reinterpret_cast<volatile tt_l1_ptr uint32_t *>(command_start_addr);
@@ -183,9 +186,12 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
             //                                      because there are cases where programs only have one buffer tx (from dram)
             //                                      and in that case we weren't sending the cmd at all (because of is_program continue below)
                  // send cmd even if there is no data associated
+                DPRINT << "SEND PACKETS" << ENDL();
                 internal_::send_fd_packets(); // TODO: AL, is this right?
+                DPRINT << "DONE SEND PACKETS" << ENDL();
             // }
 
+            DPRINT << "NUM BUF TRANSFERS: " << num_buffer_transfers << ENDL();
             for (uint32_t i = 0; i < num_buffer_transfers; i++) {
                 const uint32_t num_pages = command_ptr[2];
                 const uint32_t src_buf_type = command_ptr[4];
