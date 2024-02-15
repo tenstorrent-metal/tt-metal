@@ -321,15 +321,13 @@ TEST_F(CommandQueueSingleCardFixture, WriteOneTileAcrossAllDramBanksTwiceRoundRo
     }
 }
 
-TEST_F(CommandQueueSingleCardFixture, DISABLED_Sending131072Pages) {
+TEST_F(CommandQueueFixture, Sending131072Pages) {
     TestBufferConfig config = {
         .num_pages = 131072,
         .page_size = 128,
         .buftype = BufferType::DRAM};
 
-    for (Device *device : devices_) {
-        EXPECT_TRUE(local_test_functions::test_EnqueueWriteBuffer_and_EnqueueReadBuffer(device, device->command_queue(), config));
-    }
+    EXPECT_TRUE(local_test_functions::test_EnqueueWriteBuffer_and_EnqueueReadBuffer(this->device_, *this->cmd_queue, config));
 }
 
 TEST_F(CommandQueueSingleCardFixture, TestNon32BAlignedPageSizeForDram) {
