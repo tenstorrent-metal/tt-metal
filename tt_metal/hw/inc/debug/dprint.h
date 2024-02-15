@@ -34,9 +34,9 @@
 #include "hostdevcommon/common_runtime_address_map.h"
 
 #include "dprint_buffer.h"
-#if defined(COMPILE_FOR_ERISC)
-#include "ethernet/dataflow_api.h"
-#endif
+// #if defined(COMPILE_FOR_ERISC)
+// #include "ethernet/dataflow_api.h"
+// #endif
 
 #define DPRINT DebugPrinter()
 
@@ -64,6 +64,14 @@
 #else
 #define DPRINT_DATA0(x)
 #define DPRINT_DATA1(x)
+#endif
+
+#if defined(COMPILE_FOR_ERISC)
+// Forward declaration to avoid circular dependency
+namespace internal_ {
+void __attribute__((section("code_l1"))) risc_context_switch();
+void disable_erisc_app();
+}
 #endif
 
 struct BF16 { uint16_t val; BF16(uint16_t val) : val(val) {} } ATTR_PACK;
