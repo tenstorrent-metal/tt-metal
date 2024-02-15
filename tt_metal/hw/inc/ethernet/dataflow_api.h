@@ -11,6 +11,7 @@
 #include "tt_eth_api.h"
 
 #include "../dataflow_api.h"
+#include "debug/dprint.h"
 
 #define FORCE_INLINE inline __attribute__((always_inline))
 
