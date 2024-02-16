@@ -207,7 +207,6 @@ ALWI void signbit_tile(uint32_t idst) {
 }
 
 
-
 /**
  * Performs element-wise computation of absolute value on each element of a tile
  * in DST register at index tile_index. The DST register buffer must be in

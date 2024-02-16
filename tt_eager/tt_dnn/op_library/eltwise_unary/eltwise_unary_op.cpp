@@ -101,6 +101,10 @@ void update_macro_defines(UnaryOpType op_type, std::map<std::string,std::string>
         case UnaryOpType::NEG:
             defines["SFPU_OP_NEG_INCLUDE"] = "1";
             break;
+        case UnaryOpType::TO_UINT16:
+        case UnaryOpType::TO_UINT32:
+            defines["SFPU_OP_TYPECAST_INCLUDE"]="1";
+            break;
         default:
             defines["SFPU_OP_COMPUTE_KERNEL_API_INCLUDE"]="1";
             break;
@@ -145,6 +149,8 @@ std::pair<string, string> get_op_init_and_func_default(UnaryOpType op_type, stri
         case UnaryOpType::LOG: op_init_and_name = {"log_tile_init();", fmt::format("log_tile({});", idst)}; break;
         case UnaryOpType::TANH: op_init_and_name = {"tanh_tile_init();", fmt::format("tanh_tile({});", idst)}; break;
         case UnaryOpType::SIGNBIT: op_init_and_name = {"signbit_tile_init();", fmt::format("signbit_tile({});", idst)}; break;
+        case UnaryOpType::TO_UINT16: op_init_and_name = {"to_uint16_tile_init();", fmt::format("to_uint16_tile({});", idst)}; break;
+        case UnaryOpType::TO_UINT32: op_init_and_name = {"to_uint32_tile_init();", fmt::format("to_uint32_tile({});", idst)}; break;
         case UnaryOpType::SIN: op_init_and_name = {"sin_tile_init();", fmt::format("sin_tile({});", idst)}; break;
         case UnaryOpType::COS: op_init_and_name = {"cos_tile_init();", fmt::format("cos_tile({});", idst)}; break;
         case UnaryOpType::ISFINITE: op_init_and_name = {"isfinite_tile_init();", fmt::format("isfinite_tile({});", idst)}; break;
