@@ -17,13 +17,11 @@ namespace tt {
 namespace tt_metal {
 
 void AllGather::validate(const std::vector<Tensor> &input_tensors) const {
-    constexpr uint32_t semaphore_offset = 32;
-    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset) / 2 - 32, 32);
     TT_FATAL(input_tensors.size() == 1);
     const auto& layout = input_tensors[0].layout();
     const auto& dtype = input_tensors[0].dtype();
     const auto& page_size = input_tensors[0].buffer()->page_size();
-    TT_FATAL(page_size <= MAX_BUFFER, "Page size too large");
+    TT_FATAL(page_size <= all_gather_buffer_params::MAX_BUFFER, "Page size too large");
     TT_FATAL(page_size % 32 == 0);
 
     // TODO: Validate ring

@@ -14,6 +14,16 @@ namespace tt {
 
 namespace tt_metal {
 
+namespace all_gather_buffer_params {
+    constexpr uint32_t semaphore_offset = 32; // TODO: Remove this once dedicated semaphore space for user kernels are added
+    constexpr uint32_t num_buffers = 2;
+    constexpr uint32_t sync_size = 32; // TODO: Remove and make this part of actual reserved space of erisc_info
+    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset) / num_buffers - sync_size, 32);
+    constexpr uint32_t sem_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
+    constexpr uint32_t src_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + semaphore_offset;
+    constexpr uint32_t src_eth_l1_byte_address2 = src_eth_l1_byte_address + MAX_BUFFER + sync_size;
+}
+
 struct AllGather {
     const uint32_t dim;
     const uint32_t num_links;

@@ -20,15 +20,9 @@ namespace tt_metal {
 
 operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor, Tensor& output_tensor, const uint32_t dim, const uint32_t num_links, const uint32_t ring_size, const uint32_t ring_index, const chip_id_t receiver_device_id, const chip_id_t sender_device_id) {
 
-    constexpr uint32_t semaphore_offset = 32;
-    constexpr uint32_t MAX_BUFFER = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset) / 2 - 32, 32);
-    constexpr size_t sem_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
-    constexpr size_t src_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + semaphore_offset;
-    constexpr size_t src_eth_l1_byte_address2 = src_eth_l1_byte_address + MAX_BUFFER + 32;
-
     tt_metal::Program program{};
 
-    const uint32_t max_buffer_per_chunk = round_down(MAX_BUFFER, input_tensor.buffer()->page_size());
+    const uint32_t max_buffer_per_chunk = round_down(all_gather_buffer_params::MAX_BUFFER, input_tensor.buffer()->page_size());
     const uint32_t max_pages_per_chunk = max_buffer_per_chunk / input_tensor.buffer()->page_size();
     const auto& device = input_tensor.device();
     uint32_t sender_socket_idx = 0;
@@ -172,9 +166,9 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(ring_index)};
             sender_rt_args = {static_cast<uint32_t>(input_buffer->address()),
                 static_cast<uint32_t>(output_buffer->address()),
-                static_cast<uint32_t>(src_eth_l1_byte_address),
-                static_cast<uint32_t>(src_eth_l1_byte_address2),
-                static_cast<uint32_t>(sem_l1_byte_address)
+                static_cast<uint32_t>(all_gather_buffer_params::src_eth_l1_byte_address),
+                static_cast<uint32_t>(all_gather_buffer_params::src_eth_l1_byte_address2),
+                static_cast<uint32_t>(all_gather_buffer_params::sem_l1_byte_address)
                 };
 
             receiver_kernel = "tt_eager/tt_dnn/op_library/all_gather/kernels/dataflow/interleaved_eth_ring_gather_receive_stick_layout.cpp";
@@ -202,10 +196,9 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(receiver_ring_index)};
             receiver_rt_args = {
                 static_cast<uint32_t>(output_buffer->address()),
-                static_cast<uint32_t>(src_eth_l1_byte_address),
-                static_cast<uint32_t>(src_eth_l1_byte_address2),
-                static_cast<uint32_t>(sem_l1_byte_address)
-
+                static_cast<uint32_t>(all_gather_buffer_params::src_eth_l1_byte_address),
+                static_cast<uint32_t>(all_gather_buffer_params::src_eth_l1_byte_address2),
+                static_cast<uint32_t>(all_gather_buffer_params::sem_l1_byte_address)
             };
         } else {
             sender_kernel = "tt_eager/tt_dnn/op_library/all_gather/kernels/dataflow/interleaved_eth_ring_gather_send.cpp";
@@ -233,9 +226,9 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(ring_index)};
             sender_rt_args = {static_cast<uint32_t>(input_buffer->address()),
                 static_cast<uint32_t>(output_buffer->address()),
-                static_cast<uint32_t>(src_eth_l1_byte_address),
-                static_cast<uint32_t>(src_eth_l1_byte_address2),
-                static_cast<uint32_t>(sem_l1_byte_address)
+                static_cast<uint32_t>(all_gather_buffer_params::src_eth_l1_byte_address),
+                static_cast<uint32_t>(all_gather_buffer_params::src_eth_l1_byte_address2),
+                static_cast<uint32_t>(all_gather_buffer_params::sem_l1_byte_address)
                 };
 
             receiver_kernel = "tt_eager/tt_dnn/op_library/all_gather/kernels/dataflow/interleaved_eth_ring_gather_receive.cpp";
@@ -263,9 +256,9 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
                 static_cast<uint32_t>(receiver_ring_index)};
             receiver_rt_args = {
                 static_cast<uint32_t>(output_buffer->address()),
-                static_cast<uint32_t>(src_eth_l1_byte_address),
-                static_cast<uint32_t>(src_eth_l1_byte_address2),
-                static_cast<uint32_t>(sem_l1_byte_address)
+                static_cast<uint32_t>(all_gather_buffer_params::src_eth_l1_byte_address),
+                static_cast<uint32_t>(all_gather_buffer_params::src_eth_l1_byte_address2),
+                static_cast<uint32_t>(all_gather_buffer_params::sem_l1_byte_address)
             };
         }
         auto eth_sender_kernel = tt_metal::CreateKernel(
@@ -316,7 +309,7 @@ operation::ProgramWithCallbacks all_gather_multi_core(const Tensor& input_tensor
         }
     }
 
-    auto override_runtime_arguments_callback = [num_links, eth_sender_kernels, eth_receiver_kernels, eth_sender_cores, eth_receiver_cores, sem_l1_byte_address] (
+    auto override_runtime_arguments_callback = [num_links, eth_sender_kernels, eth_receiver_kernels, eth_sender_cores, eth_receiver_cores] (
         const void* operation,
         Program& program,
         const std::vector<Tensor>& input_tensors,

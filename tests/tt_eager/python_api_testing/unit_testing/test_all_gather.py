@@ -5,7 +5,7 @@
 import torch
 import pytest
 import tt_lib as ttl
-from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_equal
+from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_equal, comp_pcc
 from models.utility_functions import skip_for_grayskull
 
 
@@ -33,6 +33,13 @@ from models.utility_functions import skip_for_grayskull
     ],
 )
 @pytest.mark.parametrize(
+    "input_dtype",
+    [
+        # ttl.tensor.DataType.BFLOAT16,
+        ttl.tensor.DataType.BFLOAT8_B,
+    ],
+)
+@pytest.mark.parametrize(
     "mem_config",
     [
         # ttl.tensor.MemoryConfig(buffer_type=ttl.tensor.BufferType.DRAM),
@@ -41,12 +48,20 @@ from models.utility_functions import skip_for_grayskull
 )
 @pytest.mark.parametrize("num_links", [1, 2])
 def test_all_gather(
-    pcie_devices, input_shape, dim, num_links, layout, mem_config, use_program_cache, function_level_defaults
+    pcie_devices,
+    input_shape,
+    dim,
+    num_links,
+    input_dtype,
+    layout,
+    mem_config,
+    use_program_cache,
+    function_level_defaults,
 ):
-    if (
-        layout == ttl.tensor.Layout.ROW_MAJOR or num_links == 2
-    ) and mem_config.buffer_type == ttl.tensor.BufferType.DRAM:
+    if (layout == ttl.tensor.Layout.ROW_MAJOR) and mem_config.buffer_type == ttl.tensor.BufferType.DRAM:
         pytest.skip("All gather tests are hanging for RM in DRAM")
+    if layout == ttl.tensor.Layout.ROW_MAJOR and input_dtype == ttl.tensor.DataType.BFLOAT8_B:
+        pytest.skip("Invalid combination")
     devices = pcie_devices
     input_tensor = torch.rand(input_shape).bfloat16()
     num_devices = len(devices)
@@ -61,13 +76,14 @@ def test_all_gather(
     input_tensors = torch.chunk(input_tensor, num_devices, dim)
     tt_input_tensors = []
     for i, t in enumerate(input_tensors):
-        tt_input_tensors.append(
-            ttl.tensor.Tensor(t, ttl.tensor.DataType.BFLOAT8_B).to(layout).to(devices[i], mem_config)
-        )
+        tt_input_tensors.append(ttl.tensor.Tensor(t, input_dtype).to(layout).to(devices[i], mem_config))
 
     tt_out_tensors = ttl.tensor.all_gather(tt_input_tensors, dim, num_links, output_mem_config=mem_config)
 
     for i, t in enumerate(tt_out_tensors):
         tt_output_tensor = t.cpu().to(ttl.tensor.Layout.ROW_MAJOR).to_torch()
-        eq, output = comp_equal(tt_output_tensor, input_tensor)
+        if input_dtype == ttl.tensor.DataType.BFLOAT16:
+            eq, output = comp_equal(tt_output_tensor, input_tensor)
+        else:
+            eq, output = comp_pcc(tt_output_tensor, input_tensor)
         assert eq, f"{i} FAILED: {output}"
