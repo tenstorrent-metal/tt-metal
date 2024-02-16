@@ -50,7 +50,7 @@ void kernel_main() {
     constexpr uint32_t num_bytes = get_compile_time_arg_val(8);
     constexpr uint32_t rem_num_pages = get_compile_time_arg_val(9);
     constexpr uint32_t rem_num_bytes = get_compile_time_arg_val(10);
-    constexpr uint32_t output_start_idx = get_compile_time_arg_val(11);
+    constexpr uint32_t output_start_page_idx = get_compile_time_arg_val(11);
     constexpr uint32_t row_start_idx = get_compile_time_arg_val(12);
     constexpr uint32_t col_start_idx = get_compile_time_arg_val(13);
     constexpr uint32_t row_offset = get_compile_time_arg_val(14);
@@ -70,7 +70,7 @@ void kernel_main() {
     const uint64_t sender_semaphore_noc_addr = get_noc_addr(sender_noc_x, sender_noc_y, sem_addr);
 
     uint32_t input_ring_idx = input_start_ring_idx;
-    uint32_t output_base_page_idx = output_start_idx;
+    uint32_t output_base_page_idx = output_start_page_idx;
     uint32_t output_page_idx = output_base_page_idx;
     uint32_t col_idx = col_start_idx;
     uint32_t row_idx = row_start_idx;
@@ -81,7 +81,7 @@ void kernel_main() {
     for (uint32_t i = 0; i < num_transfers; ++i) {
         if constexpr (num_full_chunks > 0) {
             for (uint32_t c = 0; c < num_full_chunks; ++c) {
-                uint32_t src_addr = uint32_t(curr_addr + 32);
+                uint32_t src_addr = uint32_t(curr_addr) + 32;
                 eth_wait_for_bytes_v2(curr_addr, num_bytes);
                 write_chunk(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
                 eth_receiver_done_v2(curr_addr);
@@ -90,7 +90,7 @@ void kernel_main() {
             }
         }
         if constexpr (rem_num_pages > 0) {
-            uint32_t src_addr = uint32_t(curr_addr + 32);
+            uint32_t src_addr = uint32_t(curr_addr) + 32;
             eth_wait_for_bytes_v2(curr_addr, rem_num_bytes);
             write_chunk(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
             eth_receiver_done_v2(curr_addr);
@@ -98,7 +98,7 @@ void kernel_main() {
             std::swap(curr_addr, next_addr);
         }
 
-         if (input_ring_idx == 0) {
+        if (input_ring_idx == 0) {
             input_ring_idx = num_transfers;
             output_base_page_idx += last_output_page_shift;
         } else {

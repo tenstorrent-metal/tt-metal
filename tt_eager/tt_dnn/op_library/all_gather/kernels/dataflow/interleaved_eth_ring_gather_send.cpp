@@ -79,8 +79,8 @@ void kernel_main() {
     constexpr uint32_t col_offset = get_compile_time_arg_val(15);
     constexpr uint32_t num_rows = get_compile_time_arg_val(16);
     constexpr uint32_t num_cols = get_compile_time_arg_val(17);
-    constexpr uint32_t last_output_page_shift = get_compile_time_arg_val(18);
-    constexpr uint32_t output_page_shift = get_compile_time_arg_val(19);
+    constexpr uint32_t last_output_page_offset = get_compile_time_arg_val(18);
+    constexpr uint32_t output_page_offset = get_compile_time_arg_val(19);
     constexpr uint32_t input_start_ring_idx = get_compile_time_arg_val(20);
 
     const InterleavedAddrGenFast<src_is_dram> s = {
@@ -115,7 +115,7 @@ void kernel_main() {
     if constexpr(num_full_chunks > 0) {
         for (uint32_t c = 0; c < num_full_chunks; ++c) {
             // This function also increments input_page_idx
-            uint32_t src_addr = uint32_t(curr_addr + 32);
+            uint32_t src_addr = uint32_t(curr_addr) + 32;
             eth_wait_for_receiver_done_v2(curr_addr);
             read_chunk<src_is_dram>(input_page_idx, src_addr, s, num_pages, page_size);
             write_chunk_non_blocking<dst_is_dram>(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
@@ -126,7 +126,7 @@ void kernel_main() {
         }
     }
     if constexpr(rem_num_pages > 0) {
-        uint32_t src_addr = uint32_t(curr_addr + 32);
+        uint32_t src_addr = uint32_t(curr_addr) + 32;
         eth_wait_for_receiver_done_v2(curr_addr);
         read_chunk<src_is_dram>(input_page_idx, src_addr, s, rem_num_pages, page_size);
         write_chunk_non_blocking<dst_is_dram>(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
@@ -142,10 +142,10 @@ void kernel_main() {
     for (uint32_t i = 1; i < num_transfers; ++i) {
         if (input_ring_idx == 0) {
             input_ring_idx = num_transfers;
-            output_base_page_idx += last_output_page_shift;
+            output_base_page_idx += last_output_page_offset;
         } else {
             input_ring_idx--;
-            output_base_page_idx -= output_page_shift;
+            output_base_page_idx -= output_page_offset;
         }
         output_page_idx = output_base_page_idx;
         col_idx = col_start_idx;
@@ -155,7 +155,7 @@ void kernel_main() {
                 eth_noc_semaphore_wait_v2(sender_semaphore_addr_ptr, sem_idx);
                 sem_idx++;
                 // This function also increments input_page_idx
-                uint32_t src_addr = uint32_t(curr_addr + 32);
+                uint32_t src_addr = uint32_t(curr_addr) + 32;
                 eth_wait_for_receiver_done_v2(curr_addr);
                 read_chunk<dst_is_dram>(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
                 eth_send_bytes_v2(curr_addr, src_addr, src_addr, num_bytes, num_bytes_per_send, num_bytes_per_send_word_size);
@@ -166,7 +166,7 @@ void kernel_main() {
         if constexpr(rem_num_pages > 0) {
             eth_noc_semaphore_wait_v2(sender_semaphore_addr_ptr, sem_idx);
             sem_idx++;
-            uint32_t src_addr = uint32_t(curr_addr + 32);
+            uint32_t src_addr = uint32_t(curr_addr) + 32;
             eth_wait_for_receiver_done_v2(curr_addr);
             read_chunk<dst_is_dram>(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
             eth_send_bytes_v2(curr_addr, src_addr, src_addr, rem_num_bytes, rem_num_bytes_per_send, rem_num_bytes_per_send_word_size);

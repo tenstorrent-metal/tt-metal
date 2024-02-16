@@ -11,10 +11,26 @@
  * explicit flushes need to be used since the calls are non-blocking
  * */
 
+template<bool DRAM>
+FORCE_INLINE void write_chunk(uint32_t& output_page_idx, uint32_t& row_idx, uint32_t local_eth_l1_curr_src_addr, const InterleavedAddrGen<DRAM>& d, const uint32_t num_rows, const uint32_t row_offset, const uint32_t num_pages, const uint32_t page_size) {
+    for (uint32_t i = 0; i < num_pages; ++i) {
+        uint64_t dst_noc_addr = get_noc_addr(output_page_idx, d);
+        noc_async_write(local_eth_l1_curr_src_addr, dst_noc_addr, page_size);
+        local_eth_l1_curr_src_addr += page_size;
+        output_page_idx++;
+        row_idx++;
+        if (row_idx == num_rows) {
+            row_idx = 0;
+            output_page_idx += row_offset;
+        }
+    }
+    eth_noc_async_write_barrier();
+}
+
 void kernel_main() {
     const uint32_t dst_addr = get_arg_val<uint32_t>(0);
-    const uint32_t buffer0_addr = get_arg_val<uint32_t>(1);
-    const uint32_t buffer1_addr = get_arg_val<uint32_t>(2);
+    const uint32_t buffer0 = get_arg_val<uint32_t>(1);
+    const uint32_t buffer1 = get_arg_val<uint32_t>(2);
     const uint32_t sem_addr = get_arg_val<uint32_t>(3);
 
     constexpr uint32_t sender_noc_x = get_compile_time_arg_val(0);
@@ -28,57 +44,69 @@ void kernel_main() {
     constexpr uint32_t num_bytes = get_compile_time_arg_val(7);
     constexpr uint32_t rem_num_pages = get_compile_time_arg_val(8);
     constexpr uint32_t rem_num_bytes = get_compile_time_arg_val(9);
-    constexpr uint32_t out_page_size = get_compile_time_arg_val(10);
-    constexpr uint32_t row_offset = get_compile_time_arg_val(11);
-    constexpr uint32_t num_rows = get_compile_time_arg_val(12);
+    constexpr uint32_t output_start_page_idx = get_compile_time_arg_val(10);
+    constexpr uint32_t output_start_addr_offset = get_compile_time_arg_val(11);
+    constexpr uint32_t row_start_idx = get_compile_time_arg_val(12);
+    constexpr uint32_t row_offset = get_compile_time_arg_val(13);
+    constexpr uint32_t num_rows = get_compile_time_arg_val(14);
+    constexpr uint32_t out_page_size = get_compile_time_arg_val(15);
+    constexpr uint32_t last_output_page_offset = get_compile_time_arg_val(16);
+    constexpr uint32_t output_page_offset = get_compile_time_arg_val(17);
+    constexpr uint32_t last_output_addr_offset = get_compile_time_arg_val(18);
+    constexpr uint32_t output_addr_offset = get_compile_time_arg_val(19);
+    constexpr uint32_t input_start_ring_idx = get_compile_time_arg_val(20);
 
     InterleavedAddrGen<dst_is_dram> d = {
-        .bank_base_address = dst_addr, .page_size = out_page_size};
+        .bank_base_address = dst_addr + output_start_addr_offset, .page_size = out_page_size};
 
-    volatile tt_l1_ptr uint32_t* receiver_semaphore_addr_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(sem_addr);
     const uint64_t sender_semaphore_noc_addr = get_noc_addr(sender_noc_x, sender_noc_y, sem_addr);
 
-    uint32_t buffer_addrs[2] = {buffer0_addr, buffer1_addr};
+    uint32_t input_ring_idx = input_start_ring_idx;
+    uint32_t output_base_page_idx = output_start_page_idx;
+    uint32_t output_page_idx = output_base_page_idx;
+    uint32_t row_idx = row_start_idx;
 
-    const auto& get_and_sync_data = [&](const uint32_t num_pages, const uint32_t num_bytes, uint32_t& curr_buffer_idx, uint32_t& next_buffer_idx) __attribute__((always_inline)) {
-        for (uint32_t i = 0; i < num_transfers; ++i) {
-            uint32_t local_eth_l1_curr_src_addr = buffer_addrs[curr_buffer_idx] + 32;
+    volatile tt_l1_ptr uint32_t* curr_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer0);
+    volatile tt_l1_ptr uint32_t* next_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer1);
 
-            eth_wait_for_bytes(num_bytes);
-            noc_semaphore_inc(sender_semaphore_noc_addr, 1);
-            volatile tt_l1_ptr uint32_t * header = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer_addrs[curr_buffer_idx]);
-
-            uint32_t output_page_idx = header[0];
-            uint32_t output_start_offset = header[1];
-            uint32_t row_idx = header[2];
-
-            d.bank_base_address = dst_addr + output_start_offset;
-            for (uint32_t i = 0; i < num_pages; ++i) {
-                uint64_t dst_noc_addr = get_noc_addr(output_page_idx, d);
-                noc_async_write(local_eth_l1_curr_src_addr, dst_noc_addr, page_size);
-                local_eth_l1_curr_src_addr += page_size;
-                output_page_idx++;
-                row_idx++;
-                if (row_idx == num_rows) {
-                    row_idx = 0;
-                    output_page_idx += row_offset;
-                }
+    for (uint32_t i = 0; i < num_transfers; ++i) {
+        if constexpr (num_full_chunks > 0) {
+            for (uint32_t c = 0; c < num_full_chunks; ++c) {
+                uint32_t src_addr = uint32_t(curr_addr) + 32;
+                eth_wait_for_bytes_v2(curr_addr, num_bytes);
+                write_chunk(output_page_idx, row_idx, src_addr, d, num_rows, row_offset, num_pages, page_size);
+                eth_receiver_done_v2(curr_addr);
+                noc_semaphore_inc(sender_semaphore_noc_addr, 1);
+                std::swap(curr_addr, next_addr);
             }
-            std::swap(curr_buffer_idx, next_buffer_idx);
-            eth_noc_async_write_barrier();
-            eth_noc_semaphore_wait(receiver_semaphore_addr_ptr, 1);
-            noc_semaphore_set(receiver_semaphore_addr_ptr, 0);
-            eth_receiver_done();
         }
-    };
+        if constexpr (rem_num_pages > 0) {
+            uint32_t src_addr = uint32_t(curr_addr) + 32;
+            eth_wait_for_bytes_v2(curr_addr, rem_num_bytes);
+            write_chunk(output_page_idx, row_idx, src_addr, d, num_rows, row_offset, rem_num_pages, page_size);
+            eth_receiver_done_v2(curr_addr);
+            noc_semaphore_inc(sender_semaphore_noc_addr, 1);
+            std::swap(curr_addr, next_addr);
+        }
 
-
-    uint32_t curr_buffer_idx = 0, next_buffer_idx = 1;
-
-    for (uint32_t i = 0; i < num_full_chunks; ++i) {
-        get_and_sync_data(num_pages, num_bytes, curr_buffer_idx, next_buffer_idx);
-    }
-    if constexpr (rem_num_pages > 0) {
-        get_and_sync_data(rem_num_pages, rem_num_bytes, curr_buffer_idx, next_buffer_idx);
+        if (input_ring_idx == 0) {
+            input_ring_idx = num_transfers;
+            if constexpr(output_addr_offset != 0) {
+                d.bank_base_address += last_output_addr_offset;
+            }
+            if constexpr(output_page_offset != 0) {
+                output_base_page_idx += last_output_page_offset;
+            }
+        } else {
+            input_ring_idx--;
+            if constexpr(output_addr_offset != 0) {
+                d.bank_base_address -= output_addr_offset;
+            }
+            if constexpr(output_page_offset != 0) {
+                output_base_page_idx -= output_page_offset;
+            }
+        }
+        output_page_idx = output_base_page_idx;
+        row_idx = row_start_idx;
     }
 }
