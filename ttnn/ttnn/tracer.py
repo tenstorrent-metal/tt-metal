@@ -22,7 +22,6 @@ from torchtrail.multidigraph import MultiDiGraph, merge_graphs
 import ttnn
 
 TracedTorchTensor = torchtrail.tracer.TracedTorchTensor
-
 TorchTensor = torchtrail.tracer.TorchTensor
 TorchParameter = torchtrail.tracer.TorchParameter
 TorchFunction = torchtrail.tracer.TorchFunction
@@ -213,6 +212,9 @@ def visualize(*function_args, file_name=None, **function_kwargs):
 
 get_graph = torchtrail.get_graph
 to_networkx = torchtrail.multidigraph.to_networkx
+
+
+get_graph = torchtrail.get_graph
 
 
 ENABLE_TRACER = False

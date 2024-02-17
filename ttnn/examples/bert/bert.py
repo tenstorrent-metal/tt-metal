@@ -9,6 +9,8 @@ import transformers
 import ttnn
 from ttnn.model_preprocessing import preprocess_model
 
+import networkx as nx
+
 
 def embedding(input_ids, *, parameters):
     output = ttnn.embedding(input_ids, weight=parameters.weight, layout=ttnn.TILE_LAYOUT)
@@ -57,8 +59,7 @@ def main():
     config = transformers.BertConfig.from_pretrained(model_name)
     config.num_hidden_layers = 1
     model = transformers.BertModel.from_pretrained(model_name, config=config).eval()
-    inputs = torch.randint(0, 1000, (1, 128))
-    outputs = model(inputs)
+    input_tensor = torch.randint(0, 1000, (1, 128))
 
     device_id = 0
     device = ttnn.open_device(device_id=device_id)
@@ -66,17 +67,78 @@ def main():
     parameters = preprocess_model(
         model_name=model_name,
         initialize_model=lambda: model,
-        run_model=lambda model: model(inputs),
+        run_model=lambda model: model(input_tensor),
         reader_patterns_cache={},
         device=device,
     )
 
     with ttnn.tracer.trace():
-        ttnn_inputs = ttnn.from_torch(inputs, device=device)
-        ttnn_output = bert_model(ttnn_inputs, parameters=parameters)
-        ttnn_output_as_torch = ttnn.to_torch(ttnn_output)
+        input_tensor = torch.randint(0, 1000, (1, 128))
+        output_tensor = model(input_tensor)
 
-    ttnn.tracer.visualize(ttnn_output_as_torch, file_name="bert_model_trace.svg")
+    graph = ttnn.tracer.get_graph(output_tensor, flatten=True)
+    operations = set()
+    for node in nx.topological_sort(graph):
+        operation = graph.nodes[node]["operation"]
+        if isinstance(operation, ttnn.tracer.TorchFunction):
+            operations.add(str(operation))
+
+    node_to_tensor_map = {input_tensor.node: torch.zeros_like(input_tensor)}
+
+    for node in nx.topological_sort(graph):
+        if node in node_to_tensor_map:
+            continue
+
+        input_nodes = [None for _ in graph.in_edges(node)]
+        for input_node, _, edge_data in graph.in_edges(node, data=True):
+            input_nodes[edge_data["sink_input_index"]] = input_node
+
+        input_tensors = [node_to_tensor_map[input_node] for input_node in input_nodes]
+
+        operation = graph.nodes[node]["operation"]
+        if isinstance(operation, ttnn.tracer.TorchFunction):
+            arg_name_value_pairs = operation.arg_name_value_pairs
+            function_args = [
+                arg
+                for arg_name, arg in arg_name_value_pairs
+                if isinstance(arg_name, ttnn.tracer.PositionalArgument)
+                and not isinstance(arg, ttnn.tracer.InputTensorIndex)
+            ]
+            function_kwargs = {
+                arg_name: arg
+                for arg_name, arg in arg_name_value_pairs
+                if not isinstance(arg_name, ttnn.tracer.PositionalArgument)
+                and not isinstance(arg, ttnn.tracer.InputTensorIndex)
+            }
+            if operation.function == torch.nn.functional.layer_norm:
+                function_kwargs["weight"] = input_tensors[1]
+                function_kwargs["bias"] = input_tensors[2]
+                input_tensors = input_tensors[:1]
+            node_to_tensor_map[node] = operation.function(*input_tensors, *function_args, **function_kwargs)
+        elif isinstance(operation, ttnn.tracer.TorchTensor):
+            node_to_tensor_map[node] = operation.tensor
+        elif isinstance(operation, ttnn.tracer.TorchParameter):
+            node_to_tensor_map[node] = operation.parameter
+
+    for node in nx.topological_sort(graph):
+        if len(list(graph.successors(node))) == 0:
+            output_tensor = node_to_tensor_map[node]
+            print(output_tensor)
+
+    for operation in operations:
+        print(operation)
+        # if operation == "embedding":
+        #     ttnn.register_function("embedding", embedding)
+        # elif operation == "bert_embeddings":
+        #     ttnn.register_function("bert_embeddings", bert_embeddings)
+        # elif operation == "bert_attention":
+        #     ttnn.register_function("bert_attention", bert_attention)
+        # elif operation == "bert_layer":
+        #     ttnn.register_function("bert_layer", bert_layer)
+        # elif operation == "bert_encoder":
+        #     ttnn.register_function("bert_encoder", bert_encoder)
+        # elif operation == "bert_model":
+        #     ttnn.register_function("bert_model", bert_model)
 
     ttnn.close_device(device)
 
