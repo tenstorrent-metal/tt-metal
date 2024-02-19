@@ -28,6 +28,7 @@
 #include "tt_dnn/op_library/moreh_softmax/moreh_softmax_op.hpp"
 #include "tt_dnn/op_library/moreh_softmax_backward/moreh_softmax_backward_op.hpp"
 #include "tt_dnn/op_library/softmax/softmax_op.hpp"
+#include "tt_dnn/op_library/prod/prod_nc_op.hpp"
 #include "tt_dnn/op_library/moreh_sum/moreh_sum_op.hpp"
 #include "tt_dnn/op_library/moreh_sum_backward/moreh_sum_backward_op.hpp"
 #include "tt_dnn/op_library/moreh_cumsum/moreh_cumsum_op.hpp"
@@ -834,12 +835,24 @@ void py_module(py::module& m_primary) {
         py::arg("dims").noconvert() = std::vector<int64_t>(),
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         "Performs sum operation. Returns an output tensor.");
+
+    m_primary.def(
+        "prod",
+        &prod,
+        py::arg("input").noconvert(),
+        py::arg("output").noconvert(),
+        py::kw_only(),
+        py::arg("dims").noconvert() = std::vector<int64_t>(),
+        py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+        "Performs product operation. Returns an output tensor.");
+
     m_primary.def(
         "moreh_sum_backward",
         &moreh_sum_backward,
         py::arg("output_grad").noconvert(),
         py::arg("input_grad").noconvert(),
         "Performs sum backward operation. Returns an input_grad tensor.");
+
     m_primary.def(
         "moreh_cumsum",
         &moreh_cumsum,
