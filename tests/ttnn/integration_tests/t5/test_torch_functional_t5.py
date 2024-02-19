@@ -28,7 +28,7 @@ def test_t5_layer_norm(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_layer_norm(config, torch_hidden_states, weight=parameters.weight)
@@ -50,7 +50,7 @@ def test_t5_dense_act_dense(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_dense_act_dense(config, torch_hidden_states, parameters)
@@ -72,7 +72,7 @@ def test_t5_dense_gated_act_dense(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_dense_gated_act_dense(config, torch_hidden_states, parameters)
@@ -94,7 +94,7 @@ def test_t5_layer_ff(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_layer_ff(config, torch_hidden_states, parameters)
@@ -116,7 +116,7 @@ def test_t5_attention(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_attention(config, torch_hidden_states, parameters=parameters)
@@ -138,7 +138,7 @@ def test_t5_layer_self_attention(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_layer_self_attention(config, torch_hidden_states, parameters=parameters)
@@ -161,7 +161,7 @@ def test_t5_layer_cross_attention(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_layer_cross_attention(
@@ -185,7 +185,7 @@ def test_t5_block_encoder(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_block(config, torch_hidden_states, parameters=parameters)
@@ -211,7 +211,7 @@ def test_t5_block_decoder(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_block(
@@ -237,7 +237,7 @@ def test_t5_stack_encoder(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_stack(
@@ -270,7 +270,7 @@ def test_t5_stack_decoder(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = functional_t5.t5_stack(
@@ -299,7 +299,7 @@ def test_t5_for_conditional_generation(model_name, batch_size, sequence_size):
     parameters = preprocess_model_parameters(
         model_name=f"torch_{model_name}",
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output, *_ = functional_t5.t5_for_conditional_generation(

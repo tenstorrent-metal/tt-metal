@@ -316,7 +316,7 @@ def decoder(config, hidden_states, decoder_attention_mask, encoder_hidden_states
     return hidden_states
 
 
-def convert_to_ttnn(model, name):
+def is_to_be_converted(model, name):
     return name not in [
         "encoder.conv1",
         "encoder.conv2",

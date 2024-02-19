@@ -48,7 +48,7 @@ def test_whisper_attention(device, ttnn_model, model_name, batch_size, sequence_
 
     torch_parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
         prefix="encoder_attn" if use_key_value_states else "",
     )
@@ -65,7 +65,7 @@ def test_whisper_attention(device, ttnn_model, model_name, batch_size, sequence_
 
     ttnn_parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: True,
+        is_to_be_converted=lambda *_: True,
         custom_preprocessor=ttnn_model.custom_preprocessor,
         device=device,
         prefix="encoder_attn" if use_key_value_states else "",
@@ -100,14 +100,14 @@ def test_encoder_layer(device, ttnn_model, model_name, batch_size, sequence_size
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
     torch_output = torch_functional_whisper.encoder_layer(config, torch_hidden_states, parameters=parameters)
 
     ttnn_parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=ttnn_model.convert_to_ttnn,
+        is_to_be_converted=ttnn_model.is_to_be_converted,
         custom_preprocessor=ttnn_model.custom_preprocessor,
         device=device,
     )
@@ -136,7 +136,7 @@ def test_encoder(device, ttnn_model, model_name, batch_size, feature_size, seque
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 
@@ -155,7 +155,7 @@ def test_encoder(device, ttnn_model, model_name, batch_size, feature_size, seque
 
     ttnn_parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=ttnn_model.convert_to_ttnn,
+        is_to_be_converted=ttnn_model.is_to_be_converted,
         custom_preprocessor=ttnn_model.custom_preprocessor,
         device=device,
         prefix="encoder",
@@ -197,7 +197,7 @@ def test_decoder_layer(device, ttnn_model, model_name, batch_size, sequence_size
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 
@@ -207,7 +207,7 @@ def test_decoder_layer(device, ttnn_model, model_name, batch_size, sequence_size
 
     ttnn_parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: True,
+        is_to_be_converted=lambda *_: True,
         custom_preprocessor=ttnn_model.custom_preprocessor,
         device=device,
     )
@@ -255,7 +255,7 @@ def test_decoder(device, ttnn_model, model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 
@@ -277,7 +277,7 @@ def test_decoder(device, ttnn_model, model_name, batch_size, sequence_size):
 
     ttnn_parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=ttnn_model.convert_to_ttnn,
+        is_to_be_converted=ttnn_model.is_to_be_converted,
         custom_preprocessor=ttnn_model.custom_preprocessor,
         device=device,
         prefix="decoder",
@@ -323,7 +323,7 @@ def test_ttnn_whisper(device, ttnn_model):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 
@@ -347,7 +347,7 @@ def test_ttnn_whisper(device, ttnn_model):
 
     ttnn_parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=ttnn_model.convert_to_ttnn,
+        is_to_be_converted=ttnn_model.is_to_be_converted,
         custom_preprocessor=ttnn_model.custom_preprocessor,
         device=device,
     )

@@ -79,7 +79,7 @@ def test_torch_bloom_for_causal_lm():
         model_name="torch_functional_bloom_for_causal_lm",
         initialize_model=lambda: BloomForCausalLM.from_pretrained(model_name).eval(),
         custom_preprocessor=torch_functional_bloom.custom_preprocessor,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     input_ids = tokenizer.encode(input_text, return_tensors="pt")
@@ -113,7 +113,7 @@ def test_ttnn_bloom_for_causal_lm(device, batch_size=8):
         initialize_model=lambda: BloomForCausalLM.from_pretrained(model_name).eval(),
         device=device,
         custom_preprocessor=ttnn_optimized_functional_bloom.custom_preprocessor,
-        convert_to_ttnn=lambda model, name: name != "lm_head",
+        is_to_be_converted=lambda model, name: name != "lm_head",
     )
 
     # Initialize logits processor based on the model's configuration

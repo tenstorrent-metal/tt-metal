@@ -53,7 +53,7 @@ def test_bloom_attention(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_bloom.custom_preprocessor,
     )
 
@@ -90,7 +90,7 @@ def test_bloom_mlp(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bloom.bloom_mlp(
@@ -126,7 +126,7 @@ def test_bloom_block(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_bloom.custom_preprocessor,
     )
 
@@ -161,7 +161,7 @@ def test_bloom(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_bloom.custom_preprocessor,
     )
 
@@ -196,7 +196,7 @@ def test_bloom_for_question_answering(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_bloom.custom_preprocessor,
     )
 

@@ -39,7 +39,7 @@ def test_bert(device, use_program_cache, model_name, batch_size, sequence_size, 
         initialize_model=lambda: transformers.BertForQuestionAnswering.from_pretrained(
             model_name, torchscript=False
         ).eval(),
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     torch_output = torch_functional_bert.bert_for_question_answering(

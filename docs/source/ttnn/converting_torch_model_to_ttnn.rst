@@ -59,7 +59,7 @@ Following TDD, the first step is to write a test for the model:
 
         parameters = preprocess_model_parameters(
             initialize_model=lambda: model, # Function to initialize the model
-            convert_to_ttnn=lambda *_: False, # Keep the weights as torch tensors
+            is_to_be_converted=lambda *_: False, # Keep the weights as torch tensors
         )
 
         output = torch_functional_bert.bert_intermediate(

@@ -35,7 +35,7 @@ def test_whisper_attention(model_name, batch_size, sequence_size, use_key_value_
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
         prefix="encoder_attn" if use_key_value_states else "",
     )
@@ -68,7 +68,7 @@ def test_encoder_layer(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 
@@ -91,7 +91,7 @@ def test_encoder(model_name, batch_size, feature_size, sequence_length):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 
@@ -124,7 +124,7 @@ def test_decoder_layer(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 
@@ -154,7 +154,7 @@ def test_decoder(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 
@@ -190,7 +190,7 @@ def test_torch_whisper():
     parameters = preprocess_model_parameters(
         model_name=f"torch_functional_whisper_not_contiguous_{dtype_to_use}",
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
         custom_preprocessor=torch_functional_whisper.custom_preprocessor,
     )
 

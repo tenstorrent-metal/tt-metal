@@ -31,7 +31,7 @@ def test_bert_attention(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bert.bert_attention(
@@ -59,7 +59,7 @@ def test_bert_intermediate(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bert.bert_intermediate(
@@ -88,7 +88,7 @@ def test_bert_output(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bert.bert_output(
@@ -128,7 +128,7 @@ def test_bert_feedforward(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bert.bert_feedforward(
@@ -156,7 +156,7 @@ def test_bert_layer(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bert.bert_layer(
@@ -185,7 +185,7 @@ def test_bert_encoder(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bert.bert_encoder(
@@ -218,7 +218,7 @@ def test_bert(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bert.bert(
@@ -250,7 +250,7 @@ def test_bert_for_question_answering(model_name, batch_size, sequence_size):
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
 
     output = torch_functional_bert.bert_for_question_answering(

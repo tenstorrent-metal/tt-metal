@@ -481,7 +481,7 @@ if __name__ == "__main__":
         model_name=f"torch_{model_name}",
         initialize_model=lambda: model,
         custom_preprocessor=custom_preprocessor,
-        convert_to_ttnn=lambda *_: False,
+        is_to_be_converted=lambda *_: False,
     )
     last_hidden_state = whisper_original(
         model.config, input_features, decoder_input_ids, attention_mask=None, parameters=parameters

@@ -197,7 +197,7 @@ def test_resnet(device):
     torch_input_tensor = torch.rand((8, 3, 224, 224), dtype=torch.float32)
     torch_output_tensor = torch_model(torch_input_tensor)
 
-    def custom_preprocessor(model, name, ttnn_module_args, convert_to_ttnn):
+    def custom_preprocessor(model, name, ttnn_module_args, is_to_be_converted):
         parameters = {}
         if isinstance(model, torchvision.models.resnet.BasicBlock):
             ttnn_module_args.conv1["activation"] = "relu"  # Fuse relu with conv1
@@ -231,7 +231,7 @@ def test_resnet(device):
             return preprocess_remaining_children_and_parameters(
                 model,
                 name=name,
-                convert_to_ttnn=convert_to_ttnn,
+                is_to_be_converted=is_to_be_converted,
                 custom_preprocessor=custom_preprocessor,
                 parameters=parameters,
                 ttnn_module_args=ttnn_module_args,

@@ -110,7 +110,7 @@ def run_bloom_causal_LM_inference(
         initialize_model=lambda: BloomForCausalLM.from_pretrained(model_version).eval(),
         device=device,
         custom_preprocessor=functional_model.custom_preprocessor,
-        convert_to_ttnn=lambda model, name: name != "lm_head",
+        is_to_be_converted=lambda model, name: name != "lm_head",
     )
 
     profiler.end("preprocessing_parameter")
@@ -181,7 +181,7 @@ def run_bloom_causal_LM_inference_hellaswag(
         initialize_model=lambda: BloomForCausalLM.from_pretrained(model_version).eval(),
         device=device,
         custom_preprocessor=functional_model.custom_preprocessor,
-        convert_to_ttnn=lambda model, name: name != "lm_head",
+        is_to_be_converted=lambda model, name: name != "lm_head",
     )
     bert_score = evaluate.load("bertscore")
     accuracy_metric = evaluate.load("accuracy")

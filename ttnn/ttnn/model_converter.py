@@ -2,6 +2,7 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+import abc
 import io
 import inspect
 import pathlib
@@ -19,32 +20,34 @@ import ttnn
 from ttnn.tracer import trace
 
 
-def preprocess_linear_weight(weight, *, dtype):
+def convert_torch_linear_weight_to_ttnn(weight, *, dtype):
     weight = weight.T.contiguous()
     weight = ttnn.from_torch(weight, dtype=dtype, layout=ttnn.TILE_LAYOUT)
     return weight
 
 
-def preprocess_linear_bias(bias, *, dtype):
+def convert_torch_linear_bias_to_ttnn(bias, *, dtype):
     bias = bias.reshape((1, -1))
     bias = ttnn.from_torch(bias, dtype=dtype, layout=ttnn.TILE_LAYOUT)
     return bias
 
 
-def preprocess_layernorm_parameter(parameter, *, dtype):
+def convert_torch_layernorm_parameter_to_ttnn(parameter, *, dtype):
     parameter = parameter.reshape((1, -1))
     parameter = ttnn.from_torch(parameter, dtype=dtype, layout=ttnn.TILE_LAYOUT)
     return parameter
 
 
-def preprocess_embedding_weight(weight, *, dtype):
+def convert_torch_embedding_weight_to_ttnn(weight, *, dtype):
     weight = ttnn.from_torch(weight, dtype=dtype)
     return weight
 
 
-def preprocess_conv2d(weight, bias, ttnn_module_args):
+def convert_conv2d_weight_and_bias_to_ttnn(weight, bias, ttnn_module_args):
     if ttnn_module_args is None:
-        raise RuntimeError(f"torch.nn.Conv2d modules need run_model to be provided to preprocess_model_parameters")
+        raise RuntimeError(
+            f"torch.nn.Conv2d modules need run_model to be provided to ttnn.model_converter.from_torch_model"
+        )
 
     weight = ttnn.from_torch(weight, dtype=ttnn.bfloat16)
     if bias is not None:
@@ -98,7 +101,7 @@ def fold_conv7s2_into_conv4s1(conv7s2_weight, conv7s2_bias, ttnn_module_args):
     ttnn_module_args["in_channels"] = conv4s1_weight.shape[1]
     ttnn_module_args["input_height"] = (ttnn_module_args["input_height"] + padding[0] * 2) // stride[0]
     ttnn_module_args["input_width"] = (ttnn_module_args["input_width"] + padding[1] * 2) // stride[1]
-    return preprocess_conv2d(conv4s1_weight, conv4s1_bias, ttnn_module_args)
+    return convert_conv2d_weight_and_bias_to_ttnn(conv4s1_weight, conv4s1_bias, ttnn_module_args)
 
 
 class ParameterList(list):
@@ -121,12 +124,12 @@ class ParameterDict(dict):
 def make_parameter_dict(dictionary: Union[dict, ParameterDict]) -> ParameterDict:
     if isinstance(dictionary, ParameterDict):
         return dictionary
-    preprocessed_dictionary = {}
+    parameter_dictionary = {}
     for key, value in dictionary.items():
         if isinstance(value, dict) and not isinstance(value, ModuleArgs):
             value = make_parameter_dict(value)
-        preprocessed_dictionary[key] = value
-    return ParameterDict(preprocessed_dictionary)
+        parameter_dictionary[key] = value
+    return ParameterDict(parameter_dictionary)
 
 
 def repr_parameters(file, parameters, indentation=""):
@@ -174,19 +177,19 @@ def repr_parameters(file, parameters, indentation=""):
         file.write(repr(parameters))
 
 
-def default_preprocessor(model, name, ttnn_module_args) -> ParameterDict:
+def default_converter(*, module: torch.nn.Module, module_name, ttnn_module_args, **_) -> ParameterDict:
     parameters = {}
-    if isinstance(model, torch.nn.Linear):
-        parameters[f"weight"] = preprocess_linear_weight(model.weight, dtype=ttnn.bfloat16)
-        if model.bias is not None:
-            parameters[f"bias"] = preprocess_linear_bias(model.bias, dtype=ttnn.bfloat16)
-    elif isinstance(model, torch.nn.Conv2d):
-        parameters = preprocess_conv2d(model.weight, model.bias, ttnn_module_args)
-    elif isinstance(model, torch.nn.LayerNorm):
-        parameters[f"weight"] = preprocess_layernorm_parameter(model.weight, dtype=ttnn.bfloat16)
-        parameters[f"bias"] = preprocess_layernorm_parameter(model.bias, dtype=ttnn.bfloat16)
-    elif isinstance(model, torch.nn.Embedding):
-        parameters[f"weight"] = preprocess_embedding_weight(model.weight, dtype=ttnn.bfloat16)
+    if isinstance(module, torch.nn.Linear):
+        parameters[f"weight"] = convert_torch_linear_weight_to_ttnn(module.weight, dtype=ttnn.bfloat16)
+        if module.bias is not None:
+            parameters[f"bias"] = convert_torch_linear_bias_to_ttnn(module.bias, dtype=ttnn.bfloat16)
+    elif isinstance(module, torch.nn.Conv2d):
+        parameters = convert_conv2d_weight_and_bias_to_ttnn(module.weight, module.bias, ttnn_module_args)
+    elif isinstance(module, torch.nn.LayerNorm):
+        parameters[f"weight"] = convert_torch_layernorm_parameter_to_ttnn(module.weight, dtype=ttnn.bfloat16)
+        parameters[f"bias"] = convert_torch_layernorm_parameter_to_ttnn(module.bias, dtype=ttnn.bfloat16)
+    elif isinstance(module, torch.nn.Embedding):
+        parameters[f"weight"] = convert_torch_embedding_weight_to_ttnn(module.weight, dtype=ttnn.bfloat16)
     return make_parameter_dict(parameters)
 
 
@@ -203,8 +206,8 @@ torch_dtype_to_ttnn_dtype = {
 def convert_torch_model_to_ttnn_model(
     model,
     *,
-    convert_to_ttnn,
-    custom_preprocessor,
+    is_to_be_converted,
+    converter,
     name,
     ttnn_module_args,
 ) -> ParameterDict:
@@ -213,8 +216,8 @@ def convert_torch_model_to_ttnn_model(
             [
                 convert_torch_model_to_ttnn_model(
                     child,
-                    convert_to_ttnn=convert_to_ttnn,
-                    custom_preprocessor=custom_preprocessor,
+                    is_to_be_converted=is_to_be_converted,
+                    converter=converter,
                     name=f"{name}.{index}" if name else f"{index}",
                     ttnn_module_args=ttnn_module_args[index] if ttnn_module_args is not None else None,
                 )
@@ -222,35 +225,25 @@ def convert_torch_model_to_ttnn_model(
             ]
         )
 
-    if custom_preprocessor is not None:
-        signature = inspect.signature(custom_preprocessor)
-        if len(signature.parameters) < 2:
-            raise RuntimeError(f"Custom preprocessor must have at least two parameters: model and name")
-        for arg_name in list(signature.parameters)[2:]:
-            if arg_name not in {"ttnn_module_args", "convert_to_ttnn"}:
-                raise RuntimeError(f"Unsupported parameter: {arg_name}")
-        args = [model, name]
-        kwargs = {}
-        if "ttnn_module_args" in signature.parameters:
-            kwargs["ttnn_module_args"] = ttnn_module_args
-        if "convert_to_ttnn" in signature.parameters:
-            kwargs["convert_to_ttnn"] = convert_to_ttnn
-        custom_preprocessor_parameters = custom_preprocessor(*args, **kwargs)
-        if custom_preprocessor_parameters:
-            return make_parameter_dict(custom_preprocessor_parameters)
+    if converter is not None:
+        parameters = converter(
+            module=model, module_name=name, ttnn_module_args=ttnn_module_args, is_to_be_converted=is_to_be_converted
+        )
+        if parameters:
+            return make_parameter_dict(parameters)
 
     named_children = list(model.named_children())
     named_parameters = list((name, parameter) for name, parameter in model.named_parameters() if "." not in name)
 
     parameters = make_parameter_dict({})
-    if convert_to_ttnn(model, name):
-        default_preprocessor_parameters = default_preprocessor(model, name, ttnn_module_args)
-        if default_preprocessor_parameters:
-            if len(default_preprocessor_parameters) != len(named_children) + len(named_parameters):
+    if is_to_be_converted(model, name):
+        parameters = default_converter(module=model, module_name=name, ttnn_module_args=ttnn_module_args)
+        if parameters:
+            if len(parameters) != len(named_children) + len(named_parameters):
                 raise RuntimeError(
                     f"Not all children or parameters were converted using default_preprocessor_parameters!"
                 )
-            return make_parameter_dict(default_preprocessor_parameters)
+            return make_parameter_dict(parameters)
         else:
             for parameter_name, parameter in named_parameters:
                 parameters[parameter_name] = ttnn.from_torch(
@@ -273,8 +266,8 @@ def convert_torch_model_to_ttnn_model(
             child_name = int(child_name)
         child_parameters = convert_torch_model_to_ttnn_model(
             child,
-            convert_to_ttnn=convert_to_ttnn,
-            custom_preprocessor=custom_preprocessor,
+            is_to_be_converted=is_to_be_converted,
+            converter=converter,
             name=f"{name}.{child_name}" if name else child_name,
             ttnn_module_args=ttnn_module_args.get(child_name, None) if ttnn_module_args is not None else None,
         )
@@ -285,7 +278,7 @@ def convert_torch_model_to_ttnn_model(
 
 
 def preprocess_remaining_children_and_parameters(
-    model, name, convert_to_ttnn, custom_preprocessor, parameters, ttnn_module_args, *, already_preprocessed_children
+    model, name, is_to_be_converted, converter, parameters, ttnn_module_args, *, already_preprocessed_children
 ):
     named_parameters = tuple((name, parameter) for name, parameter in model.named_parameters() if "." not in name)
     for child_name, child in tuple(model.named_children()) + named_parameters:
@@ -294,8 +287,8 @@ def preprocess_remaining_children_and_parameters(
         parameters[child_name] = convert_torch_model_to_ttnn_model(
             child,
             name=name,
-            convert_to_ttnn=convert_to_ttnn,
-            custom_preprocessor=custom_preprocessor,
+            is_to_be_converted=is_to_be_converted,
+            converter=converter,
             ttnn_module_args=ttnn_module_args.get(child_name, None),
         )
     return parameters
@@ -479,10 +472,11 @@ def merge_ttnn_module_args_into_parameters(parameters: dict, ttnn_module_args: d
     return parameters
 
 
-def _initialize_model_and_preprocess_parameters(
-    *, initialize_model, run_model, convert_to_ttnn, custom_preprocessor, device, prefix
-):
-    model = initialize_model()
+def _model_and_preprocess_parameters(*, model, run_model, is_to_be_converted, converter, device, prefix):
+    if not isinstance(model, torch.nn.Module):
+        initialize_model = model()
+        model = initialize_model()
+
     if model.training:
         logger.warning("Putting the model in eval mode")
         model.eval()
@@ -490,8 +484,8 @@ def _initialize_model_and_preprocess_parameters(
     ttnn_module_args = infer_ttnn_module_args(model=model, run_model=run_model, device=device)
     parameters = convert_torch_model_to_ttnn_model(
         model,
-        convert_to_ttnn=convert_to_ttnn,
-        custom_preprocessor=custom_preprocessor,
+        is_to_be_converted=is_to_be_converted,
+        converter=converter,
         name=prefix if prefix is not None else "",
         ttnn_module_args=ttnn_module_args if ttnn_module_args is not None else None,
     )
@@ -500,30 +494,30 @@ def _initialize_model_and_preprocess_parameters(
     return make_parameter_dict(parameters)
 
 
-def preprocess_model(
+def from_torch_model(
     *,
-    model_name: Optional[str] = None,
-    version: Optional[str] = None,
-    initialize_model: Optional[Callable[[], torch.nn.Module]] = None,
-    convert_to_ttnn: Optional[Callable[[torch.nn.Module, str], bool]] = None,
-    custom_preprocessor: Optional[Callable[[torch.nn.Module, str], Union[dict, ParameterDict]]] = None,
+    model: Union[torch.nn.Module, Callable[[], torch.nn.Module]],
+    is_to_be_converted: Optional[Callable[[torch.nn.Module, str], bool]] = None,
+    converter: Optional[Callable[[torch.nn.Module, str], Union[dict, ParameterDict]]] = None,
     device: Optional[ttnn.Device] = None,
+    cache_name: Optional[str] = None,
+    version: Optional[str] = None,
     prefix: str = "",
-    run_model: Optional[Callable],
+    run_model: Optional[Callable] = None,
     reader_patterns_cache: Optional[dict] = None,
 ) -> ParameterDict:
     """
 
-    preprocess_model(initialize_model: Optional[Callable[[], torch.nn.Module]]=None, *, model_name: Optional[str]=None, version: Optional[str]=None, convert_to_ttnn: Optional[Callable[[torch.nn.Module, str], bool]]=None, custom_preprocessor: Optional[Callable[[torch.nn.Module, str], Union[dict, ParameterDict]]]=None, device: Optional[ttnn.Device] = None, prefix: Optional[str] = None, run_model: Optional[Callable], reader_patterns_cache: Optional[Dict]) -> ParameterDict
+    from_torch_model(model: Optional[Callable[[], torch.nn.Module]]=None, *, cache_name: Optional[str]=None, version: Optional[str]=None, is_to_be_converted: Optional[Callable[[torch.nn.Module, str], bool]]=None, converter: Optional[Callable[[torch.nn.Module, str], Union[dict, ParameterDict]]]=None, device: Optional[ttnn.Device] = None, prefix: Optional[str] = None, run_model: Optional[Callable], reader_patterns_cache: Optional[Dict]) -> ParameterDict
 
     Preprocess modules and parameters of a given model.
 
     Args:
-        * :attr:`model_name`: Name of the model to be used by the cache. If not provided, the cache will be disabled.
+        * :attr:`cache_name`: Name of the model to be used by the cache. If not provided, the cache will be disabled.
         * :attr:`version`: Version of the model to be used by the cache. If not provided, the current git hash will be used. If the version doesn't match the cached version, the cache will be invalidated.
-        * :attr:`initialize_model`: Function for initializing the model. It's not required if the model has already been cached and the cache is valid.
-        * :attr:`convert_to_ttnn`: Function for determining whether to convert the parameters of a given module to ttnn.Tensor. If not provided, all modules will be converted.
-        * :attr:`custom_preprocessor`: Function for preprocessing the parameters of a given module using user-specified logic. If not provided, the default preprocessor will be used.
+        * :attr:`model`: Function for initializing the model. It's not required if the model has already been cached and the cache is valid.
+        * :attr:`is_to_be_converted`: Function for determining whether to convert the parameters of a given module to ttnn.Tensor. If not provided, all modules will be converted.
+        * :attr:`converter`: Function for preprocessing the parameters of a given module using user-specified logic. If not provided, the default preprocessor will be used.
         * :attr:`device`: Device on which to put ttnn.Tensor parameters
         * :attr:`prefix`: Prefix string to attach to the names of the modules/parameters. It's useful for making the names of submodules appear in the same way as in the original model.
         * :attr:`run_model`: Function for running the model. It's required for populating ttnn_module_args. If run_model is provided, the graph of the model will be dumped to /tmp/ttnn/model_graph.svg
@@ -533,26 +527,26 @@ def preprocess_model(
     if reader_patterns_cache is None:
         reader_patterns_cache = {}
 
-    if model_name is None and not ttnn.TTNN_ENABLE_MODEL_CACHE:
+    if cache_name is None and not ttnn.TTNN_ENABLE_MODEL_CACHE:
         logger.warning("ttnn: model cache can be enabled using TTNN_ENABLE_MODEL_CACHE=True")
 
-    if convert_to_ttnn is None:
+    if is_to_be_converted is None:
 
-        def convert_to_ttnn(model, full_name):
+        def is_to_be_converted(model, full_name):
             return True
 
-    if model_name is None or not ttnn.TTNN_ENABLE_MODEL_CACHE:
-        model = _initialize_model_and_preprocess_parameters(
-            initialize_model=initialize_model,
+    if cache_name is None or not ttnn.TTNN_ENABLE_MODEL_CACHE:
+        model = _model_and_preprocess_parameters(
+            model=model,
             run_model=run_model,
-            convert_to_ttnn=convert_to_ttnn,
-            custom_preprocessor=custom_preprocessor,
+            is_to_be_converted=is_to_be_converted,
+            converter=converter,
             device=device,
             prefix=prefix,
         )
 
     else:
-        model_cache_path = ttnn.MODEL_CACHE_PATH / model_name.replace("/", "_")
+        model_cache_path = ttnn.MODEL_CACHE_PATH / cache_name.replace("/", "_")
         version_file_path = model_cache_path / "version.txt"
 
         if version is None:
@@ -575,16 +569,16 @@ def preprocess_model(
             model = _load_parameters(model_cache_path)
             logger.info(f'Loaded model weights from cache: {model_cache_path}  (version "{version}")')
         else:
-            if initialize_model is None:
-                raise RuntimeError(f'Cached weights for the model {model_name} (version "{version}") don\'t exist')
+            if model is None:
+                raise RuntimeError(f'Cached weights for the model {cache_name} (version "{version}") don\'t exist')
 
             logger.info(f'Saving model weights to cache: {model_cache_path} (version "{version}")')
 
-            model = _initialize_model_and_preprocess_parameters(
-                initialize_model=initialize_model,
+            model = _model_and_preprocess_parameters(
+                model=model,
                 run_model=run_model,
-                convert_to_ttnn=convert_to_ttnn,
-                custom_preprocessor=custom_preprocessor,
+                is_to_be_converted=is_to_be_converted,
+                converter=converter,
                 device=device,
                 prefix=prefix,
             )
@@ -605,7 +599,7 @@ def preprocess_model(
         model = move_to_device(model, device)
         logger.info(f"Moved model weights to device")
 
-    def _convert_ttnn_module_args_to_modules(model):
+    def _convert_ttnn_module_args_to_ttnn_modules(model):
         if isinstance(model, ParameterDict):
             if "ttnn_module_args" in model:
                 if isinstance(model.ttnn_module_args, Conv2dArgs):
@@ -629,55 +623,16 @@ def preprocess_model(
                     raise RuntimeError(f"Unsupported ttnn module args: {type(model.ttnn_module_args)}")
             else:
                 return make_parameter_dict(
-                    {name: _convert_ttnn_module_args_to_modules(value) for name, value in model.items()}
+                    {name: _convert_ttnn_module_args_to_ttnn_modules(value) for name, value in model.items()}
                 )
         elif isinstance(model, ParameterList):
-            return ParameterList([_convert_ttnn_module_args_to_modules(value) for value in model])
+            return ParameterList([_convert_ttnn_module_args_to_ttnn_modules(value) for value in model])
         else:
             return model
 
-    model = _convert_ttnn_module_args_to_modules(model)
+    model = _convert_ttnn_module_args_to_ttnn_modules(model)
 
     return model
-
-
-def preprocess_model_parameters(
-    *,
-    model_name: Optional[str] = None,
-    version: Optional[str] = None,
-    initialize_model: Optional[Callable[[], torch.nn.Module]] = None,
-    convert_to_ttnn: Optional[Callable[[torch.nn.Module, str], bool]] = None,
-    custom_preprocessor: Optional[Callable[[torch.nn.Module, str], Union[dict, ParameterDict]]] = None,
-    device: Optional[ttnn.Device] = None,
-    prefix: str = "",
-) -> ParameterDict:
-    """
-
-    preprocess_model_parameters(initialize_model: Optional[Callable[[], torch.nn.Module]]=None, *, model_name: Optional[str]=None, version: Optional[str]=None, convert_to_ttnn: Optional[Callable[[torch.nn.Module, str], bool]]=None, custom_preprocessor: Optional[Callable[[torch.nn.Module, str], Union[dict, ParameterDict]]]=None, device: Optional[ttnn.Device] = None, prefix: Optional[str] = None) -> ParameterDict
-
-    Preprocess parameters of a given model.
-
-    Args:
-        * :attr:`model_name`: Name of the model to be used by the cache. If not provided, the cache will be disabled.
-        * :attr:`version`: Version of the model to be used by the cache. If not provided, the current git hash will be used. If the version doesn't match the cached version, the cache will be invalidated.
-        * :attr:`initialize_model`: Function for initializing the model. It's not required if the model has already been cached and the cache is valid.
-        * :attr:`convert_to_ttnn`: Function for determining whether to convert the parameters of a given module to ttnn.Tensor. If not provided, all modules will be converted.
-        * :attr:`custom_preprocessor`: Function for preprocessing the parameters of a given module using user-specified logic. If not provided, the default preprocessor will be used.
-        * :attr:`device`: Device on which to put ttnn.Tensor parameters
-        * :attr:`prefix`: Prefix string to attach to the names of the modules/parameters. It's useful for making the names of submodules appear in the same way as in the original model.
-    """
-
-    return preprocess_model(
-        model_name=model_name,
-        version=version,
-        initialize_model=initialize_model,
-        convert_to_ttnn=convert_to_ttnn,
-        custom_preprocessor=custom_preprocessor,
-        device=device,
-        prefix=prefix,
-        run_model=None,
-        reader_patterns_cache=None,
-    )
 
 
 __all__ = []
