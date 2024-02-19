@@ -254,6 +254,7 @@ void pull_and_relay(
                     buffers when our src is in system memory, or we are pulling in
                     data from local chip SRAM/DRAM.
                 */
+                DPRINT << "READING " << num_pages_to_read << " TO " << get_write_ptr(0) << " FROM " << src_pr_cfg.buff_cfg.page_id << ENDL();
                 src_pr_cfg.buff_cfg.buffer.noc_async_read_buffer(get_write_ptr(0), src_pr_cfg.buff_cfg.page_id, num_pages_to_read);
                 src_pr_cfg.buff_cfg.page_id += num_pages_to_read;
             }
@@ -285,12 +286,12 @@ void pull_and_relay(
                 */
                 // static_assert(false);
                 DPRINT << "WRITING " << num_pages_to_write << " to " << dst_pr_cfg.buff_cfg.page_id << " from " << get_read_ptr(0) << ENDL();
-                for (volatile int i = 0; i < 10000000; i++);
-                // dst_pr_cfg.buff_cfg.buffer.noc_async_write_buffer(get_read_ptr(0), dst_pr_cfg.buff_cfg.page_id, num_pages_to_write);
+                dst_pr_cfg.buff_cfg.buffer.noc_async_write_buffer(get_read_ptr(0), dst_pr_cfg.buff_cfg.page_id, num_pages_to_write);
                 dst_pr_cfg.buff_cfg.page_id += num_pages_to_write;
                 DPRINT << "DONE WRITING" << ENDL();
             }
-            noc_async_writes_flushed();
+            noc_async_write_barrier();
+            // noc_async_writes_flushed();
             cb_pop_front(0, num_pages_to_write);
             num_writes_completed += num_pages_to_write;
             num_pages_to_write = min(num_pages - num_writes_completed, dst_pr_cfg.num_pages_to_write);

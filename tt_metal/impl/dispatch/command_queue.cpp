@@ -165,7 +165,7 @@ const DeviceCommand EnqueueReadBufferCommand::assemble_device_command(uint32_t d
     uint32_t consumer_cb_size = consumer_cb_num_pages * padded_page_size;
     TT_ASSERT(padded_page_size <= consumer_cb_size, "Page is too large to fit in consumer buffer");
 
-    uint32_t producer_cb_num_pages = consumer_cb_num_pages * 2;
+    uint32_t producer_cb_num_pages = consumer_cb_num_pages;
     uint32_t producer_cb_size = producer_cb_num_pages * padded_page_size;
 
     if (this->stall) {
@@ -303,7 +303,7 @@ const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t 
 
     uint32_t consumer_cb_size = consumer_cb_num_pages * padded_page_size;
     TT_ASSERT(padded_page_size <= consumer_cb_size, "Page is too large to fit in consumer buffer");
-    uint32_t producer_cb_num_pages = consumer_cb_num_pages * 2;
+    uint32_t producer_cb_num_pages = consumer_cb_num_pages;
     uint32_t producer_cb_size = producer_cb_num_pages * padded_page_size;
 
     command.set_page_size(padded_page_size);

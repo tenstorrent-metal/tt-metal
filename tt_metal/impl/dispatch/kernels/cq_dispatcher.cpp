@@ -74,10 +74,8 @@ void kernel_main() {
         completion_queue_push_back<completion_queue_start_addr, host_completion_queue_write_ptr_addr>(completion_data_size);
 
         // notify producer that it has completed a command
-        DPRINT << "NOTIFYING PREFETCHER" << ENDL();
         noc_semaphore_inc(producer_noc_encoding | get_semaphore(0), 1);
         noc_async_write_barrier(); // Barrier for now
-        DPRINT << "DONE NOTIFY" << ENDL();
 
         db_buf_switch = not db_buf_switch;
     }
