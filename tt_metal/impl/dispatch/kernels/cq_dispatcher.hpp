@@ -35,61 +35,6 @@ void noc_async_write_multicast_one_packet_no_path_reserve(
     noc_nonposted_writes_acked[noc_index] += num_dests;
 }
 
-FORCE_INLINE volatile uint32_t* get_cq_completion_write_ptr() {
-    return reinterpret_cast<volatile uint32_t*>(CQ_COMPLETION_WRITE_PTR);
-}
-
-FORCE_INLINE volatile uint32_t* get_cq_completion_read_ptr() {
-    return reinterpret_cast<volatile uint32_t*>(CQ_COMPLETION_READ_PTR);
-}
-
-FORCE_INLINE
-void completion_queue_reserve_back(uint32_t data_size_B) {
-    DEBUG_STATUS('N', 'Q', 'R', 'B', 'W');
-    uint32_t data_size_16B = align(data_size_B, 32) >> 4;
-    uint32_t completion_rd_ptr_and_toggle;
-    uint32_t completion_rd_ptr;
-    uint32_t completion_rd_toggle;
-    do {
-        completion_rd_ptr_and_toggle = *get_cq_completion_read_ptr();
-        completion_rd_ptr = completion_rd_ptr_and_toggle & 0x7fffffff;
-        completion_rd_toggle = completion_rd_ptr_and_toggle >> 31;
-    } while (
-        ((cq_write_interface.completion_fifo_wr_ptr < completion_rd_ptr) and (cq_write_interface.completion_fifo_wr_ptr + data_size_16B > completion_rd_ptr)) or
-        (completion_rd_toggle != cq_write_interface.completion_fifo_wr_toggle) and (cq_write_interface.completion_fifo_wr_ptr == completion_rd_ptr)
-    );
-
-    DEBUG_STATUS('N', 'Q', 'R', 'B', 'D');
-}
-
-template <uint32_t host_completion_queue_write_ptr_addr>
-FORCE_INLINE
-void notify_host_of_completion_queue_write_pointer() {
-    constexpr static uint64_t pcie_address = (uint64_t(NOC_XY_ENCODING(PCIE_NOC_X, PCIE_NOC_Y)) << 32) | host_completion_queue_write_ptr_addr;  // For now, we are writing to host hugepages at offset
-    uint32_t completion_wr_ptr_and_toggle = cq_write_interface.completion_fifo_wr_ptr | (cq_write_interface.completion_fifo_wr_toggle << 31);
-    volatile tt_l1_ptr uint32_t* completion_wr_ptr_addr = get_cq_completion_write_ptr();
-    completion_wr_ptr_addr[0] = completion_wr_ptr_and_toggle;
-    noc_async_write(CQ_COMPLETION_WRITE_PTR, pcie_address, 4);
-    // Consider changing this to be flush instead of barrier
-    // Barrier for now because host reads the completion queue write pointer to determine how many pages can be read
-    noc_async_write_barrier();
-}
-
-template <uint32_t completion_queue_start_addr, uint32_t host_completion_queue_write_ptr_addr>
-FORCE_INLINE
-void completion_queue_push_back(uint32_t push_size_B) {
-    uint32_t push_size_16B = align(push_size_B, 32) >> 4;
-    cq_write_interface.completion_fifo_wr_ptr += push_size_16B;
-    if (cq_write_interface.completion_fifo_wr_ptr >= cq_write_interface.completion_fifo_limit) {
-        cq_write_interface.completion_fifo_wr_ptr = completion_queue_start_addr >> 4;
-        // Flip the toggle
-        cq_write_interface.completion_fifo_wr_toggle = not cq_write_interface.completion_fifo_wr_toggle;
-    }
-
-    // Notify host of updated completion wr ptr
-    notify_host_of_completion_queue_write_pointer<host_completion_queue_write_ptr_addr>();
-}
-
 FORCE_INLINE void write_buffers(
     db_cb_config_t* db_cb_config,
     const db_cb_config_t* remote_db_cb_config,
@@ -343,23 +288,4 @@ FORCE_INLINE void wait_for_program_completion(uint32_t num_workers) {
 
 
     DEBUG_STATUS('Q', 'D');
-}
-
-template <uint32_t host_finish_addr>
-FORCE_INLINE void notify_host_complete() {
-    volatile tt_l1_ptr uint32_t* finish_ptr = get_cq_finish_ptr();
-    finish_ptr[0] = 1;
-    constexpr static uint64_t pcie_core_noc_encoding = uint64_t(NOC_XY_ENCODING(PCIE_NOC_X, PCIE_NOC_Y)) << 32;
-    constexpr static uint64_t finish_noc_addr = pcie_core_noc_encoding | host_finish_addr;
-    noc_async_write(uint32_t(finish_ptr), finish_noc_addr, 4);
-    noc_async_write_barrier();
-    finish_ptr[0] = 0;
-}
-
-FORCE_INLINE void write_event(uint32_t event_address) {
-    uint32_t completion_write_ptr = *get_cq_completion_write_ptr() << 4;
-    constexpr static uint64_t pcie_core_noc_encoding = uint64_t(NOC_XY_ENCODING(PCIE_NOC_X, PCIE_NOC_Y)) << 32;
-    uint64_t host_completion_queue_write_addr = pcie_core_noc_encoding | completion_write_ptr;
-    noc_async_write(event_address, host_completion_queue_write_addr, 4);
-    noc_async_write_barrier();
 }
