@@ -2262,6 +2262,7 @@ eltwise_isposinf = make_unary_op(ttl.tensor.isposinf)
 eltwise_isneginf = make_unary_op(ttl.tensor.isneginf)
 eltwise_isnan = make_unary_op(ttl.tensor.isnan)
 eltwise_logical_not_unary = make_unary_op(ttl.tensor.logical_not_unary)
+eltwise_prod = make_unary_op(ttl.tensor.prod)
 eltwise_i0 = make_unary_op(ttl.tensor.i0)
 
 ################################################

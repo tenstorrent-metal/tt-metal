@@ -16,6 +16,7 @@
 #include "tt_eager/tensor/tensor_utils.hpp"
 #include "tt_eager/tt_dnn/op_library/pad/pad_op.hpp"
 #include "tt_numpy/functions.hpp"
+#include "tt_dnn/op_library/prod/prod_nc_op.hpp"
 namespace tt {
 
 namespace tt_metal {
@@ -893,6 +894,17 @@ Tensor _xlogy(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& 
 }
 Tensor xlogy(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& output_mem_config) {
     return operation::decorate_as_composite(__func__, _xlogy)(input_a, input_b, output_mem_config);
+}
+
+Tensor _prod(const Tensor& input_a, const MemoryConfig& output_mem_config) {
+    std::vector<int64_t> dim = {0};
+    Shape input_shape = input_a.shape();
+    Shape required = { 1, input_shape[1], input_shape[2], input_shape[3]};
+    Tensor result = tt::operations::primary::prod_nc(input_a, zeros( required, input_a.dtype(), input_a.layout(), input_a.device(), output_mem_config), dim, output_mem_config);
+    return result;
+}
+Tensor prod(const Tensor& input_a, const MemoryConfig& output_mem_config) {
+    return operation::decorate_as_composite(__func__, _prod)(input_a, output_mem_config);
 }
 
 Tensor _variance_impl(

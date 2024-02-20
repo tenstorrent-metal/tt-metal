@@ -156,6 +156,7 @@ namespace tt::tt_metal::detail{
         detail::bind_unary_op(m_tensor, "swish", swish, R"doc(Returns tensor with the swish all of elements of the input tensor ``{0}``.)doc");
         detail::bind_unary_op(m_tensor, "mish", &mish, R"doc(Returns tensor with the mish activation of elements of the input tensor ``{0}``.)doc");
         detail::bind_unary_op(m_tensor, "cbrt", &cbrt, R"doc(Returns tensor with the cbrt activation of elements of the input tensor ``{0}``.)doc");
+        detail::bind_unary_op(m_tensor, "prod", &prod, R"doc(Computes the prod function along all dimensions on the input tensor ``{0}``.)doc");
         detail::bind_unary_op(m_tensor, "asinh", &asinh, R"doc(Returns tensor with the inverse hyperbolic sine of elements of the input tensor ``{0}`` in range [-1e-6, 1e6].
             for +input , output = asinh(input)
             for -input , output = -asinh(input))doc"

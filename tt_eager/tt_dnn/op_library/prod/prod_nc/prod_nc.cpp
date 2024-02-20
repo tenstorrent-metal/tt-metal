@@ -15,7 +15,7 @@ namespace operations {
 
 namespace primary {
 
-operation::ProgramWithCallbacks prod_nc(const Tensor &input, const Tensor &output, int64_t dim) {
+operation::ProgramWithCallbacks prod_nc_format(const Tensor &input, const Tensor &output, int64_t dim) {
     TT_ASSERT(dim == 0 || dim == 1);
 
     ////////////////////////////////////////////////////////////////////////////

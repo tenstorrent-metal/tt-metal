@@ -56,12 +56,7 @@ operation::ProgramWithCallbacks Prod::create_program(
     auto& input = inputs.at(0);
     auto& output = inputs.at(1);
 
-
-    if (dim == 0 || dim == 1) {
-        return prod_nc(input, output, dim);
-    } else {
-        return prod_nc(input, output, dim);
-    }
+    return prod_nc_format(input, output, dim);
 }
 
 inline Shape compute_output_shape(const Shape& input_shape, const int64_t& dim) {
@@ -69,9 +64,7 @@ inline Shape compute_output_shape(const Shape& input_shape, const int64_t& dim) 
     auto padding = output_shape.padding();
     switch (dim) {
         case 0:
-        case 1:
-        case 2:
-        case 3: output_shape[dim] = 1;
+        case 1: output_shape[dim] = 1;
         break;
     }
 
@@ -101,7 +94,7 @@ Tensor prod_(const Tensor& input, const int64_t& dim, const MemoryConfig& mem_co
     return output;
 }
 
-Tensor prod(
+Tensor prod_nc(
     const Tensor& input,
     const Tensor& output,
     std::vector<int64_t>& dims,

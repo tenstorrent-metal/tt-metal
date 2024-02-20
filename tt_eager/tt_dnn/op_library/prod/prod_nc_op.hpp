@@ -32,7 +32,7 @@ struct Prod {
     const auto attribute_values() const { return std::make_tuple(std::cref(this->dim)); }
 };
 
-operation::ProgramWithCallbacks prod_nc(const Tensor &input, const Tensor &output, int64_t dim);
+operation::ProgramWithCallbacks prod_nc_format(const Tensor &input, const Tensor &output, int64_t dim);
 
 Tensor prod_(
     const Tensor &input,
@@ -40,7 +40,7 @@ Tensor prod_(
     const int64_t &dim,
     const MemoryConfig &mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
-Tensor prod(
+Tensor prod_nc(
     const Tensor &input,
     const Tensor &output,
     std::vector<int64_t> &dims,

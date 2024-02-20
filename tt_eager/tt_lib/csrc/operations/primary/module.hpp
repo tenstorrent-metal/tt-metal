@@ -837,8 +837,8 @@ void py_module(py::module& m_primary) {
         "Performs sum operation. Returns an output tensor.");
 
     m_primary.def(
-        "prod",
-        &prod,
+        "prod_nc",
+        &prod_nc,
         py::arg("input").noconvert(),
         py::arg("output").noconvert(),
         py::kw_only(),

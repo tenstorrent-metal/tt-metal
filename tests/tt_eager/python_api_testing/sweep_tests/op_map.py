@@ -574,6 +574,10 @@ op_map = {
         "tt_lib_op": tt_lib_ops.eltwise_subalpha,
         "pytorch_op": pytorch_ops.subalpha,
     },
+    "eltwise-prod": {
+        "tt_lib_op": tt_lib_ops.eltwise_prod,
+        "pytorch_op": pytorch_ops.prod,
+    },
     "eltwise-addalpha": {
         "tt_lib_op": tt_lib_ops.eltwise_addalpha,
         "pytorch_op": pytorch_ops.addalpha,

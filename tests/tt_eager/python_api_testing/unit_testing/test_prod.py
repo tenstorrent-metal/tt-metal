@@ -87,7 +87,7 @@ def test_moreh_prod_dims(input_shape, dims, device):
 
     cpu_layout = ttl.tensor.Layout.ROW_MAJOR
     tt_output_cpu = (
-        ttl.operations.primary.prod(tt_input, tt_output, dims=dims)
+        ttl.operations.primary.prod_nc(tt_input, tt_output, dims=dims)
         .cpu()
         .to(cpu_layout)
         .unpad_from_tile(output_shape)
