@@ -9,9 +9,9 @@ from diffusers import StableDiffusionPipeline
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.utility_functions import skip_for_wormhole_b0
-from ttnn.model_preprocessing import preprocess_model_parameters
 
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
+
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_downblock_2d import downblock2d
 
 
@@ -53,9 +53,9 @@ def test_down_block_2d_256x256_ttnn(input_shape, temb_shape, device, model_name,
         layout=ttnn.TILE_LAYOUT,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet,
-        custom_preprocessor=custom_preprocessor,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: unet,
+        converter=converter,
         device=device,
     )
     parameters = parameters.down_blocks[3]
@@ -126,9 +126,9 @@ def test_down_block_2d_512x512(input_shape, temb_shape, device, model_name, rese
         layout=ttnn.TILE_LAYOUT,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet,
-        custom_preprocessor=custom_preprocessor,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: unet,
+        converter=converter,
         device=device,
     )
     parameters = parameters.down_blocks[3]

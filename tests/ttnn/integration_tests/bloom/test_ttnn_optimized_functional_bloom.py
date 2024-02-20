@@ -10,7 +10,7 @@ from transformers.models import bloom
 
 from models.experimental.functional_bloom.tt import ttnn_optimized_functional_bloom
 from models.utility_functions import torch_random, skip_for_wormhole_b0
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -45,10 +45,10 @@ def test_bloom_attention(device, model_name, batch_size, sequence_size):
         torch_causal_mask,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         device=device,
-        custom_preprocessor=ttnn_optimized_functional_bloom.custom_preprocessor,
+        converter=ttnn_optimized_functional_bloom.converter,
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states.to(torch.bfloat16), layout=ttnn.TILE_LAYOUT, device=device)

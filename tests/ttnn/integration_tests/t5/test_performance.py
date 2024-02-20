@@ -20,7 +20,6 @@ from models.utility_functions import (
 from models.perf.perf_utils import prep_perf_report
 
 import ttnn
-from ttnn.model_preprocessing import preprocess_model_parameters
 
 
 def get_expected_times(model_name, functional_t5):
@@ -58,10 +57,10 @@ def test_t5_for_conditional_generation(device, use_program_cache, model_name, ba
     else:
         raise ValueError(f"Unknown functional_t5: {functional_t5}")
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=tt_model_name,
-        initialize_model=lambda: transformers.T5ForConditionalGeneration.from_pretrained(model_name).eval(),
-        custom_preprocessor=functional_t5.custom_preprocessor,
+        model=lambda: transformers.T5ForConditionalGeneration.from_pretrained(model_name).eval(),
+        converter=functional_t5.converter,
         device=device,
     )
 

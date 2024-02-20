@@ -354,9 +354,9 @@ def create_encoder_attention_mask(input_shape, device):
     return encoder_extended_attention_mask
 
 
-def custom_preprocessor(model, name):
+def converter(model, name):
     import transformers
-    from ttnn.model_preprocessing import preprocess_linear_weight, preprocess_layernorm_parameter
+    from ttnn.model_converter import convert_torch_linear_weight_to_ttnn, preprocess_layernorm_parameter
 
     parameters = {}
     if isinstance(model, transformers.models.t5.modeling_t5.T5LayerNorm):
@@ -367,16 +367,20 @@ def custom_preprocessor(model, name):
             # Cross Attention
             preprocessed_kv_weight = torch.cat([model.k.weight, model.v.weight], dim=0)
             parameters = {
-                "q": {"weight": preprocess_linear_weight(model.q.weight, dtype=ttnn.bfloat16)},
-                "key_value": {"weight": preprocess_linear_weight(preprocessed_kv_weight, dtype=ttnn.bfloat16)},
-                "o": {"weight": preprocess_linear_weight(model.o.weight, dtype=ttnn.bfloat16)},
+                "q": {"weight": convert_torch_linear_weight_to_ttnn(model.q.weight, dtype=ttnn.bfloat16)},
+                "key_value": {
+                    "weight": convert_torch_linear_weight_to_ttnn(preprocessed_kv_weight, dtype=ttnn.bfloat16)
+                },
+                "o": {"weight": convert_torch_linear_weight_to_ttnn(model.o.weight, dtype=ttnn.bfloat16)},
             }
         else:
             # Self Attention
             preprocessed_qkv_weight = torch.cat([model.q.weight, model.k.weight, model.v.weight], dim=0)
             parameters = {
-                "query_key_value": {"weight": preprocess_linear_weight(preprocessed_qkv_weight, dtype=ttnn.bfloat16)},
-                "o": {"weight": preprocess_linear_weight(model.o.weight, dtype=ttnn.bfloat16)},
+                "query_key_value": {
+                    "weight": convert_torch_linear_weight_to_ttnn(preprocessed_qkv_weight, dtype=ttnn.bfloat16)
+                },
+                "o": {"weight": convert_torch_linear_weight_to_ttnn(model.o.weight, dtype=ttnn.bfloat16)},
             }
 
     return parameters

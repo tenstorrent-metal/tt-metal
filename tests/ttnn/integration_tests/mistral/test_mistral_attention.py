@@ -5,7 +5,7 @@
 import torch
 import ttnn
 import tt_lib
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 import json
 from pathlib import Path
@@ -42,8 +42,8 @@ def test_mistral_attention_inference(model_location_generator, device, reset_see
         tt_lib.tensor.TensorMemoryLayout.INTERLEAVED, tt_lib.tensor.BufferType.DRAM
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: ref_model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: ref_model,
         device=device,
     )
 

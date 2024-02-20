@@ -315,9 +315,9 @@ def create_encoder_attention_mask(input_shape, num_heads, device):
     return encoder_extended_attention_mask
 
 
-def custom_preprocessor(model, name):
+def converter(model, name):
     import transformers
-    from ttnn.model_preprocessing import preprocess_layernorm_parameter
+    from ttnn.model_converter import preprocess_layernorm_parameter
 
     parameters = {}
     if isinstance(model, transformers.models.t5.modeling_t5.T5LayerNorm):

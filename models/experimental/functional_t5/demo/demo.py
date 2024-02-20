@@ -15,7 +15,7 @@ import tt_lib
 from transformers import T5ForConditionalGeneration, AutoTokenizer, T5Config
 from models.experimental.functional_t5.tt import ttnn_functional_t5
 from models.experimental.functional_t5.tt import ttnn_optimized_functional_t5
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from models.utility_functions import (
     disable_compilation_reports,
@@ -105,17 +105,13 @@ def run_functional_t5_question_and_answering_inference(
 
     decoded_tt_output = []
 
-    custom_preprocessor = (
-        ttnn_optimized_functional_t5.custom_preprocessor
-        if use_optimized_version
-        else ttnn_functional_t5.custom_preprocessor
-    )
+    converter = ttnn_optimized_functional_t5.converter if use_optimized_version else ttnn_functional_t5.converter
 
     profiler.start(f"preprocessing_parameter")
-    parameters = preprocess_model_parameters(
-        model_name=tt_model_name,
-        initialize_model=lambda: model,
-        custom_preprocessor=custom_preprocessor,
+    parameters = ttnn.model_converter.from_torch_model(
+        cache_name=tt_model_name,
+        model=lambda: model,
+        converter=converter,
         device=device,
     )
     profiler.end(f"preprocessing_parameter")
@@ -169,16 +165,12 @@ def run_functional_t5_question_and_answering_inference_squadv2(
     decoded_tt_output = []
 
     tt_model_name = "ttnn_" + ("optimized_" if use_optimized_version else "") + model_name
-    custom_preprocessor = (
-        ttnn_optimized_functional_t5.custom_preprocessor
-        if use_optimized_version
-        else ttnn_functional_t5.custom_preprocessor
-    )
+    converter = ttnn_optimized_functional_t5.converter if use_optimized_version else ttnn_functional_t5.converter
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=tt_model_name,
-        initialize_model=lambda: model,
-        custom_preprocessor=custom_preprocessor,
+        model=lambda: model,
+        converter=converter,
         device=device,
     )
 

@@ -9,9 +9,9 @@ from torch import nn
 from diffusers import StableDiffusionPipeline
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 from models.utility_functions import torch_random, skip_for_wormhole_b0
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_downsample_2d import downsample_2d
 
 
@@ -33,9 +33,7 @@ def test_downsample_2d_256x256(device, model_name, batch_size, in_channels, inpu
     unet_downblock = pipe.unet.down_blocks[index]
     ref_model = unet_downblock.downsamplers[0]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.down_blocks[index].downsamplers[0]
 
     torch_hidden_states = torch_random(input_shape, -0.1, 0.1, dtype=torch.float32)
@@ -79,9 +77,7 @@ def test_downsample_2d_512x512(device, model_name, batch_size, in_channels, inpu
     unet_downblock = pipe.unet.down_blocks[index]
     ref_model = unet_downblock.downsamplers[0]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.down_blocks[index].downsamplers[0]
 
     torch_hidden_states = torch_random(input_shape, -0.1, 0.1, dtype=torch.float32)

@@ -17,7 +17,7 @@ def preprocess_conv_parameter(parameter, *, dtype):
     return parameter
 
 
-def custom_preprocessor(model, name):
+def converter(model, name):
     parameters = {}
     if isinstance(model, nn.GroupNorm):
         parameters["weight"] = preprocess_groupnorm_parameter(model.weight, dtype=ttnn.bfloat16)

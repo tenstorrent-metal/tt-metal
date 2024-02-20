@@ -2,11 +2,10 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-import abc
 import io
-import inspect
 import pathlib
 import shutil
+import subprocess
 import pickle
 from typing import Optional, Union, Callable
 
@@ -240,9 +239,7 @@ def convert_torch_model_to_ttnn_model(
         parameters = default_converter(module=model, module_name=name, ttnn_module_args=ttnn_module_args)
         if parameters:
             if len(parameters) != len(named_children) + len(named_parameters):
-                raise RuntimeError(
-                    f"Not all children or parameters were converted using default_preprocessor_parameters!"
-                )
+                raise RuntimeError(f"Not all children or parameters were converted using default_converter!")
             return make_parameter_dict(parameters)
         else:
             for parameter_name, parameter in named_parameters:
@@ -277,12 +274,12 @@ def convert_torch_model_to_ttnn_model(
     return parameters
 
 
-def preprocess_remaining_children_and_parameters(
-    model, name, is_to_be_converted, converter, parameters, ttnn_module_args, *, already_preprocessed_children
+def convert_remaining_children_and_parameters(
+    model, name, is_to_be_converted, converter, parameters, ttnn_module_args, *, already_converted_children
 ):
     named_parameters = tuple((name, parameter) for name, parameter in model.named_parameters() if "." not in name)
     for child_name, child in tuple(model.named_children()) + named_parameters:
-        if child_name in already_preprocessed_children:
+        if child_name in already_converted_children:
             continue
         parameters[child_name] = convert_torch_model_to_ttnn_model(
             child,
@@ -369,8 +366,6 @@ def move_to_device(parameters, device):
 
 def git_hash():
     try:
-        import subprocess
-
         return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("ascii").strip()
     except Exception as e:
         raise RuntimeError("Couldn't get git hash!") from e
@@ -472,9 +467,9 @@ def merge_ttnn_module_args_into_parameters(parameters: dict, ttnn_module_args: d
     return parameters
 
 
-def _model_and_preprocess_parameters(*, model, run_model, is_to_be_converted, converter, device, prefix):
+def _from_torch_model(*, model, run_model, is_to_be_converted, converter, device, prefix):
     if not isinstance(model, torch.nn.Module):
-        initialize_model = model()
+        initialize_model = model
         model = initialize_model()
 
     if model.training:
@@ -510,14 +505,14 @@ def from_torch_model(
 
     from_torch_model(model: Optional[Callable[[], torch.nn.Module]]=None, *, cache_name: Optional[str]=None, version: Optional[str]=None, is_to_be_converted: Optional[Callable[[torch.nn.Module, str], bool]]=None, converter: Optional[Callable[[torch.nn.Module, str], Union[dict, ParameterDict]]]=None, device: Optional[ttnn.Device] = None, prefix: Optional[str] = None, run_model: Optional[Callable], reader_patterns_cache: Optional[Dict]) -> ParameterDict
 
-    Preprocess modules and parameters of a given model.
+    Convert modules and parameters of a given model from torch.nn.Parameter and torch.nn.Module to a dictionary of ttnn.Tensor representing the parameters as well as ttnn.Conv2d and ttnn.MaxPool2d modules if the network has any.
 
     Args:
         * :attr:`cache_name`: Name of the model to be used by the cache. If not provided, the cache will be disabled.
         * :attr:`version`: Version of the model to be used by the cache. If not provided, the current git hash will be used. If the version doesn't match the cached version, the cache will be invalidated.
         * :attr:`model`: Function for initializing the model. It's not required if the model has already been cached and the cache is valid.
         * :attr:`is_to_be_converted`: Function for determining whether to convert the parameters of a given module to ttnn.Tensor. If not provided, all modules will be converted.
-        * :attr:`converter`: Function for preprocessing the parameters of a given module using user-specified logic. If not provided, the default preprocessor will be used.
+        * :attr:`converter`: Function for converting the parameters of a given module using user-specified logic. If not provided, the default converter will be used.
         * :attr:`device`: Device on which to put ttnn.Tensor parameters
         * :attr:`prefix`: Prefix string to attach to the names of the modules/parameters. It's useful for making the names of submodules appear in the same way as in the original model.
         * :attr:`run_model`: Function for running the model. It's required for populating ttnn_module_args. If run_model is provided, the graph of the model will be dumped to /tmp/ttnn/model_graph.svg
@@ -536,7 +531,7 @@ def from_torch_model(
             return True
 
     if cache_name is None or not ttnn.TTNN_ENABLE_MODEL_CACHE:
-        model = _model_and_preprocess_parameters(
+        model = _from_torch_model(
             model=model,
             run_model=run_model,
             is_to_be_converted=is_to_be_converted,
@@ -574,7 +569,7 @@ def from_torch_model(
 
             logger.info(f'Saving model weights to cache: {model_cache_path} (version "{version}")')
 
-            model = _model_and_preprocess_parameters(
+            model = _from_torch_model(
                 model=model,
                 run_model=run_model,
                 is_to_be_converted=is_to_be_converted,

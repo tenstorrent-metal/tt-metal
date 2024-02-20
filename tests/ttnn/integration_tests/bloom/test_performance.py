@@ -19,7 +19,6 @@ from models.utility_functions import (
 from models.perf.perf_utils import prep_perf_report
 
 import ttnn
-from ttnn.model_preprocessing import preprocess_model_parameters
 
 
 def get_expected_times(functional_bloom):
@@ -55,11 +54,11 @@ def test_performance_of_bloom_for_question_answering(
     else:
         raise ValueError(f"Unknown functional_bloom: {functional_bloom}")
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=tt_model_name,
-        initialize_model=lambda: BloomForQuestionAnswering.from_pretrained(model_name).eval(),
+        model=lambda: BloomForQuestionAnswering.from_pretrained(model_name).eval(),
         device=device,
-        custom_preprocessor=functional_bloom.custom_preprocessor,
+        converter=functional_bloom.converter,
     )
 
     input_ids = inputs.input_ids

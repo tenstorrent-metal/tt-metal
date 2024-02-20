@@ -7,7 +7,7 @@ import pytest
 import torch
 from diffusers import UNet2DConditionModel
 import ttnn
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_geglu import geglu
 from models.utility_functions import torch_random, skip_for_wormhole_b0
@@ -58,8 +58,8 @@ def test_geglu_256x256(device, model_name, N, C, H, W, index, reset_seeds):
     torch_hidden_states = torch_random(input_shapes, -0.1, 0.1, dtype=torch.float32)
     torch_output = ref_model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: ref_model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: ref_model,
         device=device,
     )
 
@@ -122,8 +122,8 @@ def test_geglu_512x512(device, model_name, N, C, H, W, index, reset_seeds):
     torch_hidden_states = torch_random(input_shapes, -0.1, 0.1, dtype=torch.float32)
     torch_output = ref_model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: ref_model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: ref_model,
         device=device,
     )
 

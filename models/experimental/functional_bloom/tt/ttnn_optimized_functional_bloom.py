@@ -11,10 +11,10 @@ from torch.nn import functional as F
 from transformers.models.bloom.configuration_bloom import BloomConfig
 
 import ttnn
-from ttnn.model_preprocessing import (
+from ttnn.model_converter import (
     ParameterDict,
-    preprocess_linear_weight,
-    preprocess_linear_bias,
+    convert_torch_linear_weight_to_ttnn,
+    convert_torch_linear_bias_to_ttnn,
 )
 
 BLOOM_MEMORY_CONFIG = ttnn.L1_MEMORY_CONFIG
@@ -365,7 +365,7 @@ def preprocess_inputs(
     return padded_input_ids, alibi, causal_mask
 
 
-def custom_preprocessor(torch_model, name):
+def converter(torch_model, name):
     parameters = {}
     if isinstance(torch_model, transformers.models.bloom.modeling_bloom.BloomAttention):
         weight = torch_model.query_key_value.weight
@@ -396,9 +396,15 @@ def custom_preprocessor(torch_model, name):
 
         parameters = {"query_key_value": {}, "dense": {}}
 
-        parameters["query_key_value"]["weight"] = preprocess_linear_weight(preprocessed_weight, dtype=ttnn.bfloat16)
-        parameters["query_key_value"]["bias"] = preprocess_linear_bias(preprocessed_bias, dtype=ttnn.bfloat16)
+        parameters["query_key_value"]["weight"] = convert_torch_linear_weight_to_ttnn(
+            preprocessed_weight, dtype=ttnn.bfloat16
+        )
+        parameters["query_key_value"]["bias"] = convert_torch_linear_bias_to_ttnn(
+            preprocessed_bias, dtype=ttnn.bfloat16
+        )
 
-        parameters["dense"]["weight"] = preprocess_linear_weight(torch_model.dense.weight, dtype=ttnn.bfloat16)
-        parameters["dense"]["bias"] = preprocess_linear_bias(torch_model.dense.bias, dtype=ttnn.bfloat16)
+        parameters["dense"]["weight"] = convert_torch_linear_weight_to_ttnn(
+            torch_model.dense.weight, dtype=ttnn.bfloat16
+        )
+        parameters["dense"]["bias"] = convert_torch_linear_bias_to_ttnn(torch_model.dense.bias, dtype=ttnn.bfloat16)
     return parameters

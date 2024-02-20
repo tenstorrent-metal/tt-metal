@@ -9,8 +9,8 @@ from diffusers import StableDiffusionPipeline
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.utility_functions import skip_for_wormhole_b0
-from ttnn.model_preprocessing import preprocess_model_parameters
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
+
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_transformer_2d import transformer_2d_model
 
 
@@ -76,9 +76,7 @@ def test_transformer_2d_model_256x256(
     config = unet.config
     transformer = pipe.unet.mid_block.attentions[0]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
 
     if block == "up":
         parameters = parameters.up_blocks[index1].attentions[index2]
@@ -186,9 +184,7 @@ def test_transformer_2d_model_512x512(
     config = unet.config
     transformer = pipe.unet.mid_block.attentions[0]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
 
     if block == "up":
         parameters = parameters.up_blocks[index1].attentions[index2]

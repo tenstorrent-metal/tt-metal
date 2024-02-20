@@ -235,5 +235,5 @@ def preprocess_inputs(
     return input_ids, token_type_ids, attention_mask
 
 
-def custom_preprocessor(torch_model, name):
+def converter(torch_model, name):
     return {}

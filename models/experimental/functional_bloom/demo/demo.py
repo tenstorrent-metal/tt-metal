@@ -21,7 +21,7 @@ from models.experimental.functional_bloom.dataset_utils import get_data
 
 import evaluate
 
-from ttnn.model_preprocessing import *
+from ttnn.model_converter import *
 from models import generation_utils
 
 
@@ -105,11 +105,11 @@ def run_bloom_causal_LM_inference(
 
     profiler.start("preprocessing_parameter")
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=f"ttnn-functional-bloom-for-causal-lm",
-        initialize_model=lambda: BloomForCausalLM.from_pretrained(model_version).eval(),
+        model=lambda: BloomForCausalLM.from_pretrained(model_version).eval(),
         device=device,
-        custom_preprocessor=functional_model.custom_preprocessor,
+        converter=functional_model.converter,
         is_to_be_converted=lambda model, name: name != "lm_head",
     )
 
@@ -176,11 +176,11 @@ def run_bloom_causal_LM_inference_hellaswag(
 
     num_heads = config.n_head
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=f"ttnn-functional-bloom-for-causal-lm",
-        initialize_model=lambda: BloomForCausalLM.from_pretrained(model_version).eval(),
+        model=lambda: BloomForCausalLM.from_pretrained(model_version).eval(),
         device=device,
-        custom_preprocessor=functional_model.custom_preprocessor,
+        converter=functional_model.converter,
         is_to_be_converted=lambda model, name: name != "lm_head",
     )
     bert_score = evaluate.load("bertscore")

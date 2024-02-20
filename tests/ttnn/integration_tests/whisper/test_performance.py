@@ -7,7 +7,7 @@ from models.experimental.functional_whisper.tt import ttnn_functional_whisper, t
 from transformers import AutoFeatureExtractor, WhisperModel, WhisperConfig
 from datasets import load_dataset
 import torch
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 from loguru import logger
 from models.utility_functions import skip_for_wormhole_b0
 from models.perf.perf_utils import prep_perf_report
@@ -49,11 +49,11 @@ def test_performance(device, use_program_cache, model_name, batch_size, sequence
 
     attention_mask = None
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=tt_model_name,
-        initialize_model=lambda: WhisperModel.from_pretrained(model_name).eval(),
+        model=lambda: WhisperModel.from_pretrained(model_name).eval(),
         is_to_be_converted=functional_whisper.is_to_be_converted,
-        custom_preprocessor=functional_whisper.custom_preprocessor,
+        converter=functional_whisper.converter,
         device=device,
     )
 

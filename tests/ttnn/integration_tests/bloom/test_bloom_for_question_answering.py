@@ -11,7 +11,7 @@ from models.experimental.functional_bloom.tt import ttnn_optimized_functional_bl
 from models.utility_functions import skip_for_wormhole_b0
 
 import ttnn
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -36,11 +36,11 @@ def test_bloom_for_question_answering(device, use_program_cache, ttnn_model, bat
     torch_start_logits = torch_output.start_logits
     torch_end_logits = torch_output.end_logits
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=f"ttnn_functional_bloom_for_question_answering",
-        initialize_model=lambda: torch_model,
+        model=lambda: torch_model,
         device=device,
-        custom_preprocessor=ttnn_model.custom_preprocessor,
+        converter=ttnn_model.converter,
     )
 
     input_ids = inputs.input_ids

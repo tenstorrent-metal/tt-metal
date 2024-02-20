@@ -12,7 +12,7 @@ from models.experimental.functional_bert.tt import ttnn_functional_bert
 from models.experimental.functional_bert.tt import ttnn_optimized_functional_bert
 
 import ttnn
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.utility_functions import skip_for_wormhole_b0
@@ -34,11 +34,9 @@ def test_bert(device, use_program_cache, model_name, batch_size, sequence_size, 
     torch_token_type_ids = torch.zeros((batch_size, sequence_size), dtype=torch.int32)
     torch_attention_mask = torch.zeros(1, sequence_size) if functional_bert == ttnn_optimized_functional_bert else None
 
-    torch_parameters = preprocess_model_parameters(
+    torch_parameters = ttnn.model_converter.from_torch_model(
         model_name=f"torch_{model_name}",
-        initialize_model=lambda: transformers.BertForQuestionAnswering.from_pretrained(
-            model_name, torchscript=False
-        ).eval(),
+        model=lambda: transformers.BertForQuestionAnswering.from_pretrained(model_name, torchscript=False).eval(),
         is_to_be_converted=lambda *_: False,
     )
 
@@ -57,12 +55,10 @@ def test_bert(device, use_program_cache, model_name, batch_size, sequence_size, 
     else:
         raise ValueError(f"Unknown functional_bert: {functional_bert}")
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=tt_model_name,
-        initialize_model=lambda: transformers.BertForQuestionAnswering.from_pretrained(
-            model_name, torchscript=False
-        ).eval(),
-        custom_preprocessor=functional_bert.custom_preprocessor,
+        model=lambda: transformers.BertForQuestionAnswering.from_pretrained(model_name, torchscript=False).eval(),
+        converter=functional_bert.converter,
         device=device,
     )
 

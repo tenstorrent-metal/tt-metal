@@ -10,8 +10,8 @@ from diffusers import StableDiffusionPipeline
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.utility_functions import skip_for_wormhole_b0
-from ttnn.model_preprocessing import preprocess_model_parameters
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
+
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_unet_mid_block_2d_cross_attn import (
     unet_mid_block_2d_cross_attn,
 )
@@ -70,9 +70,7 @@ def test_unet_mid_block_2d_cross_attn_256x256(device, model_name, hidden_state_s
         cross_attention_kwargs=cross_attention_kwargs,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.mid_block
 
     ttnn_temb = ttnn.from_torch(temb, dtype=ttnn.bfloat16, device=device, layout=ttnn.TILE_LAYOUT)
@@ -162,9 +160,7 @@ def test_unet_mid_block_2d_cross_attn_512x512(device, model_name, hidden_state_s
         cross_attention_kwargs=cross_attention_kwargs,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.mid_block
 
     ttnn_temb = ttnn.from_torch(temb, dtype=ttnn.bfloat16, device=device, layout=ttnn.TILE_LAYOUT)

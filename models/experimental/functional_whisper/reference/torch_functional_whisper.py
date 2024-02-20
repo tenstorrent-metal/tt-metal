@@ -9,7 +9,7 @@ import torch
 from typing import Optional
 
 from torch.nn import functional as F
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 from loguru import logger
 
 
@@ -423,7 +423,7 @@ def whisper(config, input_embeds, decoder_hidden_states, decoder_attention_mask,
     )
 
 
-def custom_preprocessor(torch_model, name):
+def converter(torch_model, name):
     parameters = {}
     if isinstance(torch_model, transformers.models.whisper.modeling_whisper.WhisperAttention):
         if "encoder_attn" in name:
@@ -477,10 +477,10 @@ if __name__ == "__main__":
     model_graph.visual_graph.render(format="svg")
 
     # Sanity check the torch functional approach
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=f"torch_{model_name}",
-        initialize_model=lambda: model,
-        custom_preprocessor=custom_preprocessor,
+        model=lambda: model,
+        converter=converter,
         is_to_be_converted=lambda *_: False,
     )
     last_hidden_state = whisper_original(

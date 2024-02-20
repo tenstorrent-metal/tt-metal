@@ -7,7 +7,6 @@ import torch
 import transformers
 
 import ttnn
-from ttnn.model_preprocessing import preprocess_model
 
 
 def embedding(input_ids, *, parameters):
@@ -63,9 +62,9 @@ def main():
     device_id = 0
     device = ttnn.open_device(device_id=device_id)
 
-    parameters = preprocess_model(
-        model_name=model_name,
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        cache_name=model_name,
+        model=model,
         run_model=lambda model: model(inputs),
         reader_patterns_cache={},
         device=device,

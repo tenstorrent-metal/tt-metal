@@ -7,7 +7,7 @@ import torch
 from typing import Optional, Tuple
 
 from torch.nn import functional as F
-from ttnn.model_preprocessing import preprocess_linear_weight, preprocess_linear_bias
+from ttnn.model_converter import convert_torch_linear_weight_to_ttnn, convert_torch_linear_bias_to_ttnn
 import ttnn
 from loguru import logger
 
@@ -400,7 +400,7 @@ def whisper(config, encoder_hidden_states, decoder_hidden_states, decoder_attent
     return last_hidden_state
 
 
-def custom_preprocessor(torch_model, name):
+def converter(torch_model, name):
     parameters = {}
     if isinstance(torch_model, transformers.models.whisper.modeling_whisper.WhisperAttention):
         height, width = torch_model.k_proj.weight.shape
@@ -409,10 +409,16 @@ def custom_preprocessor(torch_model, name):
             parameters = {"key_value": {}, "q_proj": {}, "out_proj": {}}
             preprocessed_weight = torch.cat([torch_model.k_proj.weight, torch_model.v_proj.weight], dim=0)
             preprocessed_bias = torch.cat([torch.zeros(height), torch_model.v_proj.bias], dim=0)
-            parameters["key_value"]["weight"] = preprocess_linear_weight(preprocessed_weight, dtype=ttnn.bfloat16)
-            parameters["key_value"]["bias"] = preprocess_linear_bias(preprocessed_bias, dtype=ttnn.bfloat16)
-            parameters["q_proj"]["weight"] = preprocess_linear_weight(torch_model.q_proj.weight, dtype=ttnn.bfloat16)
-            parameters["q_proj"]["bias"] = preprocess_linear_bias(torch_model.q_proj.bias, dtype=ttnn.bfloat16)
+            parameters["key_value"]["weight"] = convert_torch_linear_weight_to_ttnn(
+                preprocessed_weight, dtype=ttnn.bfloat16
+            )
+            parameters["key_value"]["bias"] = convert_torch_linear_bias_to_ttnn(preprocessed_bias, dtype=ttnn.bfloat16)
+            parameters["q_proj"]["weight"] = convert_torch_linear_weight_to_ttnn(
+                torch_model.q_proj.weight, dtype=ttnn.bfloat16
+            )
+            parameters["q_proj"]["bias"] = convert_torch_linear_bias_to_ttnn(
+                torch_model.q_proj.bias, dtype=ttnn.bfloat16
+            )
         else:
             parameters = {"query_key_value": {}, "out_proj": {}}
             preprocessed_weight = torch.cat(
@@ -421,11 +427,19 @@ def custom_preprocessor(torch_model, name):
             preprocessed_bias = torch.cat(
                 [torch_model.q_proj.bias, torch.zeros(height), torch_model.v_proj.bias], dim=0
             )
-            parameters["query_key_value"]["weight"] = preprocess_linear_weight(preprocessed_weight, dtype=ttnn.bfloat16)
-            parameters["query_key_value"]["bias"] = preprocess_linear_bias(preprocessed_bias, dtype=ttnn.bfloat16)
+            parameters["query_key_value"]["weight"] = convert_torch_linear_weight_to_ttnn(
+                preprocessed_weight, dtype=ttnn.bfloat16
+            )
+            parameters["query_key_value"]["bias"] = convert_torch_linear_bias_to_ttnn(
+                preprocessed_bias, dtype=ttnn.bfloat16
+            )
 
-        parameters["out_proj"]["weight"] = preprocess_linear_weight(torch_model.out_proj.weight, dtype=ttnn.bfloat16)
-        parameters["out_proj"]["bias"] = preprocess_linear_bias(torch_model.out_proj.bias, dtype=ttnn.bfloat16)
+        parameters["out_proj"]["weight"] = convert_torch_linear_weight_to_ttnn(
+            torch_model.out_proj.weight, dtype=ttnn.bfloat16
+        )
+        parameters["out_proj"]["bias"] = convert_torch_linear_bias_to_ttnn(
+            torch_model.out_proj.bias, dtype=ttnn.bfloat16
+        )
     elif name == "encoder.embed_positions" and isinstance(torch_model, torch.nn.Embedding):
         embeddings = ttnn.from_torch(torch_model.weight, dtype=ttnn.bfloat16)
         embeddings = ttnn.to_layout(embeddings, ttnn.TILE_LAYOUT)

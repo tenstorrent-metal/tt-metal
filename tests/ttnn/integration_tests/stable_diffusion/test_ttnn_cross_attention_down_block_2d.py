@@ -11,10 +11,10 @@ import ttnn
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_cross_attention_down_block_2d import (
     cross_attention_down_block_2d,
 )
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 from models.utility_functions import skip_for_wormhole_b0, tt_to_torch_tensor
 from tests.ttnn.utils_for_testing import assert_with_pcc
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 
 
 @skip_for_wormhole_b0()
@@ -86,9 +86,9 @@ def test_cross_attn_down_block_2d_256x256(device, model_name, N, C, H, W, index,
     temb = ttnn.from_torch(temb, ttnn.bfloat16, layout=ttnn.TILE_LAYOUT)
     temb = ttnn.to_device(temb, device)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: down_block,
-        custom_preprocessor=custom_preprocessor,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: down_block,
+        converter=converter,
         device=device,
     )
 
@@ -178,9 +178,9 @@ def test_cross_attn_down_block_2d_512x512(device, model_name, N, C, H, W, index,
     temb = ttnn.from_torch(temb, ttnn.bfloat16, layout=ttnn.TILE_LAYOUT)
     temb = ttnn.to_device(temb, device)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: down_block,
-        custom_preprocessor=custom_preprocessor,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: down_block,
+        converter=converter,
         device=device,
     )
 

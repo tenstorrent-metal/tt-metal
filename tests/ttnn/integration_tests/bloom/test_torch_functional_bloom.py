@@ -9,7 +9,7 @@ from transformers.models import bloom
 
 from models.experimental.functional_bloom.reference import torch_functional_bloom
 from models.utility_functions import torch_random, skip_for_wormhole_b0
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -51,10 +51,10 @@ def test_bloom_attention(model_name, batch_size, sequence_size):
         torch_attention_mask,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_bloom.custom_preprocessor,
+        converter=torch_functional_bloom.converter,
     )
 
     alibi = torch_functional_bloom.build_alibi_tensor(
@@ -88,8 +88,8 @@ def test_bloom_mlp(model_name, batch_size, sequence_size):
 
     torch_output = model(torch_hidden_states, torch_residual)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -124,10 +124,10 @@ def test_bloom_block(model_name, batch_size, sequence_size):
         torch_attention_mask,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_bloom.custom_preprocessor,
+        converter=torch_functional_bloom.converter,
     )
 
     alibi = torch_functional_bloom.build_alibi_tensor(
@@ -159,10 +159,10 @@ def test_bloom(model_name, batch_size, sequence_size):
     torch_attention_mask = torch_random((batch_size, sequence_size), 0, 2, dtype=torch.int64)
     torch_output = model(input_ids=torch_input_ids, attention_mask=torch_attention_mask).last_hidden_state
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_bloom.custom_preprocessor,
+        converter=torch_functional_bloom.converter,
     )
 
     alibi = torch_functional_bloom.build_alibi_tensor(torch_attention_mask, config.n_head, torch.bfloat16)
@@ -194,10 +194,10 @@ def test_bloom_for_question_answering(model_name, batch_size, sequence_size):
     torch_attention_mask = torch_random((batch_size, sequence_size), 0, 2, dtype=torch.int64)
     torch_output = model(input_ids=torch_input_ids, attention_mask=torch_attention_mask)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_bloom.custom_preprocessor,
+        converter=torch_functional_bloom.converter,
     )
 
     alibi = torch_functional_bloom.build_alibi_tensor(torch_attention_mask, config.n_head, torch.bfloat16)

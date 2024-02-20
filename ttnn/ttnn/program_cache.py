@@ -12,10 +12,3 @@ def enable_program_cache():
 
 def disable_and_clear_program_cache():
     ttl.program_cache.disable_and_clear()
-
-
-@contextlib.contextmanager
-def manage_program_cache():
-    enable_program_cache()
-    yield
-    disable_and_clear_program_cache()

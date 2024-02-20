@@ -22,7 +22,7 @@ def get_bool_env_var(name, default):
 
 TTNN_ENABLE_MODEL_CACHE = get_bool_env_var("TTNN_ENABLE_MODEL_CACHE", "False")
 
-import tt_lib as ttl
+import tt_lib
 import ttnn._ttnn
 
 from ttnn._ttnn import TTNN_ENABLE_LOGGING
@@ -77,7 +77,9 @@ from ttnn.decorators import (
 
 import ttnn.ttl as ttl
 
-from ttnn.program_cache import enable_program_cache, disable_and_clear_program_cache, manage_program_cache
+from ttnn.program_cache import enable_program_cache, disable_and_clear_program_cache
+
+ttnn.enable_program_cache()  # Enable by default
 
 from ttnn.operations.core import (
     from_torch,

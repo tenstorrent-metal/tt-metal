@@ -7,7 +7,6 @@ import pytest
 import torch
 import transformers
 
-from ttnn.model_preprocessing import preprocess_model_parameters
 
 from models.experimental.functional_bert.reference import torch_functional_bert
 from models.utility_functions import torch_random, skip_for_wormhole_b0
@@ -29,8 +28,8 @@ def test_bert_attention(model_name, batch_size, sequence_size):
     torch_attention_mask = torch.ones(1, sequence_size)
     torch_output, *_ = model(torch_hidden_states, attention_mask=torch_attention_mask)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -57,8 +56,8 @@ def test_bert_intermediate(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.hidden_size), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -86,8 +85,8 @@ def test_bert_output(model_name, batch_size, sequence_size):
     torch_residual = torch_random((batch_size, sequence_size, config.hidden_size), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_intermediate, torch_residual)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -126,8 +125,8 @@ def test_bert_feedforward(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.hidden_size), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -154,8 +153,8 @@ def test_bert_layer(model_name, batch_size, sequence_size):
     torch_attention_mask = torch.ones(1, sequence_size)
     torch_output, *_ = model(torch_hidden_states, attention_mask=torch_attention_mask)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -183,8 +182,8 @@ def test_bert_encoder(model_name, batch_size, sequence_size):
     torch_attention_mask = torch.ones(1, sequence_size)
     torch_output = model(torch_hidden_states, attention_mask=torch_attention_mask).last_hidden_state
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -216,8 +215,8 @@ def test_bert(model_name, batch_size, sequence_size):
         torch_input_ids, token_type_ids=torch_token_type_ids, attention_mask=torch_attention_mask
     ).last_hidden_state
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -248,8 +247,8 @@ def test_bert_for_question_answering(model_name, batch_size, sequence_size):
     torch_attention_mask = torch.ones(1, sequence_size)
     torch_output = model(torch_input_ids, token_type_ids=torch_token_type_ids, attention_mask=torch_attention_mask)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 

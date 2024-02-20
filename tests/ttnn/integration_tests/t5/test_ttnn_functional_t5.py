@@ -10,7 +10,7 @@ import transformers
 from models.experimental.functional_t5.tt import ttnn_functional_t5 as functional_t5
 from models.utility_functions import torch_random, skip_for_wormhole_b0
 import ttnn
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -27,8 +27,8 @@ def test_t5_layer_norm(device, model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -51,8 +51,8 @@ def test_t5_dense_act_dense(device, model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -75,8 +75,8 @@ def test_t5_dense_gated_act_dense(device, model_name, batch_size, sequence_size)
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -99,8 +99,8 @@ def test_t5_layer_ff(device, model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -123,8 +123,8 @@ def test_t5_attention(device, model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output, *_ = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -147,8 +147,8 @@ def test_t5_layer_self_attention(device, model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output, *_ = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -172,8 +172,8 @@ def test_t5_layer_cross_attention(device, model_name, batch_size, sequence_size)
     torch_key_value_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output, *_ = model(torch_hidden_states, torch_key_value_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -199,8 +199,8 @@ def test_t5_block_encoder(device, model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output, *_ = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -227,8 +227,8 @@ def test_t5_block_decoder(device, model_name, batch_size, sequence_size):
     )
     torch_output, *_ = model(torch_hidden_states, encoder_hidden_states=torch_encoder_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
@@ -261,10 +261,10 @@ def test_t5_stack_encoder(device, model_name, batch_size, sequence_size):
     torch_input_ids = torch_random((batch_size, sequence_size), 0, config.vocab_size, dtype=torch.int64)
     torch_output = model(torch_input_ids).last_hidden_state
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
-    shared_embedding = preprocess_model_parameters(initialize_model=lambda: shared_embedding, device=device)
+    shared_embedding = ttnn.model_converter.from_torch_model(model=lambda: shared_embedding, device=device)
 
     input_ids = ttnn.from_torch(torch_input_ids, device=device)
     output = functional_t5.t5_stack(
@@ -296,10 +296,10 @@ def test_t5_stack_decoder(device, model_name, batch_size, sequence_size):
     )
     torch_output = model(torch_input_ids, encoder_hidden_states=torch_encoder_hidden_states).last_hidden_state
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=functional_t5.custom_preprocessor, device=device
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model, converter=functional_t5.converter, device=device
     )
-    shared_embedding = preprocess_model_parameters(initialize_model=lambda: shared_embedding, device=device)
+    shared_embedding = ttnn.model_converter.from_torch_model(model=lambda: shared_embedding, device=device)
 
     input_ids = ttnn.from_torch(torch_input_ids, device=device)
     encoder_hidden_states = ttnn.from_torch(
@@ -331,10 +331,10 @@ def test_t5_for_conditional_generation(device, model_name, batch_size, sequence_
     torch_decoder_input_ids = torch_random((batch_size, sequence_size), 0, 1, dtype=torch.int64)
     torch_output = model(torch_input_ids, decoder_input_ids=torch_decoder_input_ids).logits
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=f"ttnn_{model_name}",
-        initialize_model=lambda: model,
-        custom_preprocessor=functional_t5.custom_preprocessor,
+        model=lambda: model,
+        converter=functional_t5.converter,
         device=device,
     )
 

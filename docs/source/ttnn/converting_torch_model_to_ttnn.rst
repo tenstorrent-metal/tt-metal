@@ -57,8 +57,8 @@ Following TDD, the first step is to write a test for the model:
         torch_hidden_states = torch_random((batch_size, sequence_size, config.hidden_size), -0.1, 0.1, dtype=torch.float32)
         torch_output = model(torch_hidden_states) # Golden output
 
-        parameters = preprocess_model_parameters(
-            initialize_model=lambda: model, # Function to initialize the model
+        parameters = ttnn.model_converter.from_torch_model(
+            model=lambda: model, # Function to initialize the model
             is_to_be_converted=lambda *_: False, # Keep the weights as torch tensors
         )
 
@@ -119,8 +119,8 @@ Starting off with the test:
         torch_hidden_states = torch_random((batch_size, sequence_size, config.hidden_size), -0.1, 0.1)
         torch_output = model(torch_hidden_states)
 
-        parameters = preprocess_model_parameters(
-            initialize_model=lambda: model,
+        parameters = ttnn.model_converter.from_torch_model(
+            model=lambda: model,
             device=device, # Device to put the parameters on
         )
 
@@ -180,8 +180,8 @@ Starting off with the test:
         torch_hidden_states = torch_random((batch_size, sequence_size, config.hidden_size), -0.1, 0.1)
         torch_output = model(torch_hidden_states)
 
-        parameters = preprocess_model_parameters(
-            initialize_model=lambda: model,
+        parameters = ttnn.model_converter.from_torch_model(
+            model=lambda: model,
             device=device, # Device to put the parameters on
             custom_preprocessor=ttnn_functional_bert.custom_preprocessor, # Use custom_preprocessor to set ttnn.bfloat8_b data type for the weights and biases
         )
@@ -208,8 +208,8 @@ And the optimized model can be something like this:
 
         parameters = {}
         if isinstance(model, transformers.models.bert.modeling_bert.BertIntermediate):
-            parameters["weight"] = ttnn.model_preprocessing.preprocess_linear_weight(model.weight, dtype=ttnn.bfloat8_b)
-            parameters["bias"] = ttnn.model_preprocessing.preprocess_linear_bias(model.bias, dtype=ttnn.bfloat8_b)
+            parameters["weight"] = ttnn.model_converter.convert_torch_linear_weight_to_ttnn(model.weight, dtype=ttnn.bfloat8_b)
+            parameters["bias"] = ttnn.model_converter.convert_torch_linear_bias_to_ttnn(model.bias, dtype=ttnn.bfloat8_b)
 
         return parameters
 

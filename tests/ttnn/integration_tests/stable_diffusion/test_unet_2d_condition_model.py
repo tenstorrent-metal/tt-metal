@@ -10,8 +10,8 @@ from tqdm.auto import tqdm
 from tests.ttnn.utils_for_testing import assert_with_pcc
 from diffusers import LMSDiscreteScheduler
 import ttnn
-from ttnn.model_preprocessing import preprocess_model_parameters
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
+
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_unet_2d_condition_model import (
     UNet2DConditionModel,
 )
@@ -54,9 +54,7 @@ def test_unet_2d_condition_model_256x256(device, batch_size, in_channels, input_
     model = pipe.unet
     model.eval()
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: model, converter=converter, device=device)
 
     timestep_shape = [1, 1, 2, 320]
     encoder_hidden_states_shape = [1, 2, 77, 768]
@@ -118,9 +116,7 @@ def test_unet_2d_condition_model_512x512(device, batch_size, in_channels, input_
     model = pipe.unet
     model.eval()
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: model, converter=converter, device=device)
 
     timestep_shape = [1, 1, 2, 320]
     encoder_hidden_states_shape = [1, 2, 77, 768]

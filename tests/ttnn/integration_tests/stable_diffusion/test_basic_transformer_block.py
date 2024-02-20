@@ -10,7 +10,7 @@ import ttnn
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_basic_transformer_block import (
     basic_transformer_block as ttnn_basic_transformer_block,
 )
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 from models.utility_functions import skip_for_wormhole_b0
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -77,7 +77,7 @@ def test_basic_transformer_block_256x256(device, model_name, N, C, H, W, index, 
 
     torch_output = basic_transformer(hidden_states.squeeze(0), encoder_hidden_states.squeeze(0))
 
-    parameters = preprocess_model_parameters(initialize_model=lambda: basic_transformer, device=device)
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: basic_transformer, device=device)
 
     hidden_states = ttnn.from_torch(hidden_states, dtype=ttnn.bfloat16)
     hidden_states = ttnn.to_device(hidden_states, device)
@@ -165,7 +165,7 @@ def test_basic_transformer_block_512x512(device, model_name, N, C, H, W, index, 
 
     torch_output = basic_transformer(hidden_states.squeeze(0), encoder_hidden_states.squeeze(0))
 
-    parameters = preprocess_model_parameters(initialize_model=lambda: basic_transformer, device=device)
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: basic_transformer, device=device)
 
     hidden_states = ttnn.from_torch(hidden_states, dtype=ttnn.bfloat16)
     hidden_states = ttnn.to_device(hidden_states, device)

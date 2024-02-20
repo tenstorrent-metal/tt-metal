@@ -14,9 +14,7 @@ from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_cross_attn_upblock import (
     cross_attention_upblock2d,
 )
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
-
-from ttnn.model_preprocessing import preprocess_model_parameters
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 
 
 def ttnn_to_torch(input):
@@ -63,9 +61,7 @@ def test_cross_attn_up_block_2d_256x256(
     state_dict = unet.state_dict()
     unet_upblock = pipe.unet.up_blocks[index]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.up_blocks[index]
 
     # synthesize the input
@@ -207,9 +203,7 @@ def test_cross_attn_up_block_2d_512x512(
     state_dict = unet.state_dict()
     unet_upblock = pipe.unet.up_blocks[index]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.up_blocks[index]
 
     # synthesize the input

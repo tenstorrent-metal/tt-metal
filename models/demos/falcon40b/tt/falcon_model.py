@@ -122,7 +122,7 @@ class TtFalconModelShared:
 
         self.layernorm_eps = config.layer_norm_epsilon
 
-    def model_preprocessing(self, llm_mode, input_ids, kv_cache_len, num_input_tokens):
+    def model_converter(self, llm_mode, input_ids, kv_cache_len, num_input_tokens):
         assert input_ids.dim() == 2
         batch_size, sequence_size = input_ids.shape
 

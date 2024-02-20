@@ -141,12 +141,12 @@ def run_test_FalconCausalLM_end_to_end(
         model_inputs = torch.split(model_input, 1)
         tt_embeddings, tt_attention_mask = zip(
             *[
-                tt_FalconCausalLM.model_preprocessing(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
+                tt_FalconCausalLM.model_converter(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
                 for m_i in model_inputs
             ]
         )
     elif llm_mode == "decode":
-        tt_embeddings, tt_attention_mask = tt_FalconCausalLM.model_preprocessing(
+        tt_embeddings, tt_attention_mask = tt_FalconCausalLM.model_converter(
             llm_mode, model_input, kv_cache_len, num_input_tokens=kv_len
         )
     profiler.end("processing_of_input")
@@ -162,7 +162,7 @@ def run_test_FalconCausalLM_end_to_end(
         model_inputs = torch.split(model_input, 1)
         tt_embeddings, tt_attention_mask = zip(
             *[
-                tt_FalconCausalLM.model_preprocessing(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
+                tt_FalconCausalLM.model_converter(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
                 for m_i in model_inputs
             ]
         )
@@ -222,12 +222,12 @@ def run_test_FalconCausalLM_end_to_end(
         model_inputs = torch.split(model_input, 1)
         tt_embeddings, tt_attention_mask = zip(
             *[
-                tt_FalconCausalLM.model_preprocessing(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
+                tt_FalconCausalLM.model_converter(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
                 for m_i in model_inputs
             ]
         )
     elif llm_mode == "decode":
-        tt_embeddings, tt_attention_mask = tt_FalconCausalLM.model_preprocessing(
+        tt_embeddings, tt_attention_mask = tt_FalconCausalLM.model_converter(
             llm_mode, model_input, kv_cache_len, num_input_tokens=kv_len
         )
 
@@ -237,7 +237,7 @@ def run_test_FalconCausalLM_end_to_end(
         model_inputs = torch.split(model_input, 1)
         tt_embeddings, tt_attention_mask = zip(
             *[
-                tt_FalconCausalLM.model_preprocessing(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
+                tt_FalconCausalLM.model_converter(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
                 for m_i in model_inputs
             ]
         )

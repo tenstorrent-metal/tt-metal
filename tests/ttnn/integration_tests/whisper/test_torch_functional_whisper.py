@@ -10,7 +10,7 @@ from datasets import load_dataset
 import torch
 from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.utility_functions import torch_random
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 # MODEL_NAME = "openai/whisper-base"
 MODEL_NAME = "openai/whisper-tiny.en"
@@ -33,10 +33,10 @@ def test_whisper_attention(model_name, batch_size, sequence_size, use_key_value_
         key_value_states = None
     torch_output = model(torch_hidden_states, key_value_states=key_value_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_whisper.custom_preprocessor,
+        converter=torch_functional_whisper.converter,
         prefix="encoder_attn" if use_key_value_states else "",
     )
 
@@ -66,10 +66,10 @@ def test_encoder_layer(model_name, batch_size, sequence_size):
     layer_head_mask = None
     torch_output = model(torch_hidden_states, attention_mask, layer_head_mask)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_whisper.custom_preprocessor,
+        converter=torch_functional_whisper.converter,
     )
 
     output = torch_functional_whisper.encoder_layer(config, torch_hidden_states, parameters=parameters)
@@ -89,10 +89,10 @@ def test_encoder(model_name, batch_size, feature_size, sequence_length):
 
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_whisper.custom_preprocessor,
+        converter=torch_functional_whisper.converter,
     )
 
     inputs_embeds = torch_functional_whisper.preprocess_encoder_inputs(
@@ -122,10 +122,10 @@ def test_decoder_layer(model_name, batch_size, sequence_size):
     attention_mask = None
     torch_output = model(torch_hidden_states, attention_mask, torch_encoder_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_whisper.custom_preprocessor,
+        converter=torch_functional_whisper.converter,
     )
 
     output = torch_functional_whisper.decoder_layer(
@@ -152,10 +152,10 @@ def test_decoder(model_name, batch_size, sequence_size):
     attention_mask = None
     torch_output = model(torch_decoder_input_ids, attention_mask, torch_encoder_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_whisper.custom_preprocessor,
+        converter=torch_functional_whisper.converter,
     )
 
     (decoder_hidden_states, decoder_attention_mask) = torch_functional_whisper.preprocess_decoder_inputs(
@@ -187,11 +187,11 @@ def test_torch_whisper():
     model = WhisperModel.from_pretrained(model_name).to(dtype_to_use).eval()
     expected_last_hidden_state = model(input_features, decoder_input_ids=decoder_input_ids).last_hidden_state
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=f"torch_functional_whisper_not_contiguous_{dtype_to_use}",
-        initialize_model=lambda: model,
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
-        custom_preprocessor=torch_functional_whisper.custom_preprocessor,
+        converter=torch_functional_whisper.converter,
     )
 
     attention_mask = None

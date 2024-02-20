@@ -7,7 +7,7 @@ import math
 from typing import Tuple
 
 import transformers
-from ttnn.model_preprocessing import ParameterDict
+from ttnn.model_converter import ParameterDict
 from torch.nn import functional as F
 from transformers.models.bloom.configuration_bloom import BloomConfig
 
@@ -346,7 +346,7 @@ def preprocess_inputs(
     return padded_input_ids, alibi, causal_mask
 
 
-def custom_preprocessor(torch_model, name):
+def converter(torch_model, name):
     parameters = {}
     if isinstance(torch_model, transformers.models.bloom.modeling_bloom.BloomAttention):
         weight = torch_model.query_key_value.weight

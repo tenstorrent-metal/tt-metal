@@ -9,7 +9,7 @@ import transformers
 
 from models.experimental.functional_t5.reference import torch_functional_t5 as functional_t5
 from models.utility_functions import torch_random
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -26,8 +26,8 @@ def test_t5_layer_norm(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -48,8 +48,8 @@ def test_t5_dense_act_dense(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -70,8 +70,8 @@ def test_t5_dense_gated_act_dense(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -92,8 +92,8 @@ def test_t5_layer_ff(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -114,8 +114,8 @@ def test_t5_attention(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output, *_ = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -136,8 +136,8 @@ def test_t5_layer_self_attention(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output, *_ = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -159,8 +159,8 @@ def test_t5_layer_cross_attention(model_name, batch_size, sequence_size):
     torch_key_value_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output, *_ = model(torch_hidden_states, torch_key_value_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -183,8 +183,8 @@ def test_t5_block_encoder(model_name, batch_size, sequence_size):
     torch_hidden_states = torch_random((batch_size, sequence_size, config.d_model), -0.1, 0.1, dtype=torch.float32)
     torch_output, *_ = model(torch_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -209,8 +209,8 @@ def test_t5_block_decoder(model_name, batch_size, sequence_size):
     )
     torch_output, *_ = model(torch_hidden_states, encoder_hidden_states=torch_encoder_hidden_states)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -235,8 +235,8 @@ def test_t5_stack_encoder(model_name, batch_size, sequence_size):
     torch_input_ids = torch_random((batch_size, sequence_size), 0, config.vocab_size, dtype=torch.int64)
     torch_output = model(torch_input_ids).last_hidden_state
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -268,8 +268,8 @@ def test_t5_stack_decoder(model_name, batch_size, sequence_size):
     )
     torch_output = model(torch_input_ids, encoder_hidden_states=torch_encoder_hidden_states).last_hidden_state
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -296,9 +296,9 @@ def test_t5_for_conditional_generation(model_name, batch_size, sequence_size):
     torch_decoder_input_ids = torch_random((batch_size, sequence_size), 0, 1, dtype=torch.int64)
     torch_output = model(torch_input_ids, decoder_input_ids=torch_decoder_input_ids).logits
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=f"torch_{model_name}",
-        initialize_model=lambda: model,
+        model=lambda: model,
         is_to_be_converted=lambda *_: False,
     )
 

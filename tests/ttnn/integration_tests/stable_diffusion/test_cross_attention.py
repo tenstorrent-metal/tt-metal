@@ -10,7 +10,7 @@ import ttnn
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_cross_attention import (
     cross_attention as ttnn_cross_attention,
 )
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 from models.utility_functions import skip_for_wormhole_b0
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -112,7 +112,7 @@ def test_cross_attention_256x256(device, model_name, N, C, H, W, index, has_enco
     encoder_hidden_states = encoder_hidden_states.squeeze(0) if encoder_hidden_states is not None else None
     torch_output = cross_attn(hidden_states.squeeze(0), encoder_hidden_states).unsqueeze(0)
 
-    parameters = preprocess_model_parameters(initialize_model=lambda: cross_attn, device=device)
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: cross_attn, device=device)
 
     ttnn_hidden_states = ttnn.from_torch(hidden_states, dtype=ttnn.bfloat16)
     ttnn_hidden_states = ttnn.to_device(ttnn_hidden_states, device)
@@ -228,7 +228,7 @@ def test_cross_attention_512x512(device, model_name, N, C, H, W, index, has_enco
     encoder_hidden_states = encoder_hidden_states.squeeze(0) if encoder_hidden_states is not None else None
     torch_output = cross_attn(hidden_states.squeeze(0), encoder_hidden_states).unsqueeze(0)
 
-    parameters = preprocess_model_parameters(initialize_model=lambda: cross_attn, device=device)
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: cross_attn, device=device)
 
     ttnn_hidden_states = ttnn.from_torch(hidden_states, dtype=ttnn.bfloat16)
     ttnn_hidden_states = ttnn.to_device(ttnn_hidden_states, device)

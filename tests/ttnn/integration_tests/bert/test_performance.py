@@ -16,7 +16,6 @@ import ttnn
 from models.experimental.functional_bert.tt import ttnn_functional_bert
 from models.experimental.functional_bert.tt import ttnn_optimized_functional_bert
 
-from ttnn.model_preprocessing import preprocess_model_parameters
 
 from models.utility_functions import (
     skip_for_wormhole_b0,
@@ -56,12 +55,10 @@ def test_performance(device, use_program_cache, model_name, batch_size, sequence
     else:
         raise ValueError(f"Unknown functional_bert: {functional_bert}")
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name=tt_model_name,
-        initialize_model=lambda: transformers.BertForQuestionAnswering.from_pretrained(
-            model_name, torchscript=False
-        ).eval(),
-        custom_preprocessor=functional_bert.custom_preprocessor,
+        model=lambda: transformers.BertForQuestionAnswering.from_pretrained(model_name, torchscript=False).eval(),
+        converter=functional_bert.converter,
         device=device,
     )
 

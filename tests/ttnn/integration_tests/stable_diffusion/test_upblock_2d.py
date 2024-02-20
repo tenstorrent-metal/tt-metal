@@ -11,8 +11,8 @@ import pytest
 from models.utility_functions import tt_to_torch_tensor, torch_random
 from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_upblock_2d import upblock_2d
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
-from ttnn.model_preprocessing import preprocess_model_parameters
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
+
 from models.utility_functions import skip_for_wormhole_b0, torch_random
 
 
@@ -28,9 +28,7 @@ def test_upblock_256x256(reset_seeds, device, res_hidden_states_tuple, hidden_st
     state_dict = unet.state_dict()
     unet_upblock = pipe.unet.up_blocks[0]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.up_blocks[0]
 
     # synthesize the input
@@ -91,9 +89,7 @@ def test_upblock_512x512(reset_seeds, device, res_hidden_states_tuple, hidden_st
     state_dict = unet.state_dict()
     unet_upblock = pipe.unet.up_blocks[0]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.up_blocks[0]
 
     # synthesize the input

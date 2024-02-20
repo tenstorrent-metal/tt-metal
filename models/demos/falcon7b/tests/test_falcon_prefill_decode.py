@@ -133,11 +133,11 @@ def run_test_FalconCausalLM_inference(
     (
         tt_prefill_embeddings,
         tt_prefill_attention_mask,
-    ) = tt_FalconCausalLM.model_preprocessing("prefill", model_prefill_input, 0, num_input_tokens=seq_len)
+    ) = tt_FalconCausalLM.model_converter("prefill", model_prefill_input, 0, num_input_tokens=seq_len)
     (
         tt_decode_embeddings,
         tt_decode_attention_mask,
-    ) = tt_FalconCausalLM.model_preprocessing("decode", model_decode_input, kv_cache_len, num_input_tokens=seq_len + 1)
+    ) = tt_FalconCausalLM.model_converter("decode", model_decode_input, kv_cache_len, num_input_tokens=seq_len + 1)
 
     # PREFILL
     logger.info(f"Falcon prefill for seq_len {seq_len} and one user only")

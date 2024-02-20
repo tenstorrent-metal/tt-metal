@@ -19,11 +19,11 @@ from models.experimental.functional_bert.tt import ttnn_functional_bert
 from models.experimental.functional_bert.tt import ttnn_optimized_functional_bert
 
 from models.datasets.dataset_squadv2 import squadv2_1K_samples_input, squadv2_answer_decode_batch
-from ttnn.model_preprocessing import (
-    preprocess_model_parameters,
+from ttnn.model_converter import (
+    from_torch_model,
 )
 
-from ttnn.model_preprocessing import *
+from ttnn.model_converter import *
 from transformers import RobertaForQuestionAnswering, pipeline, RobertaTokenizer
 
 import evaluate
@@ -70,12 +70,10 @@ def run_roberta_question_and_answering_inference(
         raise ValueError(f"Unknown functional_bert: {functional_bert}")
 
     profiler.start(f"preprocessing_parameter")
-    parameters = preprocess_model_parameters(
-        model_name=tt_model_name,
-        initialize_model=lambda: transformers.RobertaForQuestionAnswering.from_pretrained(
-            model_name, torchscript=False
-        ).eval(),
-        custom_preprocessor=functional_bert.custom_preprocessor,
+    parameters = ttnn.model_converter.from_torch_model(
+        cache_name=tt_model_name,
+        model=lambda: transformers.RobertaForQuestionAnswering.from_pretrained(model_name, torchscript=False).eval(),
+        converter=functional_bert.converter,
         device=device,
     )
     profiler.end(f"preprocessing_parameter")
@@ -184,12 +182,10 @@ def run_roberta_question_and_answering_inference_squad_v2(
     else:
         raise ValueError(f"Unknown functional_bert: {functional_bert}")
 
-    parameters = preprocess_model_parameters(
-        model_name=tt_model_name,
-        initialize_model=lambda: transformers.RobertaForQuestionAnswering.from_pretrained(
-            model_name, torchscript=False
-        ).eval(),
-        custom_preprocessor=functional_bert.custom_preprocessor,
+    parameters = ttnn.model_converter.from_torch_model(
+        cache_name=tt_model_name,
+        model=lambda: transformers.RobertaForQuestionAnswering.from_pretrained(model_name, torchscript=False).eval(),
+        converter=functional_bert.converter,
         device=device,
     )
 

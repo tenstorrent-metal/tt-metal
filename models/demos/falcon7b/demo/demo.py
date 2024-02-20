@@ -171,7 +171,7 @@ def run_falcon_demo_kv(
         (
             tt_prefill_embeddings,
             tt_prefill_attention_mask,
-        ) = tt_FalconCausalLM.model_preprocessing(
+        ) = tt_FalconCausalLM.model_converter(
             "prefill", prefill_ids[user_id : user_id + 1], 0, num_input_tokens=num_input_tokens
         )
         assert tt_prefill_attention_mask is not None
@@ -219,7 +219,7 @@ def run_falcon_demo_kv(
         (
             tt_decode_embeddings,
             tt_decode_attention_mask,
-        ) = tt_FalconCausalLM.model_preprocessing("decode", decode_ids, kv_cache_len, num_input_tokens=kv_cache_len + 1)
+        ) = tt_FalconCausalLM.model_converter("decode", decode_ids, kv_cache_len, num_input_tokens=kv_cache_len + 1)
         assert tt_decode_attention_mask is not None
 
         tt_logits, kv_cache = tt_FalconCausalLM(
@@ -282,7 +282,7 @@ def run_falcon_demo_kv(
         (
             tt_prefill_embeddings,
             tt_prefill_attention_mask,
-        ) = tt_FalconCausalLM.model_preprocessing(
+        ) = tt_FalconCausalLM.model_converter(
             "prefill", prefill_ids[user_id : user_id + 1], 0, num_input_tokens=num_input_tokens
         )
         assert tt_prefill_attention_mask is not None
@@ -331,7 +331,7 @@ def run_falcon_demo_kv(
         (
             tt_decode_embeddings,
             tt_decode_attention_mask,
-        ) = tt_FalconCausalLM.model_preprocessing("decode", decode_ids, kv_cache_len, num_input_tokens=kv_cache_len + 1)
+        ) = tt_FalconCausalLM.model_converter("decode", decode_ids, kv_cache_len, num_input_tokens=kv_cache_len + 1)
         assert tt_decode_attention_mask is not None
 
         tt_logits, kv_cache = tt_FalconCausalLM(

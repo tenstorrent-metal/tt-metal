@@ -280,11 +280,11 @@ def preprocess_inputs(
     return input_ids, token_type_ids, attention_mask
 
 
-def custom_preprocessor(torch_model, name):
+def converter(torch_model, name):
     import torch
-    from ttnn.model_preprocessing import (
-        preprocess_linear_bias,
-        preprocess_linear_weight,
+    from ttnn.model_converter import (
+        convert_torch_linear_bias_to_ttnn,
+        convert_torch_linear_weight_to_ttnn,
     )
 
     parameters = {}
@@ -303,6 +303,6 @@ def custom_preprocessor(torch_model, name):
         )
 
         parameters = {"query_key_value": {}}
-        parameters["query_key_value"]["weight"] = preprocess_linear_weight(qkv_weight, dtype=ttnn.bfloat16)
-        parameters["query_key_value"]["bias"] = preprocess_linear_bias(qkv_bias, dtype=ttnn.bfloat16)
+        parameters["query_key_value"]["weight"] = convert_torch_linear_weight_to_ttnn(qkv_weight, dtype=ttnn.bfloat16)
+        parameters["query_key_value"]["bias"] = convert_torch_linear_bias_to_ttnn(qkv_bias, dtype=ttnn.bfloat16)
     return parameters

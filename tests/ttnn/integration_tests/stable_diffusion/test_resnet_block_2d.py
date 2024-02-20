@@ -10,9 +10,9 @@ from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.utility_functions import skip_for_wormhole_b0
 
 import ttnn
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_resnetblock2d import resnetBlock2D
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 
 
 def ttnn_to_torch(input):
@@ -51,9 +51,7 @@ def test_resnet_block_2d_256x256(
     model = pipe.unet
     model.eval()
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: model, converter=converter, device=device)
 
     if block_name == "up":
         parameters = parameters.up_blocks[index1].resnets[index2]
@@ -134,9 +132,7 @@ def test_resnet_block_2d_512x512(
     model = pipe.unet
     model.eval()
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: model, converter=converter, device=device)
 
     if block_name == "up":
         parameters = parameters.up_blocks[index1].resnets[index2]

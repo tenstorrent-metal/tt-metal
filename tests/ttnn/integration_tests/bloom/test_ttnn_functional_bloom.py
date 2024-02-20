@@ -10,7 +10,7 @@ from transformers.models import bloom
 
 from models.experimental.functional_bloom.tt import ttnn_functional_bloom
 from models.utility_functions import torch_random, skip_for_wormhole_b0
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -37,10 +37,10 @@ def test_bloom_attention(device, model_name, batch_size, sequence_size):
         torch_attention_mask,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         device=device,
-        custom_preprocessor=ttnn_functional_bloom.custom_preprocessor,
+        converter=ttnn_functional_bloom.converter,
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states.to(torch.bfloat16), layout=ttnn.TILE_LAYOUT, device=device)
@@ -78,7 +78,7 @@ def test_bloom_mlp(device, model_name, batch_size, sequence_size):
 
     torch_output = model(torch_hidden_states, torch_residual)
 
-    parameters = preprocess_model_parameters(initialize_model=lambda: model, device=device)
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: model, device=device)
 
     hidden_states = ttnn.from_torch(torch_hidden_states.to(torch.bfloat16), layout=ttnn.TILE_LAYOUT, device=device)
     residual = ttnn.from_torch(torch_residual.to(torch.bfloat16), layout=ttnn.TILE_LAYOUT, device=device)
@@ -113,10 +113,10 @@ def test_bloom_block(device, model_name, batch_size, sequence_size):
         torch_attention_mask,
     )
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         device=device,
-        custom_preprocessor=ttnn_functional_bloom.custom_preprocessor,
+        converter=ttnn_functional_bloom.converter,
     )
 
     hidden_states = ttnn.from_torch(torch_hidden_states.to(torch.bfloat16), layout=ttnn.TILE_LAYOUT, device=device)
@@ -151,10 +151,10 @@ def test_bloom(device, model_name, batch_size, sequence_size):
     torch_attention_mask = torch_random((batch_size, sequence_size), 0, 2, dtype=torch.int64)
     torch_output = model(input_ids=torch_input_ids, attention_mask=torch_attention_mask).last_hidden_state
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         device=device,
-        custom_preprocessor=ttnn_functional_bloom.custom_preprocessor,
+        converter=ttnn_functional_bloom.converter,
     )
 
     padded_input_ids, alibi, causal_mask = ttnn_functional_bloom.preprocess_inputs(
@@ -191,10 +191,10 @@ def test_bloom_for_question_answering(device, model_name, batch_size, sequence_s
     torch_attention_mask = torch_random((batch_size, sequence_size), 0, 2, dtype=torch.int64)
     torch_output = model(input_ids=torch_input_ids, attention_mask=torch_attention_mask)
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: model,
+    parameters = ttnn.model_converter.from_torch_model(
+        model=lambda: model,
         device=device,
-        custom_preprocessor=ttnn_functional_bloom.custom_preprocessor,
+        converter=ttnn_functional_bloom.converter,
     )
 
     padded_input_ids, alibi, causal_mask = ttnn_functional_bloom.preprocess_inputs(

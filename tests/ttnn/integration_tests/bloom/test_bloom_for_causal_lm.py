@@ -13,8 +13,6 @@ from models.experimental.functional_bloom.reference import torch_functional_bloo
 from models.experimental.functional_bloom.tt import ttnn_optimized_functional_bloom
 from models.utility_functions import skip_for_wormhole_b0
 
-from ttnn.model_preprocessing import preprocess_model_parameters
-
 
 def generate_next_token(config, model, input_ids, parameters, logits_processor, max_length, **kwargs):
     num_tokens = input_ids.shape[-1]
@@ -75,10 +73,10 @@ def test_torch_bloom_for_causal_lm():
     input_text = "Hello, my dog is cute"
     expected_generated_text = "Hello, my dog is cute. He is a little shy, but he loves"
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name="torch_functional_bloom_for_causal_lm",
-        initialize_model=lambda: BloomForCausalLM.from_pretrained(model_name).eval(),
-        custom_preprocessor=torch_functional_bloom.custom_preprocessor,
+        model=lambda: BloomForCausalLM.from_pretrained(model_name).eval(),
+        converter=torch_functional_bloom.converter,
         is_to_be_converted=lambda *_: False,
     )
 
@@ -108,11 +106,11 @@ def test_ttnn_bloom_for_causal_lm(device, batch_size=8):
     input_text = "Hello, my dog is cute"
     expected_generated_text = "Hello, my dog is cute and sweet. He loves to play with me and"
 
-    parameters = preprocess_model_parameters(
+    parameters = ttnn.model_converter.from_torch_model(
         model_name="ttnn_functional_bloom_for_causal_lm",
-        initialize_model=lambda: BloomForCausalLM.from_pretrained(model_name).eval(),
+        model=lambda: BloomForCausalLM.from_pretrained(model_name).eval(),
         device=device,
-        custom_preprocessor=ttnn_optimized_functional_bloom.custom_preprocessor,
+        converter=ttnn_optimized_functional_bloom.converter,
         is_to_be_converted=lambda model, name: name != "lm_head",
     )
 

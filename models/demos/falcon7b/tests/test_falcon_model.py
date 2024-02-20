@@ -133,7 +133,7 @@ def run_test_FalconModel_inference(
         model_inputs = torch.split(model_input, 1)
         tt_embeddings, tt_attention_mask = zip(
             *[
-                tt_FalconModel.model_preprocessing(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
+                tt_FalconModel.model_converter(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
                 for m_i in model_inputs
             ]
         )
@@ -151,7 +151,7 @@ def run_test_FalconModel_inference(
         tt_out = torch.vstack(tt_outs)
 
     elif llm_mode == "decode":
-        tt_embeddings, tt_attention_mask = tt_FalconModel.model_preprocessing(
+        tt_embeddings, tt_attention_mask = tt_FalconModel.model_converter(
             llm_mode, model_input, kv_cache_len, num_input_tokens=kv_len
         )
         tt_out, tt_layer_present = tt_FalconModel(

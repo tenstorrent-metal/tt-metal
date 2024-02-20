@@ -130,7 +130,7 @@ def run_bert_question_and_answering_inference_squadv2(
                 }
                 tt_embedding = tt_bert_model.model_embedding(**tt_embedding_inputs)
 
-                # tt_batch = tt_bert_model.model_preprocessing(**batch_data)
+                # tt_batch = tt_bert_model.model_converter(**batch_data)
                 # tt_output = tt_bert_model(*tt_batch)
                 tt_output = tt_bert_model(tt_embedding, tt_attention_mask).cpu()
 
@@ -256,7 +256,7 @@ def run_bert_question_and_answering_inference(
     profiler.end(f"processing_input_two")
 
     # profiler.start(f"processing_input_two")
-    # tt_bert_input = tt_bert_model.model_preprocessing(**bert_input)
+    # tt_bert_input = tt_bert_model.model_converter(**bert_input)
     # profiler.end(f"processing_input_two")
 
     ##### Run TT Model to Fill Cache Start

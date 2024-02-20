@@ -8,9 +8,9 @@ import pytest
 import ttnn
 
 from models.experimental.functional_stable_diffusion.tt.ttnn_functional_upsample_2d import upsample2d
-from models.experimental.functional_stable_diffusion.custom_preprocessing import custom_preprocessor
+from models.experimental.functional_stable_diffusion.custom_preprocessing import converter
 from tests.ttnn.utils_for_testing import assert_with_pcc
-from ttnn.model_preprocessing import preprocess_model_parameters
+
 
 from models.utility_functions import skip_for_wormhole_b0, tt_to_torch_tensor, torch_random
 
@@ -42,9 +42,7 @@ def test_upsample2d_256x256(device, scale_factor, batch_size, in_channels, input
     unet_upblock = pipe.unet.up_blocks[index]
     resnet_upsampler = unet_upblock.upsamplers[0]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.up_blocks[index].upsamplers[0]
 
     input_shape = batch_size, in_channels, input_height, input_width
@@ -87,9 +85,7 @@ def test_upsample2d_512x512(device, scale_factor, batch_size, in_channels, input
     unet_upblock = pipe.unet.up_blocks[index]
     resnet_upsampler = unet_upblock.upsamplers[0]
 
-    parameters = preprocess_model_parameters(
-        initialize_model=lambda: unet, custom_preprocessor=custom_preprocessor, device=device
-    )
+    parameters = ttnn.model_converter.from_torch_model(model=lambda: unet, converter=converter, device=device)
     parameters = parameters.up_blocks[index].upsamplers[0]
 
     input_shape = batch_size, in_channels, input_height, input_width
