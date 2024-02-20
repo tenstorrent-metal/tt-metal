@@ -27,6 +27,7 @@ inline void llk_unpack_AB_matmul_hw_configure(const llk_unpack_AB_matmul_params_
     const uint32_t unpA_face_r_dim = get_operand_face_r_dim(unpA_operand_id);
     const uint32_t unpB_face_r_dim = get_operand_face_r_dim(unpB_operand_id);
 
+    DEBUG_STATUS('U', 'P', 'M', 'W');
     _llk_unpack_AB_matmul_hw_configure_<is_fp32_dest_acc_en, stoch_rnd_mode>(
         unpack_src_format[unpA_operand_id],
         unpack_src_format[unpB_operand_id],
@@ -39,6 +40,7 @@ inline void llk_unpack_AB_matmul_hw_configure(const llk_unpack_AB_matmul_params_
         unpB_num_faces,
         cb_interface[unpA_operand_id].fifo_page_size,
         cb_interface[unpB_operand_id].fifo_page_size);
+    DEBUG_STATUS('U', 'P', 'M', 'D');
 }
 
 template <bool is_fp32_dest_acc_en = false, StochRndType stoch_rnd_mode = StochRndType::None>
@@ -123,6 +125,7 @@ inline void llk_unpack_AB_matmul(
     std::uint32_t tile_size_a = cb_interface[operandA_id].fifo_page_size;
     std::uint32_t tile_size_b = cb_interface[operandB_id].fifo_page_size;
 
+    DEBUG_STATUS('U', 'P', 'M', 'W');
     _llk_unpack_AB_matmul_(
         base_address_a,
         base_address_b,
@@ -137,4 +140,5 @@ inline void llk_unpack_AB_matmul(
         ct_dim,
         rt_dim,
         kt_dim);
+    DEBUG_STATUS('U', 'P', 'M', 'D');
 }

@@ -15,10 +15,12 @@ inline void llk_unpack_A_hw_configure(
     const llk_unpack_A_params_t *unpack_A_params, const int within_face_16x16_transpose = 0) {
     const uint32_t unpA_operand_id = get_operand_id(unpack_A_params->unpA_operand);
 
+    DEBUG_STATUS('U', 'P', 'A', 'W');
     _llk_unpack_A_hw_configure_(
         unpack_src_format[unpA_operand_id],
         unpack_dst_format[unpA_operand_id],
         within_face_16x16_transpose);
+    DEBUG_STATUS('U', 'P', 'A', 'D');
 }
 
 template <bool is_fp32_dest_acc_en = false /*not used*/, StochRndType stoch_rnd_mode = StochRndType::None /*not used*/>
@@ -71,7 +73,9 @@ inline void llk_unpack_A(
     std::uint32_t offset_address = MUL_TILE_SIZE_AND_INDEX<true>((uint)unpack_src_format[operand_id], tile_index);
     std::uint32_t address = base_address + offset_address;
 
+    DEBUG_STATUS('U', 'P', 'A', 'W');
     _llk_unpack_A_<BType, acc_to_dest, binary_reuse_dest>(address, transpose_of_faces > 0);
+    DEBUG_STATUS('U', 'P', 'A', 'D');
 }
 
 
@@ -90,7 +94,9 @@ inline void llk_unpack_A_block(
     std::uint32_t address = base_address;
 
     for (uint32_t tile_index = start_tile_index; tile_index < start_tile_index + ntiles; tile_index++) {
+        DEBUG_STATUS('U', 'P', 'A', 'W');
         _llk_unpack_A_<BType, acc_to_dest, binary_reuse_dest>(address, transpose_of_faces>0);
         address += offset_address;
+        DEBUG_STATUS('U', 'P', 'A', 'D');
     }
 }

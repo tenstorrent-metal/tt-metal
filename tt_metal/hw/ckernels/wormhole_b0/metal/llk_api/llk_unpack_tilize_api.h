@@ -21,6 +21,7 @@ inline void llk_unpack_tilize_hw_configure(const llk_unpack_A_params_t *unpack_t
     const uint32_t unpA_num_faces = get_operand_num_faces(unpA_operand_id);
     const uint32_t unpA_face_r_dim = get_operand_face_r_dim(unpA_operand_id);
 
+    DEBUG_STATUS('U', 'P', 'T', 'W');
     _llk_unpack_tilize_hw_configure_<is_fp32_dest_acc_en, stoch_rnd_mode>(
         unpack_src_format[unpA_operand_id],
         unpack_dst_format[unpA_operand_id],
@@ -28,6 +29,7 @@ inline void llk_unpack_tilize_hw_configure(const llk_unpack_A_params_t *unpack_t
         within_face_16x16_transpose,
         unpA_num_faces
     );
+    DEBUG_STATUS('U', 'P', 'T', 'D');
 }
 
 
@@ -85,6 +87,7 @@ inline void llk_unpack_tilize(std::uint32_t operand, std::uint32_t tile_index, s
 
     std::uint32_t base_address = cb_interface[operand_id].fifo_rd_ptr - 1;  // Remove header size added by descriptor
 
+    DEBUG_STATUS('U', 'P', 'T', 'W');
     _llk_unpack_tilize_(
         base_address,
         tile_index,
@@ -94,6 +97,7 @@ inline void llk_unpack_tilize(std::uint32_t operand, std::uint32_t tile_index, s
         num_faces,
         narrow_tile
     );
+    DEBUG_STATUS('U', 'P', 'T', 'D');
 }
 
 inline void llk_unpack_tilize_block(std::uint32_t operand, std::uint32_t block_c_tiles) {
@@ -119,6 +123,7 @@ inline void llk_unpack_tilizeA_B_hw_configure(const llk_unpack_AB_params_t *unpa
 
     const uint32_t face_r_dim = get_operand_face_r_dim(unpA_operand_id);  // face r dim in unpA and unpB are the same
 
+    DEBUG_STATUS('U', 'P', 'T', 'W');
     _llk_unpack_AB_hw_configure_<is_fp32_dest_acc_en, stoch_rnd_mode>(
         unpack_src_format[unpA_operand_id],
         unpack_src_format[unpB_operand_id],
@@ -127,6 +132,7 @@ inline void llk_unpack_tilizeA_B_hw_configure(const llk_unpack_AB_params_t *unpa
         face_r_dim,
         within_face_16x16_transpose,
         num_faces);
+    DEBUG_STATUS('U', 'P', 'T', 'D');
 
 }
 
@@ -213,6 +219,7 @@ inline void llk_unpack_tilizeA_B(
     // Program srcA and srcB base addresses
     volatile uint tt_reg_ptr *cfg = get_cfg_pointer();  // get pointer to registers for current state ID
 
+    DEBUG_STATUS('U', 'P', 'T', 'W');
     for (std::uint32_t n = 0; n < num_loops; n++) {
         std::uint32_t address_a = base_address_a + top_face_offset_address + ((n == 1) ? bot_face_offset_address : 0);
 
@@ -243,6 +250,7 @@ inline void llk_unpack_tilizeA_B(
         // Switch unpacker config context
         switch_config_context(unp_cfg_context);
     }
+    DEBUG_STATUS('U', 'P', 'T', 'D');
 }
 
 inline void llk_unpack_tilizeA_B_block(

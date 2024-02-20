@@ -24,6 +24,7 @@ inline void llk_unpack_reduce_hw_configure(
     const std::uint32_t unpB_dst_format = ((std::uint32_t)unpack_dst_format[unpA_operand_id] == (std::uint32_t) DataFormat::Int8) ? (std::uint32_t) DataFormat::Float16 : // Int8 is treated as fp16_a
                                ((((std::uint32_t)unpack_dst_format[unpA_operand_id]>>2)&0x1) ? (std::uint32_t) DataFormat::Float16_b : (std::uint32_t) DataFormat::Float16);
 
+    DEBUG_STATUS('U', 'P', 'R', 'W');
     _llk_unpack_reduce_hw_configure_<is_fp32_dest_acc_en, stoch_rnd_mode>(
         unpack_src_format[unpA_operand_id],
         unpB_src_format,
@@ -35,6 +36,7 @@ inline void llk_unpack_reduce_hw_configure(
         unpA_num_faces,
         unpA_num_faces
     );
+    DEBUG_STATUS('U', 'P', 'R', 'D');
 
     if constexpr (type != PoolType::MAX) {
         union {
@@ -88,7 +90,9 @@ inline void llk_unpack_reduce(const std::uint32_t operand, const std::uint32_t t
     std::uint32_t offset_address = cb_interface[operand_id].fifo_page_size * tile_index;
     std::uint32_t address = base_address + offset_address;
 
+    DEBUG_STATUS('U', 'P', 'R', 'W');
     _llk_unpack_reduce_<type, dim>(
         address
     );
+    DEBUG_STATUS('U', 'P', 'R', 'D');
 }

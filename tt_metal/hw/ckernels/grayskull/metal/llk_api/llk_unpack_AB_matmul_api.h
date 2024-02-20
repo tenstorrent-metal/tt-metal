@@ -17,11 +17,13 @@ inline void llk_unpack_AB_matmul_hw_configure(const llk_unpack_AB_matmul_params_
     const uint32_t unpA_operand_id = get_operand_id(unpack_AB_params->unpB_operand);
     const uint32_t unpB_operand_id = get_operand_id(unpack_AB_params->unpA_operand);
 
+    DEBUG_STATUS('U', 'P', 'M', 'W');
     _llk_unpack_AB_matmul_hw_configure_(
         unpack_src_format[unpA_operand_id],
         unpack_src_format[unpB_operand_id],
         unpack_dst_format[unpA_operand_id],
         unpack_dst_format[unpB_operand_id]);
+    DEBUG_STATUS('U', 'P', 'M', 'D');
 }
 
 template <bool is_fp32_dest_acc_en = false /*not used*/, StochRndType stoch_rnd_mode = StochRndType::None /*not used*/>
@@ -86,10 +88,12 @@ inline void llk_unpack_AB_matmul(
             std::uint32_t offset_address_b = MUL_TILE_SIZE_AND_INDEX<true>(unpB_src_format, (tile_index_b+ct));
             std::uint32_t address_b = base_address_b + offset_address_b;
 
+            DEBUG_STATUS('U', 'P', 'M', 'W');
             _llk_unpack_AB_matmul_(
                 address_a,
                 address_b
             );
+            DEBUG_STATUS('U', 'P', 'M', 'D');
         }
     }
 }

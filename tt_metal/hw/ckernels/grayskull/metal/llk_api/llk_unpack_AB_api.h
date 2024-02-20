@@ -18,11 +18,13 @@ inline void llk_unpack_AB_hw_configure(
     const uint32_t unpA_operand_id = get_operand_id(unpack_AB_params->unpA_operand);
     const uint32_t unpB_operand_id = get_operand_id(unpack_AB_params->unpB_operand);
 
+    DEBUG_STATUS('U', 'A', 'B', 'W');
     _llk_unpack_AB_hw_configure_(
         unpack_src_format[unpA_operand_id],
         unpack_src_format[unpB_operand_id],
         unpack_dst_format[unpA_operand_id],
         unpack_dst_format[unpB_operand_id]);
+    DEBUG_STATUS('U', 'A', 'B', 'D');
 }
 
 template <bool is_fp32_dest_acc_en = false /*not used*/, StochRndType stoch_rnd_mode = StochRndType::None /*not used*/>
@@ -75,5 +77,7 @@ inline void llk_unpack_AB(
     std::uint32_t offset_address_b = MUL_TILE_SIZE_AND_INDEX<true>(unpack_src_format[operandB_id], tile_index_b);
     std::uint32_t address_b = base_address_b + offset_address_b;
 
+    DEBUG_STATUS('U', 'A', 'B', 'W');
     _llk_unpack_AB_<BType>(address_a, address_b, transpose_of_faces > 0);
+    DEBUG_STATUS('U', 'A', 'B', 'D');
 }

@@ -15,10 +15,12 @@ inline void llk_unpack_tilize_hw_configure(const llk_unpack_A_params_t *unpack_t
 
     const uint32_t unpA_operand_id = get_operand_id(unpack_tilize_params->unpA_operand);
 
+    DEBUG_STATUS('U', 'P', 'T', 'W');
     _llk_unpack_tilize_hw_configure_(
         unpack_src_format[unpA_operand_id],
         unpack_dst_format[unpA_operand_id]
     );
+    DEBUG_STATUS('U', 'P', 'T', 'D');
 }
 
 template <bool is_fp32_dest_acc_en = false /* unused */>
@@ -61,12 +63,14 @@ inline void llk_unpack_tilize(std::uint32_t operand, std::uint32_t tile_index, s
     std::uint32_t base_address = cb_interface[operand_id].fifo_rd_ptr - 1;  // Remove header size added by descriptor
     std::uint32_t src_format = (uint)unpack_src_format[operand_id];
 
+    DEBUG_STATUS('U', 'P', 'T', 'W');
     _llk_unpack_tilize_(
         base_address,
         tile_index,
         src_format,
         block_ct_dim
     );
+    DEBUG_STATUS('U', 'P', 'T', 'D');
 }
 
 inline void llk_unpack_tilize_block(std::uint32_t operand, std::uint32_t block_c_tiles) {
@@ -84,13 +88,14 @@ inline void llk_unpack_tilizeA_B_hw_configure(const llk_unpack_AB_params_t *llk_
 
     const uint32_t unpA_operand_id = get_operand_id(llk_unpack_tilizeA_B->unpA_operand);
     const uint32_t unpB_operand_id = get_operand_id(llk_unpack_tilizeA_B->unpB_operand);
-
+    DEBUG_STATUS('U', 'P', 'T', 'W');
     configure_unpack_AB(
         unpack_src_format[unpA_operand_id],
         unpack_src_format[unpB_operand_id],
         unpack_dst_format[unpA_operand_id],
         unpack_dst_format[unpB_operand_id]
     );
+    DEBUG_STATUS('U', 'P', 'T', 'D');
 }
 
 template <bool is_fp32_dest_acc_en = false /* unused */>
@@ -171,6 +176,7 @@ inline void llk_unpack_tilizeA_B(
     // Program srcA and srcB base addresses
     volatile uint tt_reg_ptr *cfg = get_cfg_pointer();  // get pointer to registers for current state ID
 
+    DEBUG_STATUS('U', 'P', 'T', 'W');
     for (std::uint32_t n = 0; n < 2; n++) {
         std::uint32_t address_a = base_address_a + top_face_offset_address + ((n == 1) ? bot_face_offset_address : 0);
 
@@ -201,6 +207,7 @@ inline void llk_unpack_tilizeA_B(
         // Switch unpacker config context
         switch_config_context(unp_cfg_context);
     }
+    DEBUG_STATUS('U', 'P', 'T', 'D');
 }
 
 inline void llk_unpack_tilizeA_B_block(
