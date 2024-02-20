@@ -5,11 +5,16 @@
 #include <cstdint>
 #include "dataflow_api.h"
 
-/**
- * Any two RISC processors cannot use the same CMD_BUF
- * non_blocking APIs shouldn't be mixed with slow noc.h APIs
- * explicit flushes need to be used since the calls are non-blocking
- * */
+template <uint8_t NUM_CHANNELS>
+FORCE_INLINE uint8_t get_next_buffer_channel_pointer(uint8_t pointer) {
+    if constexpr (NUM_CHANNELS % 2 == 0) {
+        constexpr uint8_t CHANNEL_WRAP_MASK = NUM_CHANNELS - 1;
+        return pointer = (pointer + 1) & CHANNEL_WRAP_MASK;
+    } else {
+        pointer = (pointer + 1);
+        return pointer == NUM_CHANNELS ? 0 : pointer;
+    }
+}
 
 template<bool DRAM>
 FORCE_INLINE void write_chunk(uint32_t& output_page_idx, uint32_t& col_idx, uint32_t& row_idx, uint32_t local_eth_l1_curr_src_addr, const InterleavedAddrGenFast<DRAM>& d, const uint32_t num_cols, const uint32_t num_rows, const uint32_t col_offset, const uint32_t row_offset, const uint32_t num_pages, const uint32_t page_size) {
@@ -33,9 +38,6 @@ FORCE_INLINE void write_chunk(uint32_t& output_page_idx, uint32_t& col_idx, uint
 
 void kernel_main() {
     const uint32_t dst_addr = get_arg_val<uint32_t>(0);
-    const uint32_t buffer0 = get_arg_val<uint32_t>(1);
-    const uint32_t buffer1 = get_arg_val<uint32_t>(2);
-    const uint32_t sem_addr = get_arg_val<uint32_t>(3);
 
     constexpr uint32_t sender_noc_x = get_compile_time_arg_val(0);
     constexpr uint32_t sender_noc_y = get_compile_time_arg_val(1);
@@ -60,6 +62,9 @@ void kernel_main() {
     constexpr uint32_t last_output_page_shift = get_compile_time_arg_val(18);
     constexpr uint32_t output_page_shift = get_compile_time_arg_val(19);
     constexpr uint32_t input_start_ring_idx = get_compile_time_arg_val(20);
+    constexpr uint32_t num_channels = get_compile_time_arg_val(21);
+    constexpr uint32_t local_l1_start_addr = get_compile_time_arg_val(22);
+    constexpr uint32_t sem_addr = get_compile_time_arg_val(23);
 
     const InterleavedAddrGenFast<dst_is_dram> d = {
         .bank_base_address = dst_addr,
@@ -75,27 +80,32 @@ void kernel_main() {
     uint32_t col_idx = col_start_idx;
     uint32_t row_idx = row_start_idx;
 
-    volatile tt_l1_ptr uint32_t* curr_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer0);
-    volatile tt_l1_ptr uint32_t* next_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer1);
+    uint8_t channel = 0;
+
+    uint32_t local_l1_src_addrs[num_channels];
+    for (uint32_t i = 0, curr_addr = local_l1_start_addr; i < num_channels; ++i) {
+        local_l1_src_addrs[i] = curr_addr;
+        curr_addr += num_bytes;
+    }
 
     for (uint32_t i = 0; i < num_transfers; ++i) {
         if constexpr (num_full_chunks > 0) {
             for (uint32_t c = 0; c < num_full_chunks; ++c) {
-                uint32_t src_addr = uint32_t(curr_addr) + 32;
-                eth_wait_for_bytes_v2(curr_addr, num_bytes);
+                const uint32_t& src_addr = local_l1_src_addrs[channel];
+                eth_wait_for_bytes(num_bytes, channel);
                 write_chunk(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
-                eth_receiver_done_v2(curr_addr);
+                eth_receiver_done(channel);
                 noc_semaphore_inc(sender_semaphore_noc_addr, 1);
-                std::swap(curr_addr, next_addr);
+                channel = get_next_buffer_channel_pointer<num_channels>(channel);
             }
         }
         if constexpr (rem_num_pages > 0) {
-            uint32_t src_addr = uint32_t(curr_addr) + 32;
-            eth_wait_for_bytes_v2(curr_addr, rem_num_bytes);
+            const uint32_t& src_addr = local_l1_src_addrs[channel];
+            eth_wait_for_bytes(rem_num_bytes, channel);
             write_chunk(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
-            eth_receiver_done_v2(curr_addr);
+            eth_receiver_done(channel);
             noc_semaphore_inc(sender_semaphore_noc_addr, 1);
-            std::swap(curr_addr, next_addr);
+            channel = get_next_buffer_channel_pointer<num_channels>(channel);
         }
 
         if (input_ring_idx == 0) {

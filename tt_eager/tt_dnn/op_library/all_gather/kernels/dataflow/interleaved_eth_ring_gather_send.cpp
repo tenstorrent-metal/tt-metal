@@ -5,6 +5,17 @@
 #include <cstdint>
 #include "dataflow_api.h"
 
+template <uint8_t NUM_CHANNELS>
+FORCE_INLINE uint8_t get_next_buffer_channel_pointer(uint8_t pointer) {
+    if constexpr (NUM_CHANNELS % 2 == 0) {
+        constexpr uint8_t CHANNEL_WRAP_MASK = NUM_CHANNELS - 1;
+        return pointer = (pointer + 1) & CHANNEL_WRAP_MASK;
+    } else {
+        pointer = (pointer + 1);
+        return pointer == NUM_CHANNELS ? 0 : pointer;
+    }
+}
+
 template<bool DRAM>
 FORCE_INLINE void read_chunk(uint32_t& input_page_idx, uint32_t local_eth_l1_curr_src_addr, const InterleavedAddrGenFast<DRAM>& s, const uint32_t num_pages, const uint32_t page_size) {
     const uint32_t end_read_idx = input_page_idx + num_pages;
@@ -57,9 +68,6 @@ FORCE_INLINE void write_chunk_non_blocking(uint32_t& output_page_idx, uint32_t& 
 void kernel_main() {
     const uint32_t src_addr = get_arg_val<uint32_t>(0);
     const uint32_t dst_addr = get_arg_val<uint32_t>(1);
-    const uint32_t buffer0 = get_arg_val<uint32_t>(2);
-    const uint32_t buffer1 = get_arg_val<uint32_t>(3);
-    const uint32_t sem_addr = get_arg_val<uint32_t>(4);
 
     constexpr bool src_is_dram = get_compile_time_arg_val(0) == 1;
     constexpr bool dst_is_dram = get_compile_time_arg_val(1) == 1;
@@ -82,6 +90,9 @@ void kernel_main() {
     constexpr uint32_t last_output_page_offset = get_compile_time_arg_val(18);
     constexpr uint32_t output_page_offset = get_compile_time_arg_val(19);
     constexpr uint32_t input_start_ring_idx = get_compile_time_arg_val(20);
+    constexpr uint32_t num_channels = get_compile_time_arg_val(21);
+    constexpr uint32_t local_l1_start_addr = get_compile_time_arg_val(22);
+    constexpr uint32_t sem_addr = get_compile_time_arg_val(23);
 
     const InterleavedAddrGenFast<src_is_dram> s = {
         .bank_base_address = src_addr,
@@ -109,30 +120,34 @@ void kernel_main() {
     uint32_t col_idx = col_start_idx;
     uint32_t row_idx = row_start_idx;
 
-    volatile tt_l1_ptr uint32_t* curr_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer0);
-    volatile tt_l1_ptr uint32_t* next_addr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(buffer1);
+    uint32_t local_l1_src_addrs[num_channels];
+    for (uint32_t i = 0, curr_addr = local_l1_start_addr; i < num_channels; ++i) {
+        local_l1_src_addrs[i] = curr_addr;
+        curr_addr += num_bytes;
+    }
 
+    uint8_t channel = 0;
     if constexpr(num_full_chunks > 0) {
         for (uint32_t c = 0; c < num_full_chunks; ++c) {
             // This function also increments input_page_idx
-            uint32_t src_addr = uint32_t(curr_addr) + 32;
-            eth_wait_for_receiver_done_v2(curr_addr);
+            const uint32_t& src_addr = local_l1_src_addrs[channel];
+            eth_wait_receiver_done(channel);
             read_chunk<src_is_dram>(input_page_idx, src_addr, s, num_pages, page_size);
             write_chunk_non_blocking<dst_is_dram>(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
-            eth_send_bytes_v2(curr_addr, src_addr, src_addr, num_bytes, num_bytes_per_send, num_bytes_per_send_word_size);
-            eth_send_done_v2(curr_addr);
-            std::swap(curr_addr, next_addr);
+            eth_send_bytes(src_addr, src_addr, num_bytes, num_bytes_per_send, num_bytes_per_send_word_size, channel);
+            eth_send_done(channel);
+            channel = get_next_buffer_channel_pointer<num_channels>(channel);
             eth_noc_async_write_barrier();
         }
     }
     if constexpr(rem_num_pages > 0) {
-        uint32_t src_addr = uint32_t(curr_addr) + 32;
-        eth_wait_for_receiver_done_v2(curr_addr);
+        const uint32_t& src_addr = local_l1_src_addrs[channel];
+        eth_wait_receiver_done(channel);
         read_chunk<src_is_dram>(input_page_idx, src_addr, s, rem_num_pages, page_size);
         write_chunk_non_blocking<dst_is_dram>(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
-        eth_send_bytes_v2(curr_addr, src_addr, src_addr, rem_num_bytes, rem_num_bytes_per_send, rem_num_bytes_per_send_word_size);
-        eth_send_done_v2(curr_addr);
-        std::swap(curr_addr, next_addr);
+        eth_send_bytes(src_addr, src_addr, rem_num_bytes, rem_num_bytes_per_send, rem_num_bytes_per_send_word_size, channel);
+        eth_send_done(channel);
+        channel = get_next_buffer_channel_pointer<num_channels>(channel);
         eth_noc_async_write_barrier();
     }
 
@@ -152,29 +167,31 @@ void kernel_main() {
         row_idx = row_start_idx;
         if constexpr(num_full_chunks > 0) {
             for (uint32_t c = 0; c < num_full_chunks; ++c) {
-                eth_noc_semaphore_wait_v2(sender_semaphore_addr_ptr, sem_idx);
+                eth_noc_semaphore_wait_min(sender_semaphore_addr_ptr, sem_idx);
                 sem_idx++;
                 // This function also increments input_page_idx
-                uint32_t src_addr = uint32_t(curr_addr) + 32;
-                eth_wait_for_receiver_done_v2(curr_addr);
+                const uint32_t& src_addr = local_l1_src_addrs[channel];
+                eth_wait_receiver_done(channel);
                 read_chunk<dst_is_dram>(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, num_pages, page_size);
-                eth_send_bytes_v2(curr_addr, src_addr, src_addr, num_bytes, num_bytes_per_send, num_bytes_per_send_word_size);
-                eth_send_done_v2(curr_addr);
-                std::swap(curr_addr, next_addr);
+                eth_send_bytes(src_addr, src_addr, num_bytes, num_bytes_per_send, num_bytes_per_send_word_size, channel);
+                eth_send_done(channel);
+                channel = get_next_buffer_channel_pointer<num_channels>(channel);
             }
         }
         if constexpr(rem_num_pages > 0) {
-            eth_noc_semaphore_wait_v2(sender_semaphore_addr_ptr, sem_idx);
+            eth_noc_semaphore_wait_min(sender_semaphore_addr_ptr, sem_idx);
             sem_idx++;
-            uint32_t src_addr = uint32_t(curr_addr) + 32;
-            eth_wait_for_receiver_done_v2(curr_addr);
+            const uint32_t& src_addr = local_l1_src_addrs[channel];
+            eth_wait_receiver_done(channel);
             read_chunk<dst_is_dram>(output_page_idx, col_idx, row_idx, src_addr, d, num_cols, num_rows, col_offset, row_offset, rem_num_pages, page_size);
-            eth_send_bytes_v2(curr_addr, src_addr, src_addr, rem_num_bytes, rem_num_bytes_per_send, rem_num_bytes_per_send_word_size);
-            eth_send_done_v2(curr_addr);
-            std::swap(curr_addr, next_addr);
+            eth_send_bytes(src_addr, src_addr, rem_num_bytes, rem_num_bytes_per_send, rem_num_bytes_per_send_word_size, channel);
+            eth_send_done(channel);
+            channel = get_next_buffer_channel_pointer<num_channels>(channel);
         }
     }
-    eth_wait_for_receiver_done_v2(curr_addr);
-    eth_wait_for_receiver_done_v2(next_addr);
+    for (uint32_t i = 0; i < num_channels; ++i) {
+        eth_wait_receiver_done(i);
+    }
     noc_semaphore_set(sender_semaphore_addr_ptr, 0);
+
 }

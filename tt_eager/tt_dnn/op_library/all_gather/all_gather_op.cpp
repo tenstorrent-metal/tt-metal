@@ -18,22 +18,43 @@ namespace tt_metal {
 
 void AllGather::validate(const std::vector<Tensor> &input_tensors) const {
     TT_FATAL(input_tensors.size() == 1);
-    const auto& layout = input_tensors[0].layout();
-    const auto& dtype = input_tensors[0].dtype();
-    const auto& page_size = input_tensors[0].buffer()->page_size();
-    TT_FATAL(page_size <= all_gather_buffer_params::MAX_BUFFER, "Page size too large");
+    const auto& input_tensor = input_tensors[0];
+    const auto& layout = input_tensor.layout();
+    const auto& dtype = input_tensor.dtype();
+    const auto& page_size = input_tensor.buffer()->page_size();
+    TT_FATAL(page_size <= all_gather_buffer_params::eth_buffer_size, "Page size too large");
     TT_FATAL(page_size % 32 == 0);
-
     // TODO: Validate ring
-    TT_FATAL(input_tensors[0].storage_type() == StorageType::DEVICE, "Operands to all_gather need to be on device!");
-    TT_FATAL(input_tensors[0].buffer() != nullptr , "Operands to all_gather need to be allocated in buffers on device!");
-    TT_FATAL(input_tensors[0].memory_config().memory_layout == TensorMemoryLayout::INTERLEAVED);
+    TT_FATAL(input_tensor.storage_type() == StorageType::DEVICE, "Operands to all_gather need to be on device!");
+    TT_FATAL(input_tensor.buffer() != nullptr , "Operands to all_gather need to be allocated in buffers on device!");
     TT_FATAL(this->num_links > 0);
     if (this->receiver_device_id == this->sender_device_id) {
-        TT_FATAL(input_tensors[0].device()->get_ethernet_sockets(this->receiver_device_id).size() >= 2 * this->num_links, "2 Device all gather requires at least 2 eth connections per link");
+        TT_FATAL(input_tensor.device()->get_ethernet_sockets(this->receiver_device_id).size() >= 2 * this->num_links, "2 Device all gather requires at least 2 eth connections per link");
     } else {
-        TT_FATAL(input_tensors[0].device()->get_ethernet_sockets(this->receiver_device_id).size() >= this->num_links, "All gather requires at least 1 eth connection per link between sender and receiver device");
-        TT_FATAL(input_tensors[0].device()->get_ethernet_sockets(this->sender_device_id).size() >= this->num_links, "All gather requires at least 1 eth connection per link between sender and receiver device");
+        TT_FATAL(input_tensor.device()->get_ethernet_sockets(this->receiver_device_id).size() >= this->num_links, "All gather requires at least 1 eth connection per link between sender and receiver device");
+        TT_FATAL(input_tensor.device()->get_ethernet_sockets(this->sender_device_id).size() >= this->num_links, "All gather requires at least 1 eth connection per link between sender and receiver device");
+    }
+    if (input_tensor.is_sharded()) {
+        // TODO: Kernels should already support concatting shards on width or height
+        // We just need to take in a param to handle this
+        // Currently width/block sharding will concat on width, height sharding will concat on height
+        TT_FATAL(this->output_mem_config.memory_layout == input_tensor.memory_config().memory_layout);
+        if (this->output_mem_config.shard_spec.has_value()) {
+            const auto input_shard_spec = input_tensor.shard_spec().value();
+            const auto output_shard_spec = this->output_mem_config.shard_spec.value();
+            TT_FATAL(input_shard_spec.grid == output_shard_spec.grid);
+            TT_FATAL(input_shard_spec.orientation == output_shard_spec.orientation);
+            if (input_tensor.memory_config().memory_layout == TensorMemoryLayout::HEIGHT_SHARDED) {
+                TT_FATAL(input_shard_spec.shape[0] * this->ring_size == output_shard_spec.shape[0]);
+                TT_FATAL(input_shard_spec.shape[1] == output_shard_spec.shape[1]);
+            } else {
+                TT_FATAL(input_shard_spec.shape[0] == output_shard_spec.shape[0]);
+                TT_FATAL(input_shard_spec.shape[1] * this->ring_size == output_shard_spec.shape[1]);
+            }
+        }
+    } else {
+        TT_FATAL(input_tensor.memory_config().memory_layout == TensorMemoryLayout::INTERLEAVED);
+        TT_FATAL(this->output_mem_config.memory_layout == TensorMemoryLayout::INTERLEAVED);
     }
 }
 
@@ -45,11 +66,34 @@ std::vector<Shape> AllGather::compute_output_shapes(const std::vector<Tensor> &i
 
 std::vector<Tensor> AllGather::create_output_tensors(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor = input_tensors[0];
-    return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.dtype(), input_tensor.layout(), this->output_mem_config);
+    if (this->output_mem_config.is_sharded()) {
+        auto mem_config = this->output_mem_config;
+        if (!mem_config.shard_spec.has_value()) {
+            ShardSpec shard_spec = input_tensor.shard_spec().value();
+            if (mem_config.memory_layout != TensorMemoryLayout::HEIGHT_SHARDED) {
+                shard_spec.shape[1] = shard_spec.shape[1] * this->ring_size;
+            } else {
+                shard_spec.shape[0] = shard_spec.shape[0] * this->ring_size;
+            }
+        }
+        const auto output_shape = this->compute_output_shapes(input_tensors)[0];
+        return {create_sharded_device_tensor(
+                output_shape,
+                input_tensor.dtype(),
+                input_tensor.layout(),
+                input_tensor.device(),
+                mem_config)};
+    } else {
+        return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.dtype(), input_tensor.layout(), this->output_mem_config);
+    }
 }
 
 operation::ProgramWithCallbacks AllGather::create_program(const std::vector<Tensor> & input_tensors, std::vector<Tensor> &output_tensors) const {
-    return all_gather_multi_core(input_tensors[0], output_tensors[0], this->dim, this->num_links, this->ring_size, this->ring_index, this->receiver_device_id, this->sender_device_id);
+    if (input_tensors[0].is_sharded()) {
+        return all_gather_multi_core_sharded(input_tensors[0], output_tensors[0], this->dim, this->num_links, this->ring_size, this->ring_index, this->receiver_device_id, this->sender_device_id);
+    } else {
+        return all_gather_multi_core(input_tensors[0], output_tensors[0], this->dim, this->num_links, this->ring_size, this->ring_index, this->receiver_device_id, this->sender_device_id);
+    }
 }
 
 tt::stl::reflection::Attributes AllGather::attributes() const {

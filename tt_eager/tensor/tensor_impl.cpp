@@ -85,16 +85,7 @@ bool enough_work_for_sharding(const Shape& shape, std::array<uint32_t, 2> shard_
 }
 
 std::array<uint32_t, 2> get_sharded_page_shape(Layout layout, const Shape& shape, DataType dtype, uint32_t num_shards, std::array<uint32_t, 2> shard_shape) {
-    uint32_t W = shape[-1];
-    uint32_t H = shape[-2];
-    uint32_t C = shape[1];
-    uint32_t N = shape[1];
-    uint32_t NCH = N*C*H;
-    uint32_t page_size = 0;
     std::array<uint32_t, 2> page_shape = {constants::TILE_HEIGHT, constants::TILE_WIDTH};
-
-
-    uint32_t size_of_element = element_size_bytes_wrapper(dtype);
 
     //Physical limitation in FD for now
     switch (layout) {
