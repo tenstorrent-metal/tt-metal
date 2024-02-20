@@ -23,6 +23,9 @@
 #include "hostdevcommon/common_values.hpp"
 #include "risc_attribs.h"
 #include "third_party/umd/device/tt_silicon_driver_common.hpp"
+#ifndef COMPILE_FOR_ERISC
+#include "debug/dprint.h"
+#endif
 
 extern uint8_t noc_index;
 
@@ -147,6 +150,12 @@ void cb_push_back(const int32_t operand, const int32_t num_pages) {
     // producer always writes into contiguous memory, it cannot wrap
     if (cb_interface[operand].fifo_wr_ptr >= cb_interface[operand].fifo_limit) {
         // TODO: change this to fifo_wr_ptr
+        #ifndef COMPILE_FOR_ERISC
+        if (cb_interface[operand].fifo_wr_ptr > cb_interface[operand].fifo_limit) {
+            DPRINT << "BAD STATE" << ENDL();
+            while(true);
+        }
+        #endif
         cb_interface[operand].fifo_wr_ptr -= cb_interface[operand].fifo_size;
     }
 }
@@ -1623,6 +1632,9 @@ class Buffer {
 
 
     void noc_async_write_buffer(uint32_t src, const uint32_t id, const uint32_t num_pages, const uint32_t offset=0) {
+        #ifndef COMPILE_FOR_ERISC
+        DPRINT << "BUFFER WRITE" << ENDL();
+        #endif
         if (this->sharded) {
             noc_async_sharded_read_write_helper<false>(this->num_cores_, this->page_size_,
                                                 this->bank_base_address, this->base_command_addr_,
@@ -1644,6 +1656,9 @@ class Buffer {
     }
 
     void noc_async_read_buffer(uint32_t dst, const uint32_t id, const uint32_t num_pages, const uint32_t offset=0) {
+        #ifndef COMPILE_FOR_ERISC
+        DPRINT << "BUFFER READ" << ENDL();
+        #endif
         if (this->sharded) {
             noc_async_sharded_read_write_helper<true>(this->num_cores_, this->page_size_,
                                             this->bank_base_address, this->base_command_addr_,

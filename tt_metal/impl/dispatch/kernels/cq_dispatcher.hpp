@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: © 2023 Tenstorrent Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
+#pragma once
 
 #include "dataflow_api.h"
 #include "tt_metal/impl/dispatch/kernels/command_queue_common.hpp"
@@ -33,9 +34,6 @@ void noc_async_write_multicast_one_packet_no_path_reserve(
     noc_nonposted_writes_num_issued[noc_index] += 1;
     noc_nonposted_writes_acked[noc_index] += num_dests;
 }
-
-FORCE_INLINE
-uint32_t get_read_ptr(db_cb_config_t* db_cb_config) { return (db_cb_config->rd_ptr_16B) << 4; }
 
 FORCE_INLINE volatile uint32_t* get_cq_completion_write_ptr() {
     return reinterpret_cast<volatile uint32_t*>(CQ_COMPLETION_WRITE_PTR);
@@ -92,58 +90,6 @@ void completion_queue_push_back(uint32_t push_size_B) {
     notify_host_of_completion_queue_write_pointer<host_completion_queue_write_ptr_addr>();
 }
 
-FORCE_INLINE void write_buffers(
-    db_cb_config_t* db_cb_config,
-    const db_cb_config_t* remote_db_cb_config,
-    volatile tt_l1_ptr uint32_t* command_ptr,
-    uint32_t num_destinations,
-    bool sharded,
-    uint32_t sharded_buffer_num_cores,
-    uint64_t producer_noc_encoding,
-    uint32_t producer_consumer_transfer_num_pages) {
-
-    for (uint32_t i = 0; i < num_destinations; i++) {
-        const uint32_t bank_base_address = command_ptr[1];
-        const uint32_t num_pages = command_ptr[2];
-        const uint32_t page_size = command_ptr[3];
-        const uint32_t dst_buf_type = command_ptr[5];
-        const uint32_t dst_page_index = command_ptr[7];
-
-        uint32_t num_to_write;
-        uint32_t src_addr = get_read_ptr(db_cb_config);
-        uint32_t l1_consumer_fifo_limit = src_addr + (db_cb_config->total_size_16B << 4);
-
-        BufferType buffer_type = (BufferType)dst_buf_type;
-        Buffer buffer;
-        if (buffer_type == BufferType::SYSTEM_MEMORY or not(sharded)) {
-            buffer.init(buffer_type, bank_base_address, page_size);
-        }
-        else {
-            buffer.init_sharded(page_size, sharded_buffer_num_cores, bank_base_address,
-                            command_ptr + COMMAND_PTR_SHARD_IDX);
-        }
-
-        uint32_t page_id = dst_page_index;
-        uint32_t end_page_id = page_id + num_pages;
-        while (page_id < end_page_id) {
-            num_to_write = min(end_page_id - page_id, producer_consumer_transfer_num_pages);
-            multicore_cb_wait_front(db_cb_config, num_to_write);
-            uint32_t src_addr = get_read_ptr(db_cb_config);
-            buffer.noc_async_write_buffer(src_addr, page_id, num_to_write);
-            noc_async_writes_flushed();
-            multicore_cb_pop_front(
-                db_cb_config,
-                remote_db_cb_config,
-                producer_noc_encoding,
-                (l1_consumer_fifo_limit >> 4),
-                num_to_write,
-                db_cb_config->page_size_16B);
-            page_id += num_to_write;
-        }
-    }
-    noc_async_write_barrier();
-}
-
 template <bool multicast>
 FORCE_INLINE void write_program_page(uint32_t page_addr, volatile tt_l1_ptr uint32_t*& command_ptr, bool last_page) {
     uint32_t num_transfers = command_ptr[0];
@@ -180,11 +126,16 @@ FORCE_INLINE void program_page_transfer(
     uint64_t producer_noc_encoding,
     uint32_t producer_consumer_transfer_num_pages,
     uint32_t num_pages_in_transfer) {
-    uint32_t l1_consumer_fifo_limit = get_read_ptr(db_cb_config) + (db_cb_config->total_size_16B << 4);
+    uint32_t l1_consumer_fifo_limit = (db_cb_config->rd_ptr_16B << 4) + (db_cb_config->total_size_16B << 4);
+    DPRINT << "MY DB CONFIG: " << uint32_t(db_cb_config) << ENDL();
+    // while(true);
+    DPRINT << "producer_consumer_transfer_num_pages " << producer_consumer_transfer_num_pages << ENDL();
+    DPRINT << "NPIT: " << num_pages_in_transfer << ENDL();
     for (uint32_t page_idx = 0; page_idx < num_pages_in_transfer;) {
         uint32_t num_to_write = min(num_pages_in_transfer - page_idx, producer_consumer_transfer_num_pages);
         multicore_cb_wait_front(db_cb_config, num_to_write);
-        uint32_t src_addr = get_read_ptr(db_cb_config);
+        DPRINT << "DONE WAIT FOR PAGES" << ENDL();
+        uint32_t src_addr = (db_cb_config->rd_ptr_16B) << 4;
         for (uint32_t i = 0; i < num_to_write; i++) {
             write_program_page<multicast>(src_addr, command_ptr, i == num_to_write - 1);
             src_addr += DeviceCommand::PROGRAM_PAGE_SIZE;
@@ -202,6 +153,18 @@ FORCE_INLINE void program_page_transfer(
 }
 
 FORCE_INLINE
+void reset_dispatch_message_addr() {
+    /*
+        GO signals are just data within pages, so we need to set
+        our local 'recv' address value to 0 before we initiate
+        any transfers
+    */
+    volatile tt_l1_ptr uint32_t* message_addr_ptr =
+        reinterpret_cast<volatile tt_l1_ptr uint32_t*>(DISPATCH_MESSAGE_ADDR);
+    *message_addr_ptr = 0;
+}
+
+FORCE_INLINE
 void write_and_launch_program(
     db_cb_config_t* db_cb_config,
     const db_cb_config_t* remote_db_cb_config,
@@ -213,13 +176,6 @@ void write_and_launch_program(
     if (not num_pages) {
         return;
     }
-
-    // GO signals are just data within pages, so we need to set
-    // our local 'recv' address value to 0 before we initiate
-    // any transfers
-    volatile tt_l1_ptr uint32_t* message_addr_ptr =
-        reinterpret_cast<volatile tt_l1_ptr uint32_t*>(DISPATCH_MESSAGE_ADDR);
-    *message_addr_ptr = 0;
 
     volatile tt_l1_ptr CommandHeader* header = (CommandHeader*)command_ptr;
     command_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(program_transfer_start_addr);
