@@ -5,10 +5,34 @@
 #include "tt_metal/impl/dispatch/kernels/cq_prefetcher.hpp"
 #include "debug/dprint.h"
 
-template <PullAndRelayType src_pr_type, PullAndRelayType dst_pr_type>
+template <bool program_src_buffer, bool program_dst_buffer>
 FORCE_INLINE
-void pull_and_relay_helper(volatile tt_l1_ptr uint32_t* buffer_transfer_ptr, PullAndRelayCfg& src_pr_cfg, PullAndRelayCfg& dst_pr_cfg, uint32_t page_size, uint32_t num_pages_to_read, uint32_t num_pages_to_write) {
+void program_dynamic_buffers(volatile tt_l1_ptr uint32_t* buffer_transfer_ptr, PullAndRelayCfg& src_pr_cfg, PullAndRelayCfg& dst_pr_cfg, uint32_t page_size, uint32_t num_pages_to_read, uint32_t num_pages_to_write) {
     // TODO(agrebenisan): Make buf transfer a struct
+    uint32_t src_bank_base_address = buffer_transfer_ptr[0];
+    uint32_t dst_bank_base_address = buffer_transfer_ptr[1];
+    uint32_t num_pages = buffer_transfer_ptr[2];
+    uint32_t src_buf_type = buffer_transfer_ptr[4];
+    uint32_t dst_buf_type = buffer_transfer_ptr[5];
+    uint32_t src_page_index = buffer_transfer_ptr[6];
+    uint32_t dst_page_index = buffer_transfer_ptr[7];
+
+    if constexpr (program_src_buffer) {
+        src_pr_cfg.buff_cfg.buffer.init((BufferType)src_buf_type, src_bank_base_address, page_size);
+        src_pr_cfg.buff_cfg.page_id = src_page_index;
+        src_pr_cfg.num_pages_to_read = num_pages_to_read;
+    }
+
+    if constexpr (program_dst_buffer) {
+        dst_pr_cfg.buff_cfg.buffer.init((BufferType)dst_buf_type, dst_bank_base_address, page_size);
+        dst_pr_cfg.buff_cfg.page_id = dst_page_index;
+        dst_pr_cfg.num_pages_to_write = num_pages_to_write;
+    }
+    // pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::BUFFER>(src_pr_cfg, dst_pr_cfg, num_pages);
+}
+
+FORCE_INLINE
+void pull_and_relay_buffer_to_cb(volatile tt_l1_ptr uint32_t* buffer_transfer_ptr, PullAndRelayCfg& src_pr_cfg, PullAndRelayCfg& dst_pr_cfg, uint32_t page_size, uint32_t num_pages_to_read, uint32_t num_pages_to_write) {
     uint32_t src_bank_base_address = buffer_transfer_ptr[0];
     uint32_t dst_bank_base_address = buffer_transfer_ptr[1];
     uint32_t num_pages = buffer_transfer_ptr[2];
@@ -19,12 +43,6 @@ void pull_and_relay_helper(volatile tt_l1_ptr uint32_t* buffer_transfer_ptr, Pul
 
     src_pr_cfg.buff_cfg.buffer.init((BufferType)src_buf_type, src_bank_base_address, page_size);
     src_pr_cfg.buff_cfg.page_id = src_page_index;
-    src_pr_cfg.num_pages_to_read = num_pages_to_read;
-    dst_pr_cfg.buff_cfg.buffer.init((BufferType)dst_buf_type, dst_bank_base_address, page_size);
-    dst_pr_cfg.buff_cfg.page_id = dst_page_index;
-    dst_pr_cfg.num_pages_to_write = num_pages_to_write;
-
-    pull_and_relay<src_pr_type, dst_pr_type>(src_pr_cfg, dst_pr_cfg, num_pages);
 }
 
 void kernel_main() {
@@ -39,8 +57,6 @@ void kernel_main() {
     constexpr uint32_t consumer_data_buffer_size = get_compile_time_arg_val(7);
     constexpr uint32_t src_in_host_memory = true;//get_compile_time_arg_val(8);
 
-    DPRINT << "DATA SECTION ADDR: " << data_section_addr << ENDL();
-
     setup_issue_queue_read_interface(issue_queue_start_addr, issue_queue_size);
 
     // Initialize the producer/consumer DB semaphore
@@ -52,8 +68,6 @@ void kernel_main() {
 
     volatile tt_l1_ptr uint32_t* db_semaphore_addr =
         reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_semaphore(0));  // Should be initialized to 2 by host
-
-    DPRINT << "SEM INIT: " << db_semaphore_addr[0] << ENDL();
 
     PullAndRelayCfg src_pr_cfg;
     PullAndRelayCfg dst_pr_cfg;
@@ -74,25 +88,17 @@ void kernel_main() {
         remote_cb_size);
 
     // Set up dispatch core CB
-    dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
-    // dst_pr_cfg.cb_size_16B = consumer_data_buffer_size >> 4;
-    // dst_pr_cfg.cb_num_pages = command_data_buffer_size / DeviceCommand::PROGRAM_PAGE_SIZE;
-    // dst_pr_cfg.cb_fifo_limit_16B = ...;
+    dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg = local_multicore_cb_cfg;
+    dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg = remote_multicore_cb_cfg;
     dst_pr_cfg.cb_buff_cfg.remote_noc_encoding = remote_noc_encoding;
-    // dst_pr_cfg.local_multicore_cb_cfg = 0;
-
-    // DPRINT << "REMOTE CB DATA" << ENDL();
-    // DPRINT << "num_pages: " << dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg->num_pages << ENDL();
-    // DPRINT << "page_size_16B: " << dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg->page_size_16B << ENDL();
-    // DPRINT << "total_size_16B: " << dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg->total_size_16B << ENDL();
-    // DPRINT << "rd_ptr_16B: " << dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg->rd_ptr_16B << ENDL();
-    // DPRINT << "wr_ptr_16B: " << dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg->wr_ptr_16B << ENDL();
-    DPRINT << "MY_X: " << (uint32_t) my_x[0] << ", MY_Y: " << (uint32_t) my_y[0] << ENDL();
+    DPRINT << "REMOTE NOC: " << remote_noc_encoding << ENDL();
+    DPRINT << "LOCAL ADDRESS: " << uint32_t(local_multicore_cb_cfg) << ENDL();
+    DPRINT << "REMOTE ADDRESS: " << uint32_t(remote_multicore_cb_cfg) << ENDL();
     while (true) {
         if constexpr (src_in_host_memory) {
-            DPRINT << "WAIT FRONT" << ENDL();
+            DPRINT << "WAIT FOR CMD" << ENDL();
             issue_queue_wait_front();
-            DPRINT << "DONE WAITING" << ENDL();
+            DPRINT << "DONE WAIT FOR CMD" << ENDL();
             uint32_t rd_ptr = (cq_read_interface.issue_fifo_rd_ptr << 4);
             uint64_t src_noc_addr = pcie_core_noc_encoding | rd_ptr;
             // DPRINT << "READING FROM " << rd_ptr << ENDL();
@@ -120,7 +126,7 @@ void kernel_main() {
         bool is_program = header->is_program_buffer;
         bool issue_wrap = (DeviceCommand::WrapRegion)header->wrap == DeviceCommand::WrapRegion::ISSUE;
 
-        DPRINT << "PROD NUM PAGES: " << producer_cb_num_pages << ENDL();
+        DPRINT << "IS PROGRAM: " << (uint32_t)is_program << ENDL();
 
         db_cb_config_t* db_cb_config = get_local_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
         const db_cb_config_t* remote_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
@@ -137,7 +143,7 @@ void kernel_main() {
         wait_consumer_space_available(db_semaphore_addr);
         relay_command<command_start_addr, consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch, remote_noc_encoding);
         if (stall) {
-            DPRINT << "WAIT CONSUMER IDLE" << ENDL();
+            // DPRINT << "WAIT CONSUMER IDLE" << ENDL();
             wait_consumer_idle<2>(db_semaphore_addr);
         }
 
@@ -145,21 +151,29 @@ void kernel_main() {
         // DPRINT << "is_program: " << (uint32_t)is_program << ENDL();
         volatile tt_l1_ptr uint32_t* buffer_transfer_ptr = command_ptr + DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
 
+        constexpr bool program_src_buffer = true;
+        constexpr bool program_dst_buffer = true;
         if (is_program) {
+            // DPRINT << "UPDATE SEMS FOR ENQUEUE PROGRAM" << ENDL();
             update_producer_consumer_sync_semaphores(my_noc_encoding, remote_noc_encoding, db_semaphore_addr, get_semaphore(0));
-            while(true);
-            uint32_t tmp;
-            pull_and_relay_helper<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER>(buffer_transfer_ptr, src_pr_cfg, dst_pr_cfg, page_size, tmp, tmp);
+            uint32_t num_pages_to_read = remote_cb_num_pages / 2;
+            uint32_t num_pages_to_write = 4;
+            // DPRINT << "PULL AND RELAY RT ARGS DBR" << ENDL();
+            program_dynamic_buffers<program_src_buffer, not program_dst_buffer>(buffer_transfer_ptr, src_pr_cfg, dst_pr_cfg, page_size, num_pages_to_read, num_pages_to_write);
+            // DPRINT << "PULL AND RELAY RT ARGS" << ENDL();
+            pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER>(src_pr_cfg, dst_pr_cfg, num_pages);
             buffer_transfer_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
-            pull_and_relay_helper<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER>(buffer_transfer_ptr, src_pr_cfg, dst_pr_cfg, page_size, tmp, tmp);
+            // DPRINT << "PULL AND RELAY BINARIES AND GO SIGNALS" << ENDL();
+            // program_dynamic_buffers<program_src_buffer, not program_dst_buffer>(buffer_transfer_ptr, src_pr_cfg, dst_pr_cfg, page_size, num_pages_to_read, num_pages_to_write);
+            // pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER>(src_pr_cfg, dst_pr_cfg, num_pages);
         } else {
             uint32_t num_pages_to_read = producer_cb_num_pages / 2;
             uint32_t num_pages_to_write = producer_consumer_transfer_num_pages;
-            pull_and_relay_helper<PullAndRelayType::BUFFER, PullAndRelayType::BUFFER>(buffer_transfer_ptr, src_pr_cfg, dst_pr_cfg, page_size, producer_cb_num_pages / 2, producer_consumer_transfer_num_pages);
+            constexpr bool program_dst_buffer = true;
+            program_dynamic_buffers<program_src_buffer, program_dst_buffer>(buffer_transfer_ptr, src_pr_cfg, dst_pr_cfg, page_size, num_pages_to_read, num_pages_to_write);
+            pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::BUFFER>(src_pr_cfg, dst_pr_cfg, num_pages);
             update_producer_consumer_sync_semaphores(my_noc_encoding, remote_noc_encoding, db_semaphore_addr, get_semaphore(0));
         }
-
-        // DPRINT << "Done data movement" << ENDL();
 
         // Need some synch mechanism for dispatch core to update completion queue
         issue_queue_pop_front<host_issue_queue_read_ptr_addr>(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + issue_data_size);

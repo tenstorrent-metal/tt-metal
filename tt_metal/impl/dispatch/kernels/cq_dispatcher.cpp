@@ -30,6 +30,8 @@ void kernel_main() {
     uint64_t producer_noc_encoding = uint64_t(NOC_XY_ENCODING(PRODUCER_NOC_X, PRODUCER_NOC_Y)) << 32;
     uint64_t consumer_noc_encoding = uint64_t(NOC_XY_ENCODING(my_x[0], my_y[0])) << 32;
 
+    DPRINT << "NOC NOC: " << consumer_noc_encoding << ENDL();
+
     setup_completion_queue_write_interface(completion_queue_start_addr, completion_queue_size);
     while (true) {
         // Wait for producer to supply a command
@@ -50,7 +52,7 @@ void kernel_main() {
         db_cb_config_t* db_cb_config = get_local_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
         const db_cb_config_t* remote_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
         uint32_t completion_data_size = header->completion_data_size;
-        DPRINT << "RESERVING BACK: " << completion_data_size << ENDL();
+        // DPRINT << "RESERVING BACK: " << completion_data_size << ENDL();
         completion_queue_reserve_back(completion_data_size);
         write_event(uint32_t(&header->event));
         if (wrap) {
@@ -59,6 +61,7 @@ void kernel_main() {
             notify_host_of_completion_queue_write_pointer<host_completion_queue_write_ptr_addr>();
             noc_async_write_barrier(); // Barrier for now
         } else if (is_program) {
+            DPRINT << "DISPATCHING PROGRAM" << ENDL();
             reset_dispatch_message_addr();
             write_and_launch_program(
                 db_cb_config,
@@ -69,6 +72,7 @@ void kernel_main() {
                 producer_noc_encoding,
                 producer_consumer_transfer_num_pages);
             wait_for_program_completion(num_workers);
+            DPRINT << "FINISHED DISPATCHING PROGRAM" << ENDL();
         }
 
         completion_queue_push_back<completion_queue_start_addr, host_completion_queue_write_ptr_addr>(completion_data_size);

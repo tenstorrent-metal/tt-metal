@@ -6,6 +6,7 @@
 
 #include "dataflow_api.h"
 #include "tt_metal/impl/dispatch/device_command.hpp"
+#include "debug/dprint.h"
 
 #define ATTR_ALIGNL1 __attribute__((aligned(L1_ALIGNMENT)))
 struct db_cb_config_t {
@@ -16,6 +17,7 @@ struct db_cb_config_t {
     volatile uint32_t total_size_16B ATTR_ALIGNL1;  // 16B
     volatile uint32_t rd_ptr_16B ATTR_ALIGNL1;      // 16B
     volatile uint32_t wr_ptr_16B ATTR_ALIGNL1;      // 16B
+    volatile uint32_t fifo_limit_16B ATTR_ALIGNL1;  // 16B
 };
 static constexpr uint32_t l1_db_cb_addr_offset = sizeof(db_cb_config_t);
 
@@ -36,14 +38,15 @@ void db_acquire(volatile uint32_t* semaphore, uint64_t noc_encoding) {
 // Local refers to the core that is calling this function
 tt_l1_ptr db_cb_config_t* get_local_db_cb_config(uint32_t base_addr, bool db_buf_switch) {
     // TODO: remove multiply here
-    db_cb_config_t* db_cb_config = (db_cb_config_t*)(base_addr + (db_buf_switch * l1_db_cb_addr_offset));
+    // db_cb_config_t* db_cb_config = (db_cb_config_t*)(base_addr + (db_buf_switch * l1_db_cb_addr_offset));
+    db_cb_config_t* db_cb_config = (db_cb_config_t*)(base_addr);
     return db_cb_config;
 }
 
 // Remote refers to any other core on the same chip
 tt_l1_ptr db_cb_config_t* get_remote_db_cb_config(uint32_t base_addr, bool db_buf_switch) {
     // TODO: remove multiply here
-    db_cb_config_t* db_cb_config = (db_cb_config_t*)(base_addr + (db_buf_switch * l1_db_cb_addr_offset));
+    db_cb_config_t* db_cb_config = (db_cb_config_t*)(base_addr);
     return db_cb_config;
 }
 

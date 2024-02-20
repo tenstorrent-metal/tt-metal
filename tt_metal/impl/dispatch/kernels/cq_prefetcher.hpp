@@ -136,6 +136,7 @@ void program_consumer_cb(
     db_cb_config->total_size_16B = cb_size >> 4;
     db_cb_config->rd_ptr_16B = cb_start_rd_addr >> 4;
     db_cb_config->wr_ptr_16B = cb_start_wr_addr >> 4;
+    db_cb_config->fifo_limit_16B = (cb_start_rd_addr + cb_size) >> 4;
 
     noc_async_write(
         (uint32_t)(db_cb_config), consumer_noc_encoding | (uint32_t)(remote_db_cb_config), sizeof(db_cb_config_t));
@@ -193,10 +194,7 @@ enum PullAndRelayType {
 };
 
 struct PullAndRelayCircularBuffer {
-    uint32_t cb_size,
-             cb_num_pages,
-             cb_fifo_limit_16B,
-             remote_noc_encoding;
+    uint64_t remote_noc_encoding;
     volatile tt_l1_ptr db_cb_config_t* local_multicore_cb_cfg;
     volatile tt_l1_ptr db_cb_config_t* remote_multicore_cb_cfg;
 };
@@ -227,20 +225,20 @@ void pull_and_relay(
 ) {
     static_assert(src_type == PullAndRelayType::CIRCULAR_BUFFER or src_type == PullAndRelayType::BUFFER);
     static_assert(dst_type == PullAndRelayType::CIRCULAR_BUFFER or dst_type == PullAndRelayType::BUFFER);
-
     uint32_t num_reads_issued, num_reads_completed, num_writes_completed;
     num_reads_issued = num_reads_completed = num_writes_completed = 0;
 
     uint32_t num_pages_to_read = min(num_pages, src_pr_cfg.num_pages_to_read);
     uint32_t num_pages_to_write = min(num_pages, dst_pr_cfg.num_pages_to_write);
 
-    DPRINT << "NUM PAGES: " << num_pages << ENDL();
-    DPRINT << "NUM_PAGES_TO_READ: " << src_pr_cfg.num_pages_to_read << ENDL();
-    DPRINT << "NUM_PAGES_TO_WRITE: " << dst_pr_cfg.num_pages_to_write << ENDL();
+    DPRINT << "NUM_PAGES_TO_READ: " << num_pages_to_read << ENDL();
+    DPRINT << "NUM_PAGES_TO_WRITE: " << num_pages_to_write << ENDL();
 
-
-    DPRINT << "READ PTR BEFORE RELAY: " << get_read_ptr(0) << ENDL();
+    // if constexpr (dst_type == PullAndRelayType::CIRCULAR_BUFFER) {
+    //     while(true);
+    // }
     while (num_writes_completed != num_pages) {
+        // DPRINT << "NOT DONE WRITING" << ENDL();
         if (cb_producer_space_available(num_pages_to_read) and num_reads_issued < num_pages) {
             if constexpr (src_type == PullAndRelayType::CIRCULAR_BUFFER) {
                 /*
@@ -254,7 +252,7 @@ void pull_and_relay(
                     buffers when our src is in system memory, or we are pulling in
                     data from local chip SRAM/DRAM.
                 */
-                DPRINT << "READING " << num_pages_to_read << " TO " << get_write_ptr(0) << " FROM " << src_pr_cfg.buff_cfg.page_id << ENDL();
+                // DPRINT << "FETCHING BUFFER" << ENDL();
                 src_pr_cfg.buff_cfg.buffer.noc_async_read_buffer(get_write_ptr(0), src_pr_cfg.buff_cfg.page_id, num_pages_to_read);
                 src_pr_cfg.buff_cfg.page_id += num_pages_to_read;
             }
@@ -275,27 +273,30 @@ void pull_and_relay(
                     In this case, we are relaying data down to a downstream core, usually for
                     the purpose of further relay.
                 */
-                uint32_t temp = 0;
-                uint64_t dst_noc_addr = dst_pr_cfg.cb_buff_cfg.remote_noc_encoding | temp;
-                noc_async_write(get_read_ptr(0), dst_noc_addr, dst_pr_cfg.page_size * num_pages_to_write);
+                // DPRINT << "RELAYING TO CB" << ENDL();
+                uint32_t dst_addr = dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg->wr_ptr_16B << 4;
+                // DPRINT << "GOT DST ADDR" << ENDL();
+                uint64_t dst_noc_addr = dst_pr_cfg.cb_buff_cfg.remote_noc_encoding | dst_addr;
+                // DPRINT << "Relaying to " << dst_addr << ENDL();
+                DPRINT << "PUSH BACK: " << num_pages_to_write << ENDL();
+                noc_async_write(get_read_ptr(0), dst_noc_addr, (dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg->page_size_16B << 4) * num_pages_to_write);
                 multicore_cb_push_back(
-                    dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg,  dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg, dst_pr_cfg.cb_buff_cfg.remote_noc_encoding, dst_pr_cfg.cb_buff_cfg.cb_fifo_limit_16B, num_pages_to_write);
+                    dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg,  dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg, dst_pr_cfg.cb_buff_cfg.remote_noc_encoding, dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg->fifo_limit_16B, num_pages_to_write);
             } else if constexpr (dst_type == PullAndRelayType::BUFFER) {
                 /*
                     In this case, we are writing data directly to a buffer.
                 */
-                // static_assert(false);
-                DPRINT << "WRITING " << num_pages_to_write << " to " << dst_pr_cfg.buff_cfg.page_id << " from " << get_read_ptr(0) << ENDL();
+                // DPRINT << "RELAYING TO BUFFER" << ENDL();
                 dst_pr_cfg.buff_cfg.buffer.noc_async_write_buffer(get_read_ptr(0), dst_pr_cfg.buff_cfg.page_id, num_pages_to_write);
                 dst_pr_cfg.buff_cfg.page_id += num_pages_to_write;
-                DPRINT << "DONE WRITING" << ENDL();
             }
-            noc_async_write_barrier();
-            // noc_async_writes_flushed();
+            noc_async_writes_flushed();
+            // DPRINT << "POP FRONT" << ENDL();
             cb_pop_front(0, num_pages_to_write);
             num_writes_completed += num_pages_to_write;
             num_pages_to_write = min(num_pages - num_writes_completed, dst_pr_cfg.num_pages_to_write);
         }
     }
     noc_async_write_barrier();
+    DPRINT << "DONE P&R" << ENDL();
 }
