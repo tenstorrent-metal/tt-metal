@@ -152,8 +152,6 @@ void MAIN {
             } // in0_num_blocks_w
 
             // cb_intermed1 comes from reader; untilized row-major tile
-            unpack_reconfig_data_format_srca(cb_in1, cb_intermed1);
-            pack_reconfig_data_format(cb_intermed0, out_cb_id);
             cb_wait_front(cb_intermed1, out_num_tiles);
 
             cb_reserve_back(out_cb_id, out_num_tiles);
