@@ -227,8 +227,6 @@ TEST_F (CommonFixture, MatmulSingleCoreSmall){
 }
 
 TEST_F (CommonFixture, MatmulSingleCore){
-    // TODO: Re-enable this test when clash with WatcherWaypoints is fixed.
-    GTEST_SKIP();
     if (!getenv("TT_METAL_SLOW_DISPATCH_MODE")){
         log_info(LogTest, "Fast dispatch buffer memory issue, skipping for now");
         GTEST_SKIP();
