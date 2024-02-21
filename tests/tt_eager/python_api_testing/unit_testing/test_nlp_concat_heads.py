@@ -65,8 +65,8 @@ def run_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_con
 )
 @pytest.mark.parametrize(
     "dtype",
-    (ttl.tensor.DataType.BFLOAT8_B, ttl.tensor.DataType.BFLOAT16),
-    ids=["BFLOAT8_B", "BFLOAT16"],
+    (ttl.tensor.DataType.BFLOAT8_B, ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["BFLOAT8_B", "BFLOAT16", "FLOAT32"],
 )
 @pytest.mark.parametrize(
     "batch, seq_len",

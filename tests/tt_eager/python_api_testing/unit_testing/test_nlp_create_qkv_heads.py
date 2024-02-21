@@ -85,8 +85,8 @@ def run_nlp_create_qkv_heads_falcon7b_test(batch, seq_len, dtype, in0_mem_config
 )
 @pytest.mark.parametrize(
     "dtype",
-    (ttl.tensor.DataType.BFLOAT8_B, ttl.tensor.DataType.BFLOAT16),
-    ids=["BFLOAT8_B", "BFLOAT16"],
+    (ttl.tensor.DataType.BFLOAT8_B, ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["BFLOAT8_B", "BFLOAT16", "FLOAT32"],
 )
 @pytest.mark.parametrize(
     "batch, seq_len",
@@ -200,6 +200,8 @@ def run_nlp_create_qkv_heads_test(
 
     if dtype == ttl.tensor.DataType.BFLOAT8_B:
         pcc = 0.99
+    elif dtype == ttl.tensor.DataType.FLOAT32:  # conversion from fp32 to tf32 will decrease pcc
+        pcc = 0.9999999
     else:
         pcc = 1.0
 
@@ -237,8 +239,8 @@ def run_nlp_create_qkv_heads_test(
 )
 @pytest.mark.parametrize(
     "dtype",
-    (ttl.tensor.DataType.BFLOAT8_B, ttl.tensor.DataType.BFLOAT16),
-    ids=["BFLOAT8_B", "BFLOAT16"],
+    (ttl.tensor.DataType.BFLOAT8_B, ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["BFLOAT8_B", "BFLOAT16", "FLOAT32"],
 )
 @pytest.mark.parametrize(
     "batch, seq_len, head_dim, num_q_heads, num_kv_heads, transpose_k_heads, read_from_input_tensor_kv",
@@ -262,19 +264,27 @@ def test_nlp_create_qkv_heads_test(
     request,
     device,
 ):
-    run_nlp_create_qkv_heads_test(
-        batch,
-        seq_len,
-        head_dim,
-        num_q_heads,
-        num_kv_heads,
-        transpose_k_heads,
-        read_from_input_tensor_kv,
-        dtype,
-        in_mem_config,
-        out_mem_config,
-        device,
-    )
+    if (
+        dtype == ttl.tensor.DataType.FLOAT32
+        and (batch == 111 or batch == 5)
+        and in_mem_config
+        == ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.L1)
+    ):
+        logger.warning("fp32 tensor too large to fit L1")
+    else:
+        run_nlp_create_qkv_heads_test(
+            batch,
+            seq_len,
+            head_dim,
+            num_q_heads,
+            num_kv_heads,
+            transpose_k_heads,
+            read_from_input_tensor_kv,
+            dtype,
+            in_mem_config,
+            out_mem_config,
+            device,
+        )
 
 
 def test_nlp_create_qkv_heads_with_program_cache(use_program_cache, device):
@@ -416,8 +426,8 @@ def run_sharded_nlp_create_qkv_heads_test(
 
 @pytest.mark.parametrize(
     "dtype",
-    (ttl.tensor.DataType.BFLOAT8_B, ttl.tensor.DataType.BFLOAT16),
-    ids=["BFLOAT8_B", "BFLOAT16"],
+    (ttl.tensor.DataType.BFLOAT8_B, ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["BFLOAT8_B", "BFLOAT16", "FLOAT32"],
 )
 @pytest.mark.parametrize(
     "batch, seq_len, head_dim, num_q_heads, num_kv_heads, read_from_input_tensor_kv",
