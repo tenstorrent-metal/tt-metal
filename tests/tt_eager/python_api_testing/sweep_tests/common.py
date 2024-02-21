@@ -52,11 +52,17 @@ def run_tt_lib_test(
 
     result, output = output_comparison_func(pytorch_out, tt_lib_out)
 <<<<<<< HEAD
+<<<<<<< HEAD
 
     logger.info(f"{result} {output}")
 
 =======
     print("result = ", tt_lib_out)
+=======
+    torch.set_printoptions(linewidth=200, precision=5, threshold=10000, edgeitems=17)
+
+    print("TT result = ", tt_lib_out)
+>>>>>>> #0: Add dimension 2,3 support
     print("output = ", pytorch_out)
     print("TT result shape      :", tt_lib_out.shape)
     print("Pytorch Output shape :", pytorch_out.shape)

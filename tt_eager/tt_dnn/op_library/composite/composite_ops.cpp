@@ -17,6 +17,8 @@
 #include "tt_eager/tt_dnn/op_library/pad/pad_op.hpp"
 #include "tt_numpy/functions.hpp"
 #include "tt_dnn/op_library/prod/prod_nc_op.hpp"
+#include "tt_dnn/op_library/permute/permute_op.hpp"
+#include "tt_eager/tt_dnn/op_library/unpad/unpad_op.hpp"
 namespace tt {
 
 namespace tt_metal {
@@ -897,14 +899,44 @@ Tensor xlogy(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& o
 }
 
 Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_config) {
-    if( dim == 0 || 1){
-        std::vector<int64_t> dimension = {dim};
-        Shape input_shape = input_a.shape();
-        Shape required = { (dim == 0) ? 1 : input_shape[0], (dim == 1) ? 1 : input_shape[1] , input_shape[2], input_shape[3]};
-        Tensor result = tt::operations::primary::prod_nc(input_a, zeros( required, input_a.dtype(), input_a.layout(), input_a.device(), output_mem_config), dimension, output_mem_config);
-        return result;
+    Tensor temp = input_a;
+    if(dim == 2){
+        std::vector<int64_t> permute_dims = {2, 0, 1, 3};
+        temp = permute(input_a, permute_dims, output_mem_config);
+    }else if(dim == 3){
+        std::vector<int64_t> permute_dims = {3, 0, 1, 2};
+        temp = permute(input_a, permute_dims, output_mem_config);
+    }
+    Shape input_shape = temp.shape();
+    std::vector<int64_t> dimension = {(dim == 1) ? dim : 0};
+    Tensor result = temp;
+    if((input_shape[2]%32!=0) || (input_shape[3]%32!=0)){
+        const Shape start_index = {0, 0, 0, 0};
+        const Shape required_shape = {input_shape[0], input_shape[1], ((input_shape[2]%32==0) ? input_shape[2] : (input_shape[2] + (32 - (input_shape[2]%32)))), ((input_shape[3]%32==0) ? input_shape[3] : (input_shape[3] + (32 - (input_shape[3]%32))))};
+        Tensor reshape_input_to_tile_size = pad( temp, required_shape, start_index, 1);
+        input_shape = reshape_input_to_tile_size.shape();
+        Shape required = { ((dim == 1) ? input_shape[0] : 1), ((dim == 1) ? 1 : input_shape[1]) , input_shape[2], input_shape[3]};
+        result = tt::operations::primary::prod_nc(reshape_input_to_tile_size, zeros( required, input_a.dtype(), reshape_input_to_tile_size.layout(), input_a.device(), output_mem_config), dimension, output_mem_config);
     }else{
-        return input_a; //need to work on dim 2,3
+        Shape required = { ((dim == 1) ? input_shape[0] : 1), ((dim == 1) ? 1 : input_shape[1]) , input_shape[2], input_shape[3]};
+        result = tt::operations::primary::prod_nc(temp, zeros( required, input_a.dtype(), input_a.layout(), input_a.device(), output_mem_config), dimension, output_mem_config);
+    }
+    if(dim == 0 || dim == 1){
+        return result;
+    }else if(dim == 2){
+        std::vector<int64_t> after_permute_dims = {1, 2, 0, 3};
+        Tensor required = permute(result, after_permute_dims, output_mem_config);
+        input_shape = input_a.shape();
+        const Shape start_index = {0, 0, 0, 0};
+        const Shape end_index = {input_shape[0]-1, input_shape[1]-1, 0, input_shape[3]-1};
+        return unpad( required, start_index, end_index);
+    }else{
+        std::vector<int64_t> after_permute_dims = {1, 2, 3, 0};
+        Tensor required = permute(result, after_permute_dims, output_mem_config);
+        input_shape = input_a.shape();
+        const Shape start_index = {0, 0, 0, 0};
+        const Shape end_index = {input_shape[0]-1, input_shape[1]-1, input_shape[2]-1, 0};
+        return unpad( required, start_index, end_index);
     }
 }
 Tensor prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_config) {
