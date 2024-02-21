@@ -843,8 +843,8 @@ def xlogy(x, y, *args, **kwargs):
     return torch.xlogy(x, y)
 
 
-def prod(x, *args, **kwargs):
-    return torch.prod(x, 0)
+def prod(x, *args, dim, **kwargs):
+    return torch.prod(x, dim)
 
 
 def ldexp(x, y, *args, **kwargs):

@@ -1302,6 +1302,24 @@ def arange(
 
 
 @setup_host_and_device
+def eltwise_prod(
+    x,
+    *args,
+    dim,
+    device,
+    dtype,
+    layout,
+    input_mem_config,
+    output_mem_config,
+    **kwargs,
+):
+    t0 = setup_tt_tensor(x, device, layout[0], input_mem_config[0], dtype[0])
+    t1 = ttl.tensor.prod(t0, dim, output_mem_config=output_mem_config)
+
+    return tt2torch_tensor(t1)
+
+
+@setup_host_and_device
 def eltwise_logical_andi(
     x,
     *args,
@@ -2262,7 +2280,6 @@ eltwise_isposinf = make_unary_op(ttl.tensor.isposinf)
 eltwise_isneginf = make_unary_op(ttl.tensor.isneginf)
 eltwise_isnan = make_unary_op(ttl.tensor.isnan)
 eltwise_logical_not_unary = make_unary_op(ttl.tensor.logical_not_unary)
-eltwise_prod = make_unary_op(ttl.tensor.prod)
 eltwise_i0 = make_unary_op(ttl.tensor.i0)
 
 ################################################

@@ -896,15 +896,19 @@ Tensor xlogy(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& o
     return operation::decorate_as_composite(__func__, _xlogy)(input_a, input_b, output_mem_config);
 }
 
-Tensor _prod(const Tensor& input_a, const MemoryConfig& output_mem_config) {
-    std::vector<int64_t> dim = {0};
-    Shape input_shape = input_a.shape();
-    Shape required = { 1, input_shape[1], input_shape[2], input_shape[3]};
-    Tensor result = tt::operations::primary::prod_nc(input_a, zeros( required, input_a.dtype(), input_a.layout(), input_a.device(), output_mem_config), dim, output_mem_config);
-    return result;
+Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_config) {
+    if( dim == 0 || 1){
+        std::vector<int64_t> dimension = {dim};
+        Shape input_shape = input_a.shape();
+        Shape required = { (dim == 0) ? 1 : input_shape[0], (dim == 1) ? 1 : input_shape[1] , input_shape[2], input_shape[3]};
+        Tensor result = tt::operations::primary::prod_nc(input_a, zeros( required, input_a.dtype(), input_a.layout(), input_a.device(), output_mem_config), dimension, output_mem_config);
+        return result;
+    }else{
+        return input_a; //need to work on dim 2,3
+    }
 }
-Tensor prod(const Tensor& input_a, const MemoryConfig& output_mem_config) {
-    return operation::decorate_as_composite(__func__, _prod)(input_a, output_mem_config);
+Tensor prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_config) {
+    return operation::decorate_as_composite(__func__, _prod)(input_a, dim, output_mem_config);
 }
 
 Tensor _variance_impl(

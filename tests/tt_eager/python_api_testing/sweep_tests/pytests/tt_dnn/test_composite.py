@@ -205,7 +205,7 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
     input_shapes = input_shapes * num_inputs
     datagen_func = datagen_func * num_inputs
     test_args = generation_funcs.gen_default_dtype_layout_device(input_shapes)[0]
-    test_args.update({"scalar": np.random.randint(-100, 100)})
+    # test_args.update({"scalar": np.random.randint(-100, 100)})
     if fn == "arange":
         test_args.update({"start": -10, "end": 1024 - 10, "step": 1})
     elif fn == "polyval":
@@ -230,6 +230,8 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
         test_args.update({"k": np.random.randint(1, 10)})
     elif fn in ["logical_ori", "logical_andi", "logical_xori", "logical_noti"]:
         test_args.update({"immediate": np.random.randint(0, 100)})
+    elif fn in ["prod"]:
+        test_args.update({"dim": 1})
     elif fn in ["isclose"]:
         test_args.update(
             {
