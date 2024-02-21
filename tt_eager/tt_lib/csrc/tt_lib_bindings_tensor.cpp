@@ -532,7 +532,7 @@ void TensorModule(py::module &m_tensor) {
         "Fills the cache tensor in place with the values from input at the specified batch_idx.
     )doc");
     m_tensor.def("update_cache", &update_cache,
-         py::arg("cache").noconvert(), py::arg("input").noconvert(), py::arg("update_idx"), R"doc(
+         py::arg("cache").noconvert(), py::arg("input").noconvert(), py::arg("update_idx"), py::arg("compute_kernel_config").noconvert() = std::nullopt, R"doc(
         "Updates the cache tensor in place with the values from input at the specified update_idx.
     )doc");
 
