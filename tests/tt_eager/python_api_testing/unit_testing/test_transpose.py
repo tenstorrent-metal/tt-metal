@@ -2,11 +2,13 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+import pytest
 import torch
 import numpy as np
 
 import tt_lib as ttl
 from loguru import logger
+from models.utility_functions import is_grayskull
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc, comp_equal
 from models.utility_functions import skip_for_grayskull
 
@@ -52,13 +54,23 @@ def transpose(
         assert ttl.program_cache.num_entries() == expected_program_cache_size
 
 
-def test_transpose_hc(device):
+@pytest.mark.parametrize(
+    "dtype",
+    (ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["bfloat16", "float"],
+)
+def test_transpose_hc(dtype, device):
+    if is_grayskull() and dtype == ttl.tensor.DataType.FLOAT32:
+        pytest.skip("Skipping float32 tests on Grayskull")
+
+    logger.info("transpose on C H dim")
+
     N = 3
     C = 32 * 2
     H = 32 * 4
     W = 32 * 3
     input_shape = (N, C, H, W)
-    transpose(input_shape, device, dim0=1, dim1=-2)
+    transpose(input_shape, device, dim0=1, dim1=-2, input_dtype=dtype)
 
 
 @skip_for_grayskull("Integer formats not supported on Grayskull")
@@ -71,13 +83,21 @@ def test_transpose_wh_uint16(device):
     transpose(input_shape, device, dim0=-2, dim1=-1, input_dtype=ttl.tensor.DataType.UINT16)
 
 
-def test_transpose_hc_program_cache(device, use_program_cache):
+@pytest.mark.parametrize(
+    "dtype",
+    (ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["bfloat16", "float"],
+)
+def test_transpose_hc_program_cache(dtype, device, use_program_cache):
+    if is_grayskull() and dtype == ttl.tensor.DataType.FLOAT32:
+        pytest.skip("Skipping float32 tests on Grayskull")
+
     N = 3
     C = 32 * 2
     H = 32 * 4
     W = 32 * 3
     input_shape = (N, C, H, W)
-    transpose(input_shape, device, dim0=1, dim1=-2, expected_program_cache_size=1)
+    transpose(input_shape, device, dim0=1, dim1=-2, expected_program_cache_size=1, input_dtype=dtype)
 
     # changing shape
     N = 1
@@ -85,7 +105,7 @@ def test_transpose_hc_program_cache(device, use_program_cache):
     H = H * 3
     W = W
     input_shape = (N, C, H, W)
-    transpose(input_shape, device, dim0=1, dim1=-2, expected_program_cache_size=1)
+    transpose(input_shape, device, dim0=1, dim1=-2, expected_program_cache_size=1, input_dtype=dtype)
 
     # changing shape, single core
     N = 1
@@ -95,32 +115,50 @@ def test_transpose_hc_program_cache(device, use_program_cache):
     input_shape = (N, C, H, W)
     # CACHE MISS since its single core
     # Cache size 2 more because of pad op in single core impl + transpose
-    transpose(input_shape, device, dim0=1, dim1=-2, expected_program_cache_size=3)
+    # TODO: this needs debugging the single core untiliz with unpadding
+    if dtype != ttl.tensor.DataType.FLOAT32:
+        transpose(input_shape, device, dim0=1, dim1=-2, expected_program_cache_size=3, input_dtype=dtype)
 
 
-def test_transpose_cn_program_cache(device, use_program_cache):
+@pytest.mark.parametrize(
+    "dtype",
+    (ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["bfloat16", "float"],
+)
+def test_transpose_cn_program_cache(dtype, device, use_program_cache):
+    if is_grayskull() and dtype == ttl.tensor.DataType.FLOAT32:
+        pytest.skip("Skipping float32 tests on Grayskull")
+
     N = 3
     C = 32 * 2
     H = 32 * 4
     W = 32 * 3
     input_shape = (N, C, H, W)
-    transpose(input_shape, device, dim0=0, dim1=1, expected_program_cache_size=1)
+    transpose(input_shape, device, dim0=0, dim1=1, expected_program_cache_size=1, input_dtype=dtype)
 
     N = 1
     C = 32
     H = 32 * 4
     W = 32 * 3
     input_shape = (N, C, H, W)
-    transpose(input_shape, device, dim0=0, dim1=1, expected_program_cache_size=1)
+    transpose(input_shape, device, dim0=0, dim1=1, expected_program_cache_size=1, input_dtype=dtype)
 
 
-def test_transpose_wh_program_cache(device, use_program_cache):
+@pytest.mark.parametrize(
+    "dtype",
+    (ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["bfloat16", "float"],
+)
+def test_transpose_wh_program_cache(dtype, device, use_program_cache):
+    if is_grayskull() and dtype == ttl.tensor.DataType.FLOAT32:
+        pytest.skip("Skipping float32 tests on Grayskull")
+
     N = 3
     C = 32 * 2
     H = 32 * 4
     W = 32 * 3
     input_shape = (N, C, H, W)
-    transpose(input_shape, device, dim0=-2, dim1=-1, expected_program_cache_size=1)
+    transpose(input_shape, device, dim0=-2, dim1=-1, expected_program_cache_size=1, input_dtype=dtype)
 
     # changing shape
     N = 1
@@ -128,7 +166,7 @@ def test_transpose_wh_program_cache(device, use_program_cache):
     H = H * 3
     W = W
     input_shape = (N, C, H, W)
-    transpose(input_shape, device, dim0=-2, dim1=-1, expected_program_cache_size=1)
+    transpose(input_shape, device, dim0=-2, dim1=-1, expected_program_cache_size=1, input_dtype=dtype)
 
     # changing shape, single core
     N = 1
@@ -137,12 +175,20 @@ def test_transpose_wh_program_cache(device, use_program_cache):
     W = 32
     input_shape = (N, C, H, W)
     # CACHE MISS since its single core
-    transpose(input_shape, device, dim0=-2, dim1=-1, expected_program_cache_size=2)
+    transpose(input_shape, device, dim0=-2, dim1=-1, expected_program_cache_size=2, input_dtype=dtype)
 
 
-def test_transpose_wh_sharded_program_cache(device, use_program_cache):
+@pytest.mark.parametrize(
+    "dtype",
+    (ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.FLOAT32),
+    ids=["bfloat16", "float"],
+)
+def test_transpose_wh_sharded_program_cache(dtype, device, use_program_cache):
+    if is_grayskull() and dtype == ttl.tensor.DataType.FLOAT32:
+        pytest.skip("Skipping float32 tests on Grayskull")
+
     compute_grid_size = device.compute_with_storage_grid_size()
-    input_dtype = ttl.tensor.DataType.BFLOAT8_B
+    input_dtype = dtype
 
     N = 32
     C = 2
@@ -236,13 +282,15 @@ def test_transpose_wh_sharded_program_cache(device, use_program_cache):
     )
 
     # shape change also changes shard_spec as shard_shape is dependent on input_shape (resulting in CACHE MISS)
-    transpose(
-        input_shape,
-        device,
-        dim0=-2,
-        dim1=-1,
-        input_mem_config=mem_config,
-        output_mem_config=mem_config,
-        input_dtype=input_dtype,
-        expected_program_cache_size=3,
-    )
+    # tensor cannot fit in L1 for fp32
+    if input_dtype != ttl.tensor.DataType.FLOAT32:
+        transpose(
+            input_shape,
+            device,
+            dim0=-2,
+            dim1=-1,
+            input_mem_config=mem_config,
+            output_mem_config=mem_config,
+            input_dtype=input_dtype,
+            expected_program_cache_size=3,
+        )
