@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include "dataflow_api.h"
+#include "debug/dprint.h"
 
 void kernel_main() {
 
@@ -33,10 +34,16 @@ void kernel_main() {
     // that the stick size dictates tiles c, but stick size
     // doesn't necessarily need to be divisible by tiles c...
     // this is only the case really for tilize
-    const uint32_t num_tiles_block_c = block_row_size / 64; // Assuming 2 bytes per datum, there are 64 bytes per tile row
+
+    DPRINT << pad_value<<ENDL();
+
 
     constexpr bool src0_is_dram          = get_compile_time_arg_val(0) == 1;
     #define stick_size_is_pow2 get_compile_time_arg_val(1) == 1
+    constexpr bool FLOAT32_DTYPE          = get_compile_time_arg_val(3) == 1;
+
+    const uint32_t num_tiles_block_c = FLOAT32_DTYPE ? block_row_size / 128 : block_row_size / 64; // Assuming 2 bytes per datum, there are 64 bytes per tile row
+
     #if (stick_size_is_pow2)
     constexpr uint32_t log_base_2_of_page_size = get_compile_time_arg_val(2);
     const InterleavedPow2AddrGen<src0_is_dram> s = {
@@ -52,9 +59,13 @@ void kernel_main() {
 
     uint32_t stick_id = 0;
 
+            DPRINT << block_row_size<<ENDL();
+
 
     auto pad_blocks = [&](uint32_t num_blocks) {
         for (uint32_t i = 0; i < num_blocks; i++) {
+
+
             cb_reserve_back(cb_id_in0, num_tiles_block_c);
             uint32_t l1_write_addr = get_write_ptr(cb_id_in0);
             // pad the tile by reading values from zero buffer in L1
@@ -62,6 +73,8 @@ void kernel_main() {
             // 8 = tile_height / 4
             for(uint32_t z = 0; z < block_row_size * 8; z++) {
                 dst[z] = pad_value;
+
+
             }
             cb_push_back(cb_id_in0, num_tiles_block_c);
         }

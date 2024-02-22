@@ -33,7 +33,7 @@ void Tilize::validate(const std::vector<Tensor> &input_tensors) const {
     auto width = input_tensor_a.shape()[-1];
     uint32_t stick_s =  width;
     uint32_t num_sticks = input_tensor_a.volume() / width;
-    TT_FATAL(input_tensor_a.dtype() == DataType::BFLOAT16);
+    TT_FATAL(input_tensor_a.dtype() == DataType::BFLOAT16 || input_tensor_a.dtype() == DataType::FLOAT32);
 
     uint32_t stick_size = stick_s * input_tensor_a.element_size(); // Assuming bfloat16 dataformat
 
@@ -101,7 +101,7 @@ void TilizeWithValPadding::validate(const std::vector<Tensor> &input_tensors) co
     TT_FATAL(input_tensor_a.storage_type() == StorageType::DEVICE, "Operands need to be on device!");
     TT_FATAL(input_tensor_a.buffer() != nullptr , "Operands need to be allocated in buffers on device!");
     TT_FATAL(input_tensor_a.layout() == Layout::ROW_MAJOR, "Can only tilize row major data");
-    TT_FATAL(input_tensor_a.dtype() == DataType::BFLOAT16);
+    TT_FATAL(input_tensor_a.dtype() == DataType::BFLOAT16 || input_tensor_a.dtype() == DataType::FLOAT32);
 
     TT_FATAL(input_tensor_a.shape()[0] + this->input_tensor_start[0] <= this->output_tensor_shape[0]);
     TT_FATAL(input_tensor_a.shape()[1] + this->input_tensor_start[1] <= this->output_tensor_shape[1]);

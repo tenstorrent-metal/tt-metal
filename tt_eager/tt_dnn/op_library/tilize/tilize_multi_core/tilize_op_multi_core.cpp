@@ -141,6 +141,8 @@ operation::ProgramWithCallbacks tilize_multi_core_interleaved(const Tensor &a, T
     DataFormat output_cb_data_format = datatype_to_dataformat_converter(output.dtype());
     uint32_t output_single_tile_size = detail::TileSize(output_cb_data_format);
 
+    bool fp32_dest_acc_en = input_cb_data_format == tt::DataFormat::Float32;
+
     int32_t ntiles = a.volume() / TILE_HW;
     uint32_t ntiles_per_block = a.shape()[-1] / TILE_WIDTH;
     uint32_t nblocks = ceil((float) ntiles / ntiles_per_block);
@@ -235,7 +237,7 @@ operation::ProgramWithCallbacks tilize_multi_core_interleaved(const Tensor &a, T
             "tt_eager/tt_dnn/kernels/compute/tilize.cpp",
             core_range,
             ComputeConfig{
-                .compile_args = compute_args});
+                .fp32_dest_acc_en=fp32_dest_acc_en, .compile_args = compute_args});
     }
     if (core_range_cliff.ranges().size() > 0) {
         auto tilize_cliff_kernel_id = CreateKernel(
@@ -243,7 +245,7 @@ operation::ProgramWithCallbacks tilize_multi_core_interleaved(const Tensor &a, T
             "tt_eager/tt_dnn/kernels/compute/tilize.cpp",
             core_range_cliff,
             ComputeConfig{
-                .compile_args = compute_args_cliff});
+                .fp32_dest_acc_en=fp32_dest_acc_en, .compile_args = compute_args_cliff});
 
     }
 
@@ -500,6 +502,8 @@ operation::ProgramWithCallbacks tilize_with_val_padding_multi_core(const Tensor 
     DataFormat output_cb_data_format = tt_metal::datatype_to_dataformat_converter(output.dtype());
     uint32_t output_single_tile_size = tt_metal::detail::TileSize(output_cb_data_format);
 
+    bool fp32_dest_acc_en = input_cb_data_format == tt::DataFormat::Float32;
+
     Device *device = a.device();
 
     auto input_shard_spec = a.shard_spec().value();
@@ -597,8 +601,18 @@ operation::ProgramWithCallbacks tilize_with_val_padding_multi_core(const Tensor 
             .compile_args = compute_args});
 
 
-    bfloat16 bfloat_pad_value = bfloat16(pad_value);
-    uint32_t packed_pad_value = pack_two_bfloat16_into_uint32({bfloat_pad_value, bfloat_pad_value});
+    uint32_t packed_pad_value;
+    if (fp32_dest_acc_en) {
+        union float32_uint32 {
+            uint32_t u;
+            float f;
+        };
+        float32_uint32 temp; temp.f = pad_value;
+        packed_pad_value = temp.u;
+    } else {
+        bfloat16 bfloat_pad_value = bfloat16(pad_value);
+        packed_pad_value = pack_two_bfloat16_into_uint32({bfloat_pad_value, bfloat_pad_value});
+    }
 
     vector<uint32_t> reader_rt_args = {
         num_input_rows,

@@ -41,6 +41,8 @@ operation::ProgramWithCallbacks tilize_single_core(const Tensor &a, Tensor& outp
     tt::DataFormat output_cb_data_format = tt_metal::datatype_to_dataformat_converter(output.dtype());
     uint32_t output_single_tile_size = tt_metal::detail::TileSize(output_cb_data_format);
 
+    bool fp32_dest_acc_en = input_cb_data_format == tt::DataFormat::Float32;
+
     int32_t num_tiles = a.volume() / TILE_HW;
 
     auto width = a.shape()[-1];
@@ -133,7 +135,7 @@ operation::ProgramWithCallbacks tilize_single_core(const Tensor &a, Tensor& outp
         program,
         "tt_eager/tt_dnn/kernels/compute/tilize.cpp",
         core,
-        tt_metal::ComputeConfig{.compile_args = compute_args}
+        tt_metal::ComputeConfig{.fp32_dest_acc_en=fp32_dest_acc_en, .compile_args = compute_args}
     );
 
     tt_metal::SetRuntimeArgs(
@@ -200,6 +202,12 @@ operation::ProgramWithCallbacks tilize_with_val_padding_single_core(const Tensor
 
     tt::DataFormat output_cb_data_format = tt_metal::datatype_to_dataformat_converter(output.dtype());
     uint32_t output_single_tile_size = tt_metal::detail::TileSize(output_cb_data_format);
+
+    bool fp32_dest_acc_en = input_cb_data_format == tt::DataFormat::Float32;
+
+    log_debug("tilize_with_val_padding_single_core");
+    log_debug("input_cb_data_format: {}", input_cb_data_format);
+    log_debug("output_cb_data_format: {}", output_cb_data_format);
 
     int32_t num_tiles = output.volume() / TILE_HW;
 
@@ -272,9 +280,18 @@ operation::ProgramWithCallbacks tilize_with_val_padding_single_core(const Tensor
 		.set_page_size(output_cb_index, output_single_tile_size);
 	auto cb_output = tt_metal::CreateCircularBuffer(program, core, cb_output_config);
 
-
-    bfloat16 bfloat_pad_value = bfloat16(pad_value);
-    uint32_t packed_pad_value = pack_two_bfloat16_into_uint32({bfloat_pad_value, bfloat_pad_value});
+    uint32_t packed_pad_value;
+    if (fp32_dest_acc_en) {
+        union float32_uint32 {
+            uint32_t u;
+            float f;
+        };
+        float32_uint32 temp; temp.f = pad_value;
+        packed_pad_value = temp.u;
+    } else {
+        bfloat16 bfloat_pad_value = bfloat16(pad_value);
+        packed_pad_value = pack_two_bfloat16_into_uint32({bfloat_pad_value, bfloat_pad_value});
+    }
 
     vector<uint32_t> reader_kernel_args = {
         src0_buffer->address(),
@@ -305,6 +322,7 @@ operation::ProgramWithCallbacks tilize_with_val_padding_single_core(const Tensor
         (std::uint32_t) src0_is_dram,
         (std::uint32_t) stick_size_is_power_of_two,
         (std::uint32_t) log2_stick_size,
+        (std::uint32_t) fp32_dest_acc_en
     };
 
     bool out_is_dram = dst_buffer->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
@@ -336,7 +354,7 @@ operation::ProgramWithCallbacks tilize_with_val_padding_single_core(const Tensor
         program,
         "tt_eager/tt_dnn/kernels/compute/tilize.cpp",
         core,
-        tt_metal::ComputeConfig{.compile_args = compute_kernel_args}
+        tt_metal::ComputeConfig{.fp32_dest_acc_en=fp32_dest_acc_en, .compile_args = compute_kernel_args}
     );
 
     tt_metal::SetRuntimeArgs(
