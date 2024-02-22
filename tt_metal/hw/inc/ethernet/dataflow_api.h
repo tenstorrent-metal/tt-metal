@@ -31,7 +31,7 @@ struct erisc_info_t {
     volatile uint32_t unused_arg0;
     volatile uint32_t unused_arg1;
     volatile uint32_t unused_arg2;
-    eth_word_t per_channel_user_bytes_send[eth_l1_mem::address_map::MAX_NUM_CHANNELS];
+    volatile eth_word_t per_channel_user_bytes_send[eth_l1_mem::address_map::MAX_NUM_CHANNELS];
     volatile uint32_t fast_dispatch_buffer_msgs_sent;
     uint32_t reserved_3_;
     uint32_t reserved_4_;
@@ -46,7 +46,7 @@ EthRouterMode my_routing_mode;
 
 tt_l1_ptr mailboxes_t *const mailboxes = (tt_l1_ptr mailboxes_t *)(eth_l1_mem::address_map::ERISC_MEM_MAILBOX_BASE);
 
-erisc_info_t *erisc_info = (erisc_info_t *)(eth_l1_mem::address_map::ERISC_APP_SYNC_INFO_BASE);
+tt_l1_ptr erisc_info_t *erisc_info = (tt_l1_ptr erisc_info_t *)(eth_l1_mem::address_map::ERISC_APP_SYNC_INFO_BASE);
 routing_info_t *routing_info = (routing_info_t *)(eth_l1_mem::address_map::ERISC_APP_ROUTING_INFO_BASE);
 volatile uint32_t *flag_disable = (uint32_t *)(eth_l1_mem::address_map::LAUNCH_ERISC_APP_FLAG);
 
@@ -173,7 +173,7 @@ void run_routing() {
         internal_::risc_context_switch();
     } else if (my_routing_mode == EthRouterMode::SD) {
         // slow dispatch mode
-        internal_::risc_context_switch();
+        // internal_::risc_context_switch();
     } else {
         internal_::risc_context_switch();
     }
@@ -349,4 +349,30 @@ void eth_receiver_done(uint8_t channel = 0) {
         ((uint32_t)(&(erisc_info->per_channel_user_bytes_send[channel].bytes_sent))) >> 4,
         ((uint32_t)(&(erisc_info->per_channel_user_bytes_send[channel].bytes_sent))) >> 4,
         1);
+}
+
+/**
+ * Initiates an asynchronous call from receiver ethernet core to tell remote sender ethernet core that data sent
+ * via eth_send_bytes has been received. Also, see \a eth_wait_for_receiver_done
+ *
+ * Return value: None
+ *
+ * | Argument          | Description                                             | Type     | Valid Range | Required |
+ * |-------------------|---------------------------------------------------------|----------|-------------|----------|
+ */
+FORCE_INLINE
+void eth_receiver_acknowledge(uint8_t channel = 0) {
+    erisc_info->per_channel_user_bytes_send[channel].bytes_sent = 1;
+    internal_::eth_send_packet(
+        0,
+        ((uint32_t)(&(erisc_info->per_channel_user_bytes_send[channel].bytes_sent))) >> 4,
+        ((uint32_t)(&(erisc_info->per_channel_user_bytes_send[channel].bytes_sent))) >> 4,
+        1);
+}
+
+FORCE_INLINE
+void eth_wait_receiver_acknowledge(uint8_t channel = 0) {
+    while (erisc_info->per_channel_user_bytes_send[channel].bytes_sent != 1) {
+        run_routing();
+    }
 }

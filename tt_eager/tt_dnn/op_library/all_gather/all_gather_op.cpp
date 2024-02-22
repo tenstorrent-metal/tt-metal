@@ -23,11 +23,15 @@ void AllGather::validate(const std::vector<Tensor> &input_tensors) const {
     const auto& dtype = input_tensor.dtype();
     const auto& page_size = input_tensor.buffer()->page_size();
     TT_FATAL(page_size <= all_gather_buffer_params::eth_buffer_size, "Page size too large");
-    TT_FATAL(page_size % 32 == 0);
+    // TODO: This can be removed by passing two page sizes, actual and aligned to be used for address offsets
+    // Buffer sizes also need to take this aligned page size into consideration
+    TT_FATAL(page_size % 32 == 0, "All Gather currently requires aligned pages");
     // TODO: Validate ring
     TT_FATAL(input_tensor.storage_type() == StorageType::DEVICE, "Operands to all_gather need to be on device!");
     TT_FATAL(input_tensor.buffer() != nullptr , "Operands to all_gather need to be allocated in buffers on device!");
     TT_FATAL(this->num_links > 0);
+    TT_FATAL(this->num_links <= input_tensor.device()->compute_with_storage_grid_size().y, "Worker cores used by links are parallelizaed over rows");
+    TT_FATAL(all_gather_buffer_params::num_buffers <= input_tensor.device()->compute_with_storage_grid_size().x, "Worker cores used by eth buffers are parallelizaed over cols");
     if (this->receiver_device_id == this->sender_device_id) {
         TT_FATAL(input_tensor.device()->get_ethernet_sockets(this->receiver_device_id).size() >= 2 * this->num_links, "2 Device all gather requires at least 2 eth connections per link");
     } else {
@@ -92,7 +96,7 @@ operation::ProgramWithCallbacks AllGather::create_program(const std::vector<Tens
     if (input_tensors[0].is_sharded()) {
         return all_gather_multi_core_sharded(input_tensors[0], output_tensors[0], this->dim, this->num_links, this->ring_size, this->ring_index, this->receiver_device_id, this->sender_device_id);
     } else {
-        return all_gather_multi_core(input_tensors[0], output_tensors[0], this->dim, this->num_links, this->ring_size, this->ring_index, this->receiver_device_id, this->sender_device_id);
+        return all_gather_multi_core_with_workers(input_tensors[0], output_tensors[0], this->dim, this->num_links, this->ring_size, this->ring_index, this->receiver_device_id, this->sender_device_id);
     }
 }
 
