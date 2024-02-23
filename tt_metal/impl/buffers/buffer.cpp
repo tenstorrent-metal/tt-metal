@@ -118,24 +118,24 @@ Buffer::Buffer(Device *device, uint64_t size, uint64_t page_size, const BufferTy
     validate_buffer_size_and_page_size(size, page_size, buffer_type, buffer_layout, shard_parameters);
     if(is_sharded(buffer_layout)){
         auto row_major = shard_parameters.value().orientation() == ShardOrientation::ROW_MAJOR;
-        all_cores_ = corerange_to_cores(shard_parameters.value().grid(), this->num_cores(), row_major);
+        all_cores_ = corerangeset_to_cores(shard_parameters.value().grid(), this->num_cores(), row_major);
         TT_ASSERT(this->num_cores() == all_cores_.size());
         uint32_t core_id = 0;
         for(auto core: all_cores_){
             this->core_to_core_id_.insert({core, core_id });
             core_id++;
         }
-        auto core_host_page_indices = core_to_host_pages(this->num_pages(), shard_spec().size(), this->num_cores(), buffer_layout, shard_spec().page_shape, shard_spec().shape(), shard_spec().tensor2d_shape);
+        this->core_host_page_ids_ = core_to_host_pages(this->num_pages(), shard_spec().num_pages(), this->num_cores(), buffer_layout, shard_spec().page_shape, shard_spec().shape(), shard_spec().tensor2d_shape);
 
-        auto total_dev_pages = this->num_cores() * shard_spec().size();
+        auto total_dev_pages = this->num_pages();
         this->dev_page_to_host_page_mapping_ = std::vector<uint32_t>(total_dev_pages);
         this->dev_page_to_core_mapping_ = std::vector<uint32_t>(total_dev_pages);
         this->host_page_to_local_shard_page_mapping_ = std::vector<uint32_t>(total_dev_pages);
         this->host_page_to_dev_page_mapping_= std::vector<uint32_t>(total_dev_pages);
         int dev_page_index = 0;
-        for(int core_index = 0; core_index < core_host_page_indices.size() ; core_index++){
-            for(int shard_page_id = 0; shard_page_id < core_host_page_indices[core_index].size() ; shard_page_id++){
-                auto host_page = core_host_page_indices[core_index][shard_page_id];
+        for(int core_index = 0; core_index < this->core_host_page_ids_.size() ; core_index++){
+            for(int shard_page_id = 0; shard_page_id < this->core_host_page_ids_[core_index].size() ; shard_page_id++){
+                auto host_page = this->core_host_page_ids_[core_index][shard_page_id];
                 this->dev_page_to_core_mapping_[dev_page_index] = core_index;
                 this->dev_page_to_host_page_mapping_[dev_page_index] = host_page;
                 TT_ASSERT(host_page < this->host_page_to_local_shard_page_mapping_.size());
@@ -262,7 +262,7 @@ uint64_t Buffer::sharded_page_address(uint32_t bank_id, uint32_t page_index) con
         this->address_ :
         this->address_ + this->device_->l1_bank_offset_from_bank_id(bank_id);
 
-    int pages_offset_within_bank = page_index % shard_spec().size();
+    int pages_offset_within_bank = page_index % shard_spec().num_pages();
     auto offset = (round_up(this->page_size_, ADDRESS_ALIGNMENT) * pages_offset_within_bank);
     return base_page_address + offset;
 }
