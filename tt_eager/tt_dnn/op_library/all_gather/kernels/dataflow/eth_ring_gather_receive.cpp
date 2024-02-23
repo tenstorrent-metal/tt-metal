@@ -31,12 +31,12 @@ void kernel_main() {
         local_worker_ack_semaphore_ptrs[i] = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_arg_val<uint32_t>(semaphore_arg_start_idx + i));
     }
 
-    uint8_t channel = 0;
-
     // We are storing 1 in worker_ack_semaphore_ptrs to send as an ack
     // This is also where the workers increment to show that they've finished reading
     // so we expect num_workers + 1 to be read
     for (uint32_t i = 0; i < num_transfers; ++i) {
+        // Reset channel back to 0. TODO: make worker logic smarter to handle case when there are more channels than input blocks per device
+        uint8_t channel = 0;
         if constexpr (num_full_chunks > 0) {
             for (uint32_t c = 0; c < num_full_chunks; ++c) {
                 eth_wait_for_bytes(num_bytes, channel);

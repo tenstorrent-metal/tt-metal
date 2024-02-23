@@ -45,12 +45,13 @@ void kernel_main() {
         curr_addr += buffer_size;
     }
 
-    uint8_t channel = 0;
-
     // num_transfers = num_devices - 1
     for (uint32_t i = 0; i < num_transfers; ++i) {
+        // Reset channel back to 0. TODO: make worker logic smarter to handle case when there are more channels than input blocks per device
+        uint8_t channel = 0;
         if constexpr(num_full_chunks > 0) {
             for (uint32_t c = 0; c < num_full_chunks; ++c) {
+                eth_wait_receiver_done(channel);
                 const uint32_t& src_addr = local_l1_src_addrs[channel];
                 // Wait for writers to fill buffer
                 eth_noc_semaphore_wait(local_worker_ack_semaphore_ptrs[channel], num_workers_per_buffer);
@@ -67,10 +68,10 @@ void kernel_main() {
                 }
                 // Move on to the next buffer and wait for receiver to signal we can send more data
                 channel = get_next_buffer_channel_pointer<num_channels>(channel);
-                eth_wait_receiver_done(channel);
             }
         }
         if constexpr(rem_num_bytes > 0) {
+            eth_wait_receiver_done(channel);
             const uint32_t& src_addr = local_l1_src_addrs[channel];
             // Wait for writers to fill buffer
             eth_noc_semaphore_wait(local_worker_ack_semaphore_ptrs[channel], num_workers_per_buffer);
@@ -87,7 +88,6 @@ void kernel_main() {
             }
             // Move on to the next buffer and wait for receiver to signal we can send more data
             channel = get_next_buffer_channel_pointer<num_channels>(channel);
-            eth_wait_receiver_done(channel);
         }
     }
     for (uint8_t i = 0; i < num_channels; ++i) {

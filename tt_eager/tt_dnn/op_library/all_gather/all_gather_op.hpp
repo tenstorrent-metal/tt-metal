@@ -15,7 +15,7 @@ namespace tt {
 namespace tt_metal {
 
 namespace all_gather_buffer_params {
-    constexpr uint32_t num_buffers = 1;
+    constexpr uint32_t num_buffers = 2;
     constexpr uint32_t semaphore_size = 32; // TODO: Remove this once dedicated semaphore space for user kernels are added
     constexpr uint32_t semaphore_offset = semaphore_size * num_buffers; // TODO: Remove this once dedicated semaphore space for user kernels are added
     constexpr uint32_t eth_buffer_size = round_down((eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE - semaphore_offset) / num_buffers, 32);
