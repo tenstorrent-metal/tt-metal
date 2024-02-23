@@ -243,10 +243,11 @@ Transformer
 .. toctree::
    :maxdepth: 1
 
-   ttnn/transformer/split_query_key_value_and_split_heads
-   ttnn/transformer/concatenate_heads
    ttnn/transformer/attention_softmax
    ttnn/transformer/attention_softmax_
+   ttnn/transformer/concatenate_heads
+   ttnn/transformer/split_query_key_value_and_split_heads
+   ttnn/transformer/rotary_embedding
 
 Embedding
 =========
@@ -272,6 +273,15 @@ Vision
    :maxdepth: 1
 
    ttnn/upsample
+
+KV Cache
+========
+
+.. toctree::
+   :maxdepth: 1
+
+   ttnn/kv_cache/fill_cache_for_user_
+   ttnn/kv_cache/update_cache_for_token_
 
 
 Model Conversion

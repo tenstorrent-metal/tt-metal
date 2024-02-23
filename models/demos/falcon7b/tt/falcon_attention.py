@@ -10,9 +10,6 @@ from typing import Optional, Tuple
 import ttnn
 
 from models.utility_functions import (
-    torch2tt_tensor,
-    tt2torch_tensor,
-    pad_by_zero,
     nearest_32,
     is_wormhole_b0,
 )
@@ -56,7 +53,7 @@ class TtFalconRotaryEmbedding(torch.nn.Module):
             self.tt_cos_cached = ttnn.load_tensor(
                 str(tt_cache_path / f"{layer_name}.cos_cached_{self.model_config['COS_CACHED_WEIGHTS_DTYPE'].name}.bin")
             )
-            ttnn.to_device(
+            self.tt_cos_cached = ttnn.to_device(
                 self.tt_cos_cached, self.device, memory_config=self.model_config["COS_CACHED_WEIGHTS_MEMCFG"]
             )
         else:
@@ -79,7 +76,7 @@ class TtFalconRotaryEmbedding(torch.nn.Module):
             self.tt_sin_cached = ttnn.load_tensor(
                 str(tt_cache_path / f"{layer_name}.sin_cached_{self.model_config['SIN_CACHED_WEIGHTS_DTYPE'].name}.bin")
             )
-            ttnn.to_device(
+            self.tt_sin_cached = ttnn.to_device(
                 self.tt_sin_cached, self.device, memory_config=self.model_config["SIN_CACHED_WEIGHTS_MEMCFG"]
             )
 
@@ -101,12 +98,12 @@ class TtFalconRotaryEmbedding(torch.nn.Module):
         seq_len = layer.shape[2]
         assert seq_len <= self.max_seq_len_cached, "seq_len exceeds max_seq_len_cached in RotaryEmbedding!"
 
-        return ttnn.experimental.tensor.rotary_embedding(
+        return ttnn.transformer.rotary_embedding(
             layer,
             self.tt_cos_cached,
             self.tt_sin_cached,
             token_idx,
-            output_mem_config=self.model_config["ROTARY_EMBEDDING_OUTPUT_MEMCFG"],
+            memory_config=self.model_config["ROTARY_EMBEDDING_OUTPUT_MEMCFG"],
         )
 
 
@@ -216,6 +213,9 @@ class TtFalconAttention(nn.Module):
         else:
             raise NotImplementedError(f"Llm mode {llm_mode} is not supported! Must be one of prefill or decode.")
 
+        if isinstance(layer_past, tuple):
+            layer_past = list(layer_past)
+
         #################
         ### FUSED QKV ###
         #################
@@ -226,13 +226,20 @@ class TtFalconAttention(nn.Module):
             dtype=self.model_config["FUSED_QKV_MM_OUTPUT_DTYPE"],
             use_1d_systolic_array=True,
         )
+        batch_size, _, sequence_size, fused_query_key_value_width = fused_query_key_value.shape
+        fused_query_key_value = ttnn.reshape(
+            fused_query_key_value, (batch_size, sequence_size, fused_query_key_value_width)
+        )
 
         ###########
         ### TMs ###
         ###########
-        query_layer, key_layer, value_layer = ttnn.experimental.tensor.nlp_create_qkv_heads_falcon7b(
+        query_layer, key_layer, value_layer = ttnn.transformer.split_query_key_value_and_split_heads(
             fused_query_key_value,
-            output_mem_config=self.model_config["CREATE_QKV_HEADS_OUTPUT_MEMCFG"],
+            num_heads=self.num_heads,
+            num_kv_heads=1,
+            transpose_key=False,
+            memory_config=self.model_config["CREATE_QKV_HEADS_OUTPUT_MEMCFG"],
         )
         ttnn.deallocate(fused_query_key_value)
 
@@ -250,18 +257,13 @@ class TtFalconAttention(nn.Module):
         ### K CACHE UPDATE ###
         ######################
         if llm_mode == "prefill":
-            ttnn.experimental.tensor.fill_cache(layer_past[0], key_layer, user_id)
+            layer_past[0] = ttnn.kv_cache.fill_cache_for_user_(layer_past[0], key_layer, user_id)
 
         elif llm_mode == "decode":
-            # Update kv_cache in place
-            ttnn.experimental.tensor.update_cache(layer_past[0], key_layer, layer_past_len)
+            layer_past[0] = ttnn.kv_cache.update_cache_for_token_(layer_past[0], key_layer, layer_past_len)
             # key and value layers will have kv_seq_len padded to nearest 32
-            key_layer = ttnn.experimental.tensor.unpad(
-                layer_past[0],
-                [0, 0, 0, 0],
-                [batch - 1, 0, nearest_32(layer_past_len + 1) - 1, self.head_dim - 1],
-                output_mem_config=self.model_config["K_CACHE_SLICE_OUTPUT_MEMCFG"],
-            )
+            # memory_config=self.model_config["K_CACHE_SLICE_OUTPUT_MEMCFG"] TODO: add memory_config to __getitem__
+            key_layer = layer_past[0][:, :, : nearest_32(layer_past_len + 1), : self.head_dim]
 
         ######################
         ### PRE-SOFTMAX MM ###
@@ -300,15 +302,7 @@ class TtFalconAttention(nn.Module):
                 )
         ttnn.deallocate(query_layer)
         ttnn.deallocate(key_layer_transposed)
-        """
-        attn_weights = ttnn.experimental.tensor.bcast(
-            attn_weights,
-            self.scalar,
-            ttnn.experimental.tensor.BcastOpMath.MUL,
-            ttnn.experimental.tensor.BcastOpDim.HW,
-            output_mem_config=self.model_config["PRE_SOFTMAX_SCALE_OUTPUT_MEMCFG"],
-        )
-        """
+
         attn_weights = ttnn.mul(
             attn_weights, self.scalar, memory_config=self.model_config["PRE_SOFTMAX_SCALE_OUTPUT_MEMCFG"]
         )
@@ -333,17 +327,12 @@ class TtFalconAttention(nn.Module):
         ### V CACHE UPDATE ###
         ######################
         if llm_mode == "prefill":
-            ttnn.experimental.tensor.fill_cache(layer_past[1], value_layer, user_id)
+            layer_past[1] = ttnn.kv_cache.fill_cache_for_user_(layer_past[1], value_layer, user_id)
 
         elif llm_mode == "decode":
-            # Update kv_cache in place
-            ttnn.experimental.tensor.update_cache(layer_past[1], value_layer, layer_past_len)
-            value_layer = ttnn.experimental.tensor.unpad(
-                layer_past[1],
-                [0, 0, 0, 0],
-                [batch - 1, 0, nearest_32(layer_past_len + 1) - 1, self.head_dim - 1],
-                output_mem_config=self.model_config["V_CACHE_SLICE_OUTPUT_MEMCFG"],
-            )
+            layer_past[1] = ttnn.kv_cache.update_cache_for_token_(layer_past[1], value_layer, layer_past_len)
+            # memory_config=self.model_config["V_CACHE_SLICE_OUTPUT_MEMCFG" TODO: add memory_config to __getitem__
+            value_layer = layer_past[1][:, :, : nearest_32(layer_past_len + 1), : self.head_dim]
 
         layer_present = layer_past if use_cache else None
 
@@ -381,9 +370,9 @@ class TtFalconAttention(nn.Module):
         #########################
         ### ATTENTION SELFOUT ###
         #########################
-        attn_output = ttnn.experimental.tensor.nlp_concat_heads(
+        attn_output = ttnn.transformer.concatenate_heads(
             attn_output,
-            output_mem_config=self.model_config["CONCAT_HEADS_OUTPUT_MEMCFG"],
+            memory_config=self.model_config["CONCAT_HEADS_OUTPUT_MEMCFG"],
         )
 
         attn_output = ttnn.linear(

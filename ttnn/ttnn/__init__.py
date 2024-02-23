@@ -273,6 +273,7 @@ from ttnn.operations.normalization import (
 )
 
 from ttnn.operations import transformer
+from ttnn.operations import kv_cache
 from ttnn.operations.conv2d import Conv2d
 from ttnn.operations.maxpool2d import (
     MaxPool2d,
