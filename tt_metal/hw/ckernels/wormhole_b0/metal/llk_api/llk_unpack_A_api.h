@@ -17,12 +17,14 @@ inline void llk_unpack_A_hw_configure(
     const uint32_t unpA_num_faces = get_operand_num_faces(unpA_operand_id);
     const uint32_t unpA_face_r_dim = get_operand_face_r_dim(unpA_operand_id);
 
+    DEBUG_STATUS('U', 'P', 'A', 'W');
     _llk_unpack_A_hw_configure_<is_fp32_dest_acc_en, stoch_rnd_mode>(
         unpack_src_format[unpA_operand_id],
         unpack_dst_format[unpA_operand_id],
         unpA_face_r_dim,
         within_face_16x16_transpose,
         unpA_num_faces);
+    DEBUG_STATUS('U', 'P', 'A', 'D');
 }
 
 template <bool is_fp32_dest_acc_en = false, StochRndType stoch_rnd_mode = StochRndType::None>
@@ -84,8 +86,10 @@ inline void llk_unpack_A(
     std::uint32_t offset_address = cb_interface[operand_id].fifo_page_size * tile_index;
     std::uint32_t address = base_address + offset_address;
 
+    DEBUG_STATUS('U', 'P', 'A', 'W');
     _llk_unpack_A_<BType, acc_to_dest, binary_reuse_dest, unpack_to_dest>(
         address, transpose_of_faces > 0, unpack_src_format[operand_id], unpack_dst_format[operand_id]);
+    DEBUG_STATUS('U', 'P', 'A', 'D');
 }
 
 
@@ -102,8 +106,10 @@ inline void llk_unpack_A_block(
     std::uint32_t address = base_address;
 
     for (uint32_t tile_index = start_tile_index; tile_index < start_tile_index + ntiles; tile_index++) {
+        DEBUG_STATUS('U', 'P', 'A', 'W');
         _llk_unpack_A_<BType, acc_to_dest, binary_reuse_dest, unpack_to_dest>(
             address, transpose_of_faces > 0, unpack_src_format[operand_id], unpack_dst_format[operand_id]);
         address += offset_address;
+        DEBUG_STATUS('U', 'P', 'A', 'D');
     }
 }

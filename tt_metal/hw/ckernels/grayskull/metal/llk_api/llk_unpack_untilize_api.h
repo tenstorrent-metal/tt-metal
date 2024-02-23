@@ -14,10 +14,12 @@ inline void llk_unpack_untilize_hw_configure(const llk_unpack_A_params_t *unpack
 
     const uint32_t unpA_operand_id = get_operand_id(unpack_untilize_params->unpA_operand);
 
+    DEBUG_STATUS('U', 'P', 'U', 'W');
     _llk_unpack_untilize_hw_configure_(
         unpack_src_format[unpA_operand_id],
         unpack_dst_format[unpA_operand_id]
     );
+    DEBUG_STATUS('U', 'P', 'U', 'D');
 }
 
 inline void llk_unpack_untilize_hw_configure_disaggregated(const std::uint32_t unpA_operand) {
@@ -45,6 +47,7 @@ inline void llk_unpack_untilize_init(std::uint32_t operand = 0) {
 }
 
 inline void llk_unpack_untilize_uninit(uint32_t operand) {
+    DEBUG_STATUS('U', 'P', 'U', 'W');
     std::uint32_t operand_id = get_operand_id(operand);
     // Check that unpacker is done (all contexts freed up) before starting hw configuration
     wait_for_idle();
@@ -90,6 +93,7 @@ inline void llk_unpack_untilize_uninit(uint32_t operand) {
 
     TTI_WRCFG(p_gpr::ZERO, p_cfg::WRCFG_32b, UNP0_ADDR_BASE_REG_0_Base_ADDR32); // Clear base address register
     TTI_NOP; TTI_NOP;
+    DEBUG_STATUS('U', 'P', 'U', 'D');
 }
 
 template <bool first_pass = true>

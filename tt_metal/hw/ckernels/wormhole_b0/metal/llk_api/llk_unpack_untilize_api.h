@@ -19,6 +19,7 @@ inline void llk_unpack_untilize_hw_configure(const llk_unpack_A_params_t *unpack
     const uint32_t unpA_num_faces = 4;
     const uint32_t unpA_face_r_dim = FACE_R_DIM;
 
+    DEBUG_STATUS('U', 'P', 'U', 'W');
     _llk_unpack_untilize_hw_configure_<is_fp32_dest_acc_en, stoch_rnd_mode>(
         unpack_src_format[unpA_operand_id],
         unpack_dst_format[unpA_operand_id],
@@ -26,6 +27,7 @@ inline void llk_unpack_untilize_hw_configure(const llk_unpack_A_params_t *unpack
         within_face_16x16_transpose,
         unpA_num_faces
     );
+    DEBUG_STATUS('U', 'P', 'U', 'D');
 }
 
 inline void llk_unpack_untilize_hw_configure_disaggregated(const std::uint32_t unpA_operand) {
@@ -62,6 +64,7 @@ inline void llk_unpack_untilize_uninit(const std::uint32_t operand, const std::u
     std::uint32_t unpA_ch1_x_stride = (uint) (unpack_dst_format[operand_id]&0x3) == (uint) DataFormat::Float32 ? 4 : (uint) (unpack_dst_format[operand_id]&0x3) == (uint) DataFormat::Float16 ? 2 : 1;
     std::uint32_t unpA_ch1_y_stride = FACE_C_DIM*FACE_R_DIM*unpA_ch1_x_stride;
 
+    DEBUG_STATUS('U', 'P', 'U', 'W');
     // Check that unpacker is done (all contexts freed up) before starting hw configuration
     wait_for_idle();
 
@@ -77,6 +80,7 @@ inline void llk_unpack_untilize_uninit(const std::uint32_t operand, const std::u
     cfg_reg_rmw_tensix<THCON_SEC0_REG0_TileDescriptor_ADDR32+1, 0, 0xFFFF>(1);
     cfg_reg_rmw_tensix<UNP0_ADDR_CTRL_XY_REG_1_Ystride_ADDR32, UNP0_ADDR_CTRL_XY_REG_0_Ystride_SHAMT, UNP0_ADDR_CTRL_XY_REG_1_Ystride_MASK>(unpA_ch1_y_stride);
     TTI_NOP; TTI_NOP; // Do we need this for WH?
+    DEBUG_STATUS('U', 'P', 'U', 'D');
 }
 
 template <bool first_pass = true>

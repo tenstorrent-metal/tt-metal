@@ -13,6 +13,7 @@
 #include "llk_math_common.h"
 #include "llk_operands.h"
 #include "llk_param_structs.h"
+#include "debug/status.h"
 
 /*************************************************************************
  * LLK MATH COMMON
@@ -20,7 +21,9 @@
 
 template <DstSync Dst>
 inline void llk_math_wait_for_dest_available() {
+    DEBUG_STATUS('M', 'W', 'D', 'W');
     _llk_math_wait_for_dest_available_<Dst>();
+    DEBUG_STATUS('M', 'W', 'D', 'D');
 }
 
 template <DstSync Dst = SyncFull, bool is_fp32_dest_acc_en = false /*not used*/>
