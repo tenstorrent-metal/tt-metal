@@ -407,6 +407,8 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
             math_fidelity = compute_kernel_config.math_fidelity;
             math_approx_mode = compute_kernel_config.math_approx_mode;
             fp32_dest_acc_en = in0_cb_data_format == tt::DataFormat::Float32 ? true : compute_kernel_config.fp32_dest_acc_en;
+            if (fp32_dest_acc_en)
+                TT_FATAL(subblock_wt <= 4, "in fp32 mode, subblock width must be smaller/equal than 4");
         } else {
             TT_FATAL("arch not supported");
         }
@@ -416,8 +418,8 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
     tt::DataFormat out0_cb_data_format = tt_metal::datatype_to_dataformat_converter(output_tensor.dtype());
     tt::DataFormat im_cb_data_format = fp32_dest_acc_en ? tt::DataFormat::Float32 : tt::DataFormat::Float16_b;
     tt::DataFormat mask_cb_data_format = mask.has_value() ? tt_metal::datatype_to_dataformat_converter(mask.value().dtype()) : tt::DataFormat::Float16_b;
-    tt::DataFormat scale_cb_data_format = fp32_dest_acc_en ? tt::DataFormat::Float32 : tt::DataFormat::Float16_b;
-    tt::DataFormat scalar_cb_data_format = fp32_dest_acc_en ? tt::DataFormat::Float32 : tt::DataFormat::Float16_b;
+    tt::DataFormat scale_cb_data_format = tt::DataFormat::Float16_b;
+    tt::DataFormat scalar_cb_data_format = tt::DataFormat::Float16_b;
 
     log_debug("in0_cb_data_format: {}", in0_cb_data_format);
     log_debug("out0_cb_data_format: {}", out0_cb_data_format);
@@ -521,6 +523,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
     if (causal_mask) {
         reader_compile_time_args.push_back((std::uint32_t) block_ht / block_wt); // fused head
     }
+    reader_compile_time_args.push_back((std::uint32_t) (mask_cb_data_format == tt::DataFormat::Float32)); // mask float32
 
     if (mask.has_value()) {
         softmax_defines["FUSED_SCALE_MASK"] = "1";
