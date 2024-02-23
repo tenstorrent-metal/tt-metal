@@ -8,10 +8,6 @@
 #include "compute_kernel_api/tilize.h"
 #include "compute_kernel_api/pack_untilize.h"
 
-<<<<<<< HEAD
-=======
-
->>>>>>> #4686: add fp32 to untilize
 using std::uint32_t;
 
 // matmul C=A*B using dims MK*KN = MN (row major order)
