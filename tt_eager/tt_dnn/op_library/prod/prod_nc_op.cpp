@@ -33,9 +33,9 @@ void Prod::validate(const std::vector<Tensor>& inputs) const {
     }
 
     for (int i = 0; i < input_shape.rank(); ++i) {
-        std::cout<<"input_shape["<<i<<"]  ===> "<< input_shape[i]<<" output_shape["<<i<<"] ===> "<< output_shape[i]<<std::endl;
-        std::cout<<"input_shape_wo_padding["<<i<<"]  ===> "<< input_shape_wo_padding[i]<<" output_shape_wo_padding["<<i<<"] ===> "<< output_shape_wo_padding[i]<<std::endl;
+        std::cout<<"input_shape["<<i<<"]             ===> "<< input_shape[i]<<"\toutput_shape["<<i<<"]            ===> "<< output_shape[i]<<std::endl;
         TT_FATAL(input_shape[i] == output_shape[i]);
+        std::cout<<"input_shape_wo_padding["<<i<<"]  ===> "<< input_shape_wo_padding[i]<<"\toutput_shape_wo_padding["<<i<<"] ===> "<< output_shape_wo_padding[i]<<std::endl;
         // TT_FATAL(input_shape_wo_padding[i] == output_shape_wo_padding[i]);
     }
 }

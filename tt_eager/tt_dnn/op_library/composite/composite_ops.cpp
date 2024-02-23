@@ -900,6 +900,7 @@ Tensor xlogy(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& o
 
 Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_config) {
     Tensor temp = input_a;
+    //Permute for dim 2,3
     if(dim == 2){
         std::vector<int64_t> permute_dims = {2, 0, 1, 3};
         temp = permute(input_a, permute_dims, output_mem_config);
@@ -907,20 +908,22 @@ Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_
         std::vector<int64_t> permute_dims = {3, 0, 1, 2};
         temp = permute(input_a, permute_dims, output_mem_config);
     }
-    Shape input_shape = temp.shape();
-    std::vector<int64_t> dimension = {(dim == 1) ? dim : 0};
-    Tensor result = temp;
-    if((input_shape[2]%32!=0) || (input_shape[3]%32!=0)){
-        const Shape start_index = {0, 0, 0, 0};
-        const Shape required_shape = {input_shape[0], input_shape[1], ((input_shape[2]%32==0) ? input_shape[2] : (input_shape[2] + (32 - (input_shape[2]%32)))), ((input_shape[3]%32==0) ? input_shape[3] : (input_shape[3] + (32 - (input_shape[3]%32))))};
-        Tensor reshape_input_to_tile_size = pad( temp, required_shape, start_index, 1);
-        input_shape = reshape_input_to_tile_size.shape();
-        Shape required = { ((dim == 1) ? input_shape[0] : 1), ((dim == 1) ? 1 : input_shape[1]) , input_shape[2], input_shape[3]};
-        result = tt::operations::primary::prod_nc(reshape_input_to_tile_size, zeros( required, input_a.dtype(), reshape_input_to_tile_size.layout(), input_a.device(), output_mem_config), dimension, output_mem_config);
-    }else{
-        Shape required = { ((dim == 1) ? input_shape[0] : 1), ((dim == 1) ? 1 : input_shape[1]) , input_shape[2], input_shape[3]};
-        result = tt::operations::primary::prod_nc(temp, zeros( required, input_a.dtype(), input_a.layout(), input_a.device(), output_mem_config), dimension, output_mem_config);
+    //layout conversion`
+    auto formatted_input_tensor = temp;
+    if(formatted_input_tensor.layout()==Layout::ROW_MAJOR){
+        auto a_pad_shape = AutoFormat::pad_to_tile_shape(temp.shape(), false, false, true, true);
+        auto out_shape = temp.shape();
+        out_shape = {out_shape[0], out_shape[1], out_shape[2], out_shape[3]};
+        if (!AutoFormat::check_input_tensor_format(temp, a_pad_shape)) {
+            formatted_input_tensor = AutoFormat::format_input_tensor(temp, input_a.device(), a_pad_shape, 0.0, Layout::TILE);
+        }
     }
+    //Apply prod
+    std::vector<int64_t> dimension = {(dim == 1) ? dim : 0};
+    Shape input_shape = formatted_input_tensor.shape();
+    Shape required = { ((dim == 1) ? input_shape[0] : 1), ((dim == 1) ? 1 : input_shape[1]) , input_shape[2], input_shape[3]};
+    Tensor result = tt::operations::primary::prod_nc(formatted_input_tensor, zeros( required, formatted_input_tensor.dtype(), formatted_input_tensor.layout(), formatted_input_tensor.device(), output_mem_config), dimension, output_mem_config);
+    //Permute and unpad result for dim 2,3
     if(dim == 0 || dim == 1){
         return result;
     }else if(dim == 2){
