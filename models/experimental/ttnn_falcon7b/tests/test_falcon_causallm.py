@@ -7,13 +7,12 @@ import pytest
 from loguru import logger
 
 import tt_lib
-import ttnn
-from models.demos.falcon7b.reference.hf_modeling_falcon import (
+from models.experimental.ttnn_falcon7b.reference.hf_modeling_falcon import (
     FalconForCausalLM,
 )
-from models.demos.falcon7b.tt.falcon_causallm import TtFalconCausalLM
+from models.experimental.ttnn_falcon7b.tt.falcon_causallm import TtFalconCausalLM
 
-from models.demos.falcon7b.tt.model_config import (
+from models.experimental.ttnn_falcon7b.tt.model_config import (
     get_model_config,
     get_tt_cache_path,
 )
@@ -22,6 +21,7 @@ from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_allclose,
     comp_pcc,
 )
+from models.utility_functions import torch2tt_tensor, tt2torch_tensor
 
 
 class PytorchFalconCausalLM(torch.nn.Module):
@@ -57,7 +57,7 @@ def run_test_FalconCausalLM_inference(
     tt_cache_path,
     model_location_generator,
 ):
-    model_name = model_location_generator(model_version, model_subdir="Falcon")
+    model_name = model_location_generator(model_version, model_subdir="Falcon", low_cpu_mem_usage=True)
 
     hugging_face_reference_model = FalconForCausalLM.from_pretrained(model_name)
 
@@ -69,7 +69,7 @@ def run_test_FalconCausalLM_inference(
     torch.manual_seed(0)
     base_url = ""
     max_position_embeddings = 2048
-    head_dim = configuration.hidden_size // configuration.num_attention_heads
+    head_dim = configuration.hidden_size // configuration.n_head
     use_cache = True
 
     if 1:
@@ -89,12 +89,8 @@ def run_test_FalconCausalLM_inference(
         k_cache = torch.zeros(batch, max_position_embeddings, head_dim).unsqueeze(1)
         v_cache = torch.zeros(batch, max_position_embeddings, head_dim).unsqueeze(1)
         for i in range(num_layers):
-            tt_k_cache = ttnn.from_torch(
-                k_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
-            tt_v_cache = ttnn.from_torch(
-                v_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
+            tt_k_cache = torch2tt_tensor(k_cache, device)
+            tt_v_cache = torch2tt_tensor(v_cache, device)
             tt_layer_past += ((tt_k_cache, tt_v_cache),)
 
     elif llm_mode == "decode":
@@ -113,12 +109,8 @@ def run_test_FalconCausalLM_inference(
             tt_v_cache = torch.zeros(batch, 1, max_position_embeddings, head_dim)
             tt_k_cache[:, :, :kv_cache_len, :] = k_cache
             tt_v_cache[:, :, :kv_cache_len, :] = v_cache
-            tt_k_cache = ttnn.from_torch(
-                tt_k_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
-            tt_v_cache = ttnn.from_torch(
-                tt_v_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
+            tt_k_cache = torch2tt_tensor(tt_k_cache, device)
+            tt_v_cache = torch2tt_tensor(tt_v_cache, device)
             tt_layer_past += ((tt_k_cache, tt_v_cache),)
 
     else:
@@ -164,7 +156,7 @@ def run_test_FalconCausalLM_inference(
                 layer_past_len=kv_cache_len,
                 use_cache=use_cache,
             )
-            tt_outs.append(ttnn.to_torch(tt_out).squeeze(1))
+            tt_outs.append(tt2torch_tensor(tt_out).squeeze(1))
         tt_out = torch.vstack(tt_outs)
 
     elif llm_mode == "decode":
@@ -179,7 +171,7 @@ def run_test_FalconCausalLM_inference(
             layer_past_len=kv_cache_len,
             use_cache=use_cache,
         )
-        tt_out = ttnn.to_torch(tt_out).squeeze(1)
+        tt_out = tt2torch_tensor(tt_out).squeeze(1)
         tt_out = tt_out.transpose(0, 1)
 
     # check outputs ----------------------------------------------------------------------
@@ -188,8 +180,8 @@ def run_test_FalconCausalLM_inference(
 
     for i in range(num_layers):
         tt_layer_pres = (
-            ttnn.to_torch(tt_layer_present[i][0]),
-            ttnn.to_torch(tt_layer_present[i][1]),
+            tt2torch_tensor(tt_layer_present[i][0]),
+            tt2torch_tensor(tt_layer_present[i][1]),
         )
         if llm_mode == "prefill":
             pytorch_layer_pres = pytorch_layer_present[i]

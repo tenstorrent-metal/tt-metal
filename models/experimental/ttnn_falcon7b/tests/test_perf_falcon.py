@@ -5,21 +5,19 @@
 import torch
 import pytest
 from loguru import logger
-import numpy as np
-from sklearn.metrics import top_k_accuracy_score
 
 import tt_lib
-from models.demos.falcon7b.reference.hf_modeling_falcon import (
+from models.experimental.ttnn_falcon7b.reference.hf_modeling_falcon import (
     FalconForCausalLM,
 )
-from models.demos.falcon7b.tt.falcon_causallm import TtFalconCausalLM
+from models.experimental.ttnn_falcon7b.tt.falcon_causallm import TtFalconCausalLM
 
 # TODO: Remove this?
-from models.demos.falcon7b.tt.falcon_common import (
+from models.experimental.ttnn_falcon7b.tt.falcon_common import (
     PytorchFalconCausalLM,
 )
 
-from models.demos.falcon7b.tt.model_config import (
+from models.experimental.ttnn_falcon7b.tt.model_config import (
     get_model_config,
     get_tt_cache_path,
 )
@@ -30,6 +28,7 @@ from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
 
 from models.utility_functions import (
     torch2tt_tensor,
+    tt2torch_tensor,
     profiler,
     enable_persistent_kernel_cache,
     disable_persistent_kernel_cache,
@@ -37,7 +36,6 @@ from models.utility_functions import (
     is_e75,
 )
 from models.perf.perf_utils import prep_perf_report
-import ttnn
 
 
 # TODO: Replace this with actual Falcon application-level tests
@@ -92,12 +90,8 @@ def run_test_FalconCausalLM_end_to_end(
         k_cache = torch.zeros(batch, max_position_embeddings, head_dim).unsqueeze(1)
         v_cache = torch.zeros(batch, max_position_embeddings, head_dim).unsqueeze(1)
         for i in range(num_layers):
-            tt_k_cache = ttnn.from_torch(
-                k_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
-            tt_v_cache = ttnn.from_torch(
-                v_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
+            tt_k_cache = torch2tt_tensor(k_cache, device)
+            tt_v_cache = torch2tt_tensor(v_cache, device)
             tt_layer_past += ((tt_k_cache, tt_v_cache),)
 
     elif llm_mode == "decode":
@@ -116,12 +110,8 @@ def run_test_FalconCausalLM_end_to_end(
             tt_v_cache = torch.zeros(batch, 1, max_position_embeddings, head_dim)
             tt_k_cache[:, :, :kv_cache_len, :] = k_cache
             tt_v_cache[:, :, :kv_cache_len, :] = v_cache
-            tt_k_cache = ttnn.from_torch(
-                tt_k_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
-            tt_v_cache = ttnn.from_torch(
-                tt_v_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
+            tt_k_cache = torch2tt_tensor(tt_k_cache, device)
+            tt_v_cache = torch2tt_tensor(tt_v_cache, device)
             tt_layer_past += ((tt_k_cache, tt_v_cache),)
 
     else:
@@ -219,12 +209,8 @@ def run_test_FalconCausalLM_end_to_end(
     if llm_mode == "prefill":
         tt_layer_past = ()
         for i in range(num_layers):
-            tt_k_cache = ttnn.from_torch(
-                k_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
-            tt_v_cache = ttnn.from_torch(
-                v_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
+            tt_k_cache = torch2tt_tensor(k_cache, device)
+            tt_v_cache = torch2tt_tensor(v_cache, device)
             tt_layer_past += ((tt_k_cache, tt_v_cache),)
 
     elif llm_mode == "decode":
@@ -234,12 +220,8 @@ def run_test_FalconCausalLM_end_to_end(
             tt_v_cache = torch.zeros(batch, 1, max_position_embeddings, head_dim)
             tt_k_cache[:, :, :kv_cache_len, :] = past_key_values[i][0]
             tt_v_cache[:, :, :kv_cache_len, :] = past_key_values[i][1]
-            tt_k_cache = ttnn.from_torch(
-                tt_k_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
-            tt_v_cache = ttnn.from_torch(
-                tt_v_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-            )
+            tt_k_cache = torch2tt_tensor(tt_k_cache, device)
+            tt_v_cache = torch2tt_tensor(tt_v_cache, device)
             tt_layer_past += ((tt_k_cache, tt_v_cache),)
 
     if llm_mode == "prefill":
@@ -290,27 +272,19 @@ def run_test_FalconCausalLM_end_to_end(
     profiler.end(f"model_run_for_inference")
 
     if llm_mode == "prefill":
-        tt_out = torch.vstack([ttnn.to_torch(tt_out).squeeze(1) for tt_out in tt_outs])
+        tt_out = torch.vstack([tt2torch_tensor(tt_out).squeeze(1) for tt_out in tt_outs])
     elif llm_mode == "decode":
-        tt_out = ttnn.to_torch(tt_out).squeeze(1)
+        tt_out = tt2torch_tensor(tt_out).squeeze(1)
         tt_out = tt_out.transpose(0, 1)
 
     # check outputs ----------------------------------------------------------------------
     does_pass, output_pcc = comp_pcc(pytorch_out, tt_out, pcc)
     logger.info(f"Output: {output_pcc}")
 
-    reference_logits = pytorch_out.view(batch, -1).float().detach().numpy()
-    eval_logits = tt_out.view(batch, -1).float().detach().numpy()
-    reference_top1 = np.argmax(reference_logits, axis=-1)
-    top1_acc = top_k_accuracy_score(reference_top1, eval_logits, k=1, labels=np.arange(eval_logits.shape[-1]))
-    top5_acc = top_k_accuracy_score(reference_top1, eval_logits, k=5, labels=np.arange(eval_logits.shape[-1]))
-    logger.info(f"Top-1 Accuracy: {top1_acc}")
-    logger.info(f"Top-5 Accuracy: {top5_acc}")
-
     for i in range(num_layers):
         tt_layer_pres = (
-            ttnn.to_torch(tt_layer_present[i][0]),
-            ttnn.to_torch(tt_layer_present[i][1]),
+            tt2torch_tensor(tt_layer_present[i][0]),
+            tt2torch_tensor(tt_layer_present[i][1]),
         )
         if llm_mode == "prefill":
             pytorch_layer_pres = pytorch_layer_present[i]

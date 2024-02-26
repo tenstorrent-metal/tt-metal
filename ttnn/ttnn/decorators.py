@@ -217,6 +217,13 @@ def register_operation(
             if ttnn.tracer.ENABLE_TRACER:
                 decorated_function = ttnn.tracer.trace_ttnn_operation(name, decorated_function)
 
+            # TODO(jchu): REMOVE?
+            import tt_lib as ttl
+
+            decorated_function = ttl.tensor.decorate_external_operation(
+                decorated_function, function_name=f"PARENT: {name}"
+            )
+
             output = decorated_function(*function_args, **function_kwargs)
             return output
 
@@ -259,7 +266,12 @@ def register_ttl_operation_as_ttnn_operation(name, function):
         function_args = preprocess_arg(function_args)
         function_kwargs = preprocess_arg(function_kwargs)
         output = function(*function_args, **function_kwargs)
-        return ttnn.Tensor(output)
+        if isinstance(output, (list, tuple)):
+            return tuple(ttnn.Tensor(element) for element in output)
+        elif isinstance(output, ttnn.experimental.tensor.Tensor):
+            return ttnn.Tensor(output)
+        else:
+            raise TypeError(f"Expected Tensor, got {type(output)}")
 
     wrapper = register_operation(
         name=name,

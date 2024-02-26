@@ -8,10 +8,9 @@ from torch import nn
 from typing import Optional, Tuple
 
 import tt_lib
-import ttnn
 
-from models.demos.falcon7b.tt.falcon_attention import TtFalconAttention
-from models.demos.falcon7b.tt.falcon_mlp import TtFalconMLP
+from models.experimental.ttnn_falcon7b.tt.falcon_attention import TtFalconAttention
+from models.experimental.ttnn_falcon7b.tt.falcon_mlp import TtFalconMLP
 from models.utility_functions import pad_by_zero
 
 
@@ -68,49 +67,43 @@ class TtFalconDecoderLayer(nn.Module):
         if (
             tt_cache_path / f"{layernorm_weights_str}_{self.model_config['INPUT_LAYERNORM_WEIGHTS_DTYPE'].name}.bin"
         ).exists():
-            loaded_tensor = ttnn.load_tensor(
+            self.layernorm_gamma = tt_lib.tensor.load_tensor(
                 str(
                     tt_cache_path
                     / f"{layernorm_weights_str}_{self.model_config['INPUT_LAYERNORM_WEIGHTS_DTYPE'].name}.bin"
                 )
-            )
-            self.layernorm_gamma = ttnn.to_device(
-                loaded_tensor, device, memory_config=self.model_config["INPUT_LAYERNORM_WEIGHTS_MEMCFG"]
-            )
+            ).to(device, self.model_config["INPUT_LAYERNORM_WEIGHTS_MEMCFG"])
         else:
-            self.layernorm_gamma = ttnn.from_torch(
+            self.layernorm_gamma = pad_by_zero(
                 self.state_dict[layernorm_weights_str],
-                device=device,
-                layout=ttnn.TILE_LAYOUT,
-                dtype=self.model_config["INPUT_LAYERNORM_WEIGHTS_DTYPE"],
-            )
-            ttnn.dump_tensor(
+                device,
+                tt_memory_config=self.model_config["INPUT_LAYERNORM_WEIGHTS_MEMCFG"],
+                tt_dtype=self.model_config["INPUT_LAYERNORM_WEIGHTS_DTYPE"],
+            )[0]
+            tt_lib.tensor.dump_tensor(
                 str(
                     tt_cache_path
                     / f"{layernorm_weights_str}_{self.model_config['INPUT_LAYERNORM_WEIGHTS_DTYPE'].name}.bin"
                 ),
-                ttnn.from_device(self.layernorm_gamma),
+                self.layernorm_gamma.cpu(),
             )
 
         if (
             tt_cache_path / f"{layernorm_bias_str}_{self.model_config['INPUT_LAYERNORM_BIAS_DTYPE'].name}.bin"
         ).exists():
-            loaded_tensor = ttnn.load_tensor(
+            self.layernorm_beta = tt_lib.tensor.load_tensor(
                 str(tt_cache_path / f"{layernorm_bias_str}_{self.model_config['INPUT_LAYERNORM_BIAS_DTYPE'].name}.bin")
-            )
-            self.layernorm_beta = ttnn.to_device(
-                loaded_tensor, device, memory_config=self.model_config["INPUT_LAYERNORM_BIAS_MEMCFG"]
-            )
+            ).to(device, self.model_config["INPUT_LAYERNORM_BIAS_MEMCFG"])
         else:
-            self.layernorm_beta = ttnn.from_torch(
+            self.layernorm_beta = pad_by_zero(
                 self.state_dict[layernorm_bias_str],
-                device=device,
-                layout=ttnn.TILE_LAYOUT,
-                dtype=self.model_config["INPUT_LAYERNORM_WEIGHTS_DTYPE"],
-            )
-            ttnn.dump_tensor(
+                device,
+                tt_memory_config=self.model_config["INPUT_LAYERNORM_BIAS_MEMCFG"],
+                tt_dtype=self.model_config["INPUT_LAYERNORM_BIAS_DTYPE"],
+            )[0]
+            tt_lib.tensor.dump_tensor(
                 str(tt_cache_path / f"{layernorm_bias_str}_{self.model_config['INPUT_LAYERNORM_BIAS_DTYPE'].name}.bin"),
-                ttnn.from_device(self.layernorm_beta),
+                self.layernorm_beta.cpu(),
             )
 
         self.layernorm_eps = config.layer_norm_epsilon
@@ -131,20 +124,24 @@ class TtFalconDecoderLayer(nn.Module):
 
         assert not output_attentions
 
-        layernorm_output = ttnn.layer_norm(
+        layernorm_output = tt_lib.tensor.layernorm(
             hidden_states,
-            epsilon=self.layernorm_eps,
-            memory_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
+            self.layernorm_eps,
+            output_mem_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
         )
-        layernorm_output = ttnn.mul(
+        layernorm_output = tt_lib.tensor.bcast(
             layernorm_output,
             self.layernorm_gamma,
-            memory_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
+            tt_lib.tensor.BcastOpMath.MUL,
+            tt_lib.tensor.BcastOpDim.H,
+            output_mem_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
         )
-        layernorm_output = ttnn.add(
+        layernorm_output = tt_lib.tensor.bcast(
             layernorm_output,
             self.layernorm_beta,
-            memory_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
+            tt_lib.tensor.BcastOpMath.ADD,
+            tt_lib.tensor.BcastOpDim.H,
+            output_mem_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
         )
 
         residual = hidden_states
@@ -167,22 +164,22 @@ class TtFalconDecoderLayer(nn.Module):
         # mlp will deallocate layernorm_output
         mlp_output = self.mlp(layernorm_output)
 
-        output = ttnn.add(
+        output = tt_lib.tensor.add(
             mlp_output,
             attention_output,
-            memory_config=self.model_config["PARALLEL_ATTN_ADD_OUTPUT_MEMCFG"],
+            output_mem_config=self.model_config["PARALLEL_ATTN_ADD_OUTPUT_MEMCFG"],
         )
-        ttnn.deallocate(mlp_output)
-        ttnn.deallocate(attention_output)
+        mlp_output.deallocate()
+        attention_output.deallocate()
 
         # dropout_add
         # For inference, this is just add
-        output = ttnn.add(
+        output = tt_lib.tensor.add(
             output,
             residual,
-            memory_config=self.model_config["DROPOUT_ADD_OUTPUT_MEMCFG"],
+            output_mem_config=self.model_config["DROPOUT_ADD_OUTPUT_MEMCFG"],
         )
-        ttnn.deallocate(residual)
+        residual.deallocate()
 
         if use_cache:
             outputs = (output,) + outputs

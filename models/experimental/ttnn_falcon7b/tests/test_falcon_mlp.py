@@ -5,14 +5,13 @@
 import torch
 import pytest
 from loguru import logger
-import ttnn
 
 import tt_lib
-from models.demos.falcon7b.reference.hf_modeling_falcon import (
+from models.experimental.ttnn_falcon7b.reference.hf_modeling_falcon import (
     FalconForCausalLM,
 )
-from models.demos.falcon7b.tt.falcon_mlp import TtFalconMLP
-from models.demos.falcon7b.tt.model_config import (
+from models.experimental.ttnn_falcon7b.tt.falcon_mlp import TtFalconMLP
+from models.experimental.ttnn_falcon7b.tt.model_config import (
     get_model_config,
     get_tt_cache_path,
 )
@@ -74,12 +73,10 @@ def run_test_FalconMLP_inference(
         tt_cache_path,
     )
 
-    tt_mlp_input = ttnn.from_torch(
-        mlp_input, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
-    )
+    tt_mlp_input = torch2tt_tensor(mlp_input, device)
 
     tt_out = tt_FalconMLP_model(tt_mlp_input)
-    tt_out = ttnn.to_torch(tt_out)
+    tt_out = tt2torch_tensor(tt_out)
 
     # check outputs ----------------------------------------------------------------------
     logger.info(comp_allclose(pytorch_out, tt_out))

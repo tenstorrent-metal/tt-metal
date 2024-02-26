@@ -5,6 +5,7 @@
 import torch
 import pytest
 from loguru import logger
+import ttnn
 
 import tt_lib
 from models.demos.falcon7b.reference.hf_modeling_falcon import (
@@ -78,18 +79,24 @@ def run_test_FalconAttention_inference(
         assert kv_cache_len == 0, "For prefill, no kv_cache is passed in!"
 
         attention_input = (torch.rand(batch, q_len, configuration.hidden_size) * 2) - 1
-        attention_mask_bool = torch.ones(batch, 1, q_len, kv_len, dtype=bool).triu(diagonal=1)
+        attention_mask_bool = torch.ones(batch, 71, q_len, kv_len).triu(diagonal=1)  # TODO(cfjchu): change 71 to 1
         layer_past = None
 
-        tt_attention_input = torch2tt_tensor(attention_input.unsqueeze(1), device)
-        tt_attention_mask = torch2tt_tensor(
-            (attention_mask_bool * -100000).expand(-1, configuration.num_attention_heads, -1, -1),
-            device,
+        tt_attention_input = ttnn.from_torch(
+            attention_input.unsqueeze(1), dtype=model_config["DEFAULT_DTYPE"], layout=ttnn.TILE_LAYOUT, device=device
         )
+        tt_attention_mask = ttnn.from_torch(
+            attention_mask_bool, dtype=model_config["DEFAULT_DTYPE"], layout=ttnn.TILE_LAYOUT, device=device
+        )
+
         tt_k_cache = torch.zeros(batch, max_position_embeddings, head_dim)
         tt_v_cache = torch.zeros(batch, max_position_embeddings, head_dim)
-        tt_k_cache = torch2tt_tensor(tt_k_cache.unsqueeze(1), device)
-        tt_v_cache = torch2tt_tensor(tt_v_cache.unsqueeze(1), device)
+        tt_k_cache = ttnn.from_torch(
+            tt_k_cache.unsqueeze(1), device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
+        )
+        tt_v_cache = ttnn.from_torch(
+            tt_v_cache.unsqueeze(1), device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
+        )
         tt_layer_past = (tt_k_cache, tt_v_cache)
 
     elif llm_mode == "decode":
@@ -98,23 +105,37 @@ def run_test_FalconAttention_inference(
         assert q_len == 1, "For decode, q_len must be 1!"
 
         attention_input = (torch.rand(batch, q_len, configuration.hidden_size) * 2) - 1
-        # attention_input = (torch.rand(batch, q_len, 4544) * 2) - 1
-        attention_mask_bool = torch.zeros(batch, 1, q_len, kv_len, dtype=bool)
+
+        attention_mask_bool = torch.zeros(batch, 71, q_len, kv_len, dtype=int)  # TODO(cfjchu): change 71 to 1
+        attention_mask_bool[:, :, :, -1] = True
+
+        tt_attention_input = ttnn.from_torch(
+            attention_input.unsqueeze(1), dtype=model_config["DEFAULT_DTYPE"], layout=ttnn.TILE_LAYOUT, device=device
+        )
+        tt_attention_mask = ttnn.from_torch(
+            attention_mask_bool, dtype=model_config["DEFAULT_DTYPE"], layout=ttnn.TILE_LAYOUT, device=device
+        )
+
         k_cache = torch.rand(batch, kv_cache_len, head_dim)
         v_cache = torch.rand(batch, kv_cache_len, head_dim)
         layer_past = (k_cache, v_cache)
 
-        tt_attention_input = torch2tt_tensor(attention_input.unsqueeze(1).transpose(0, 2), device)
+        tt_attention_input = ttnn.from_torch(
+            attention_input.unsqueeze(1).transpose(0, 2),
+            dtype=model_config["DEFAULT_DTYPE"],
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
+        )
 
         kv_len_padded = (kv_len + 31) // 32 * 32
         attention_mask_bool_padded = torch.cat(
             (
                 attention_mask_bool,
-                torch.ones(batch, 1, q_len, kv_len_padded - kv_len, dtype=bool),
+                torch.ones(batch, 71, q_len, kv_len_padded - kv_len, dtype=int),
             ),
             dim=-1,
         )
-        tt_attention_mask = torch2tt_tensor(
+        tt_attention_mask = ttnn.from_torch(
             (attention_mask_bool_padded.transpose(0, 2) * -100000).expand(
                 -1,
                 configuration.num_attention_heads,
@@ -122,14 +143,20 @@ def run_test_FalconAttention_inference(
                 -1
                 # -1, 71, -1, -1
             ),
-            device,
+            dtype=model_config["DEFAULT_DTYPE"],
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
         )
         tt_k_cache = torch.zeros(batch, max_position_embeddings, head_dim)
         tt_v_cache = torch.zeros(batch, max_position_embeddings, head_dim)
         tt_k_cache[:, :kv_cache_len, :] = k_cache
         tt_v_cache[:, :kv_cache_len, :] = v_cache
-        tt_k_cache = torch2tt_tensor(tt_k_cache.unsqueeze(1), device)
-        tt_v_cache = torch2tt_tensor(tt_v_cache.unsqueeze(1), device)
+        tt_k_cache = ttnn.from_torch(
+            tt_k_cache.unsqueeze(1), device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
+        )
+        tt_v_cache = ttnn.from_torch(
+            tt_v_cache.unsqueeze(1), device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
+        )
         tt_layer_past = (tt_k_cache, tt_v_cache)
 
     else:
@@ -171,10 +198,11 @@ def run_test_FalconAttention_inference(
         layer_past_len=kv_cache_len,
         use_cache=use_cache,
     )
-    tt_out = tt2torch_tensor(tt_out).squeeze(1)
+    tt_out = ttnn.to_torch(tt_out).squeeze(1)
+
     tt_layer_present = (
-        tt2torch_tensor(tt_layer_present[0]).squeeze(1),
-        tt2torch_tensor(tt_layer_present[1]).squeeze(1),
+        ttnn.to_torch(tt_layer_present[0]).squeeze(1),
+        ttnn.to_torch(tt_layer_present[1]).squeeze(1),
     )
 
     if llm_mode == "decode":

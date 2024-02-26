@@ -279,7 +279,7 @@ def _attention_softmax_validate_input_tensors(operation_name, input_tensor, *arg
     )
     ttnn.validate_input_tensor(
         operation_name,
-        input_tensor,
+        attention_mask,
         ranks=(4,),
         dtypes=(ttnn.bfloat16, ttnn.bfloat8_b),
         layouts=(ttnn.TILE_LAYOUT,),

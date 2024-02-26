@@ -128,7 +128,7 @@ def test_ttnn_functional_bert(device, use_program_cache, model_name, batch_size,
 def test_falcon7b_instruct():
     from functools import partial
     from loguru import logger
-    from models.demos.falcon7b.reference.hf_modeling_falcon import FalconConfig, FalconForCausalLM
+    from transformers import FalconConfig, FalconForCausalLM
 
     model_version = "tiiuae/falcon-7b-instruct"
 
@@ -147,7 +147,9 @@ def test_falcon7b_instruct():
         return ids
 
     def generate_next_id(model, post_processor, input_ids, kv_cache=None, use_cache=None):
-        outputs = model(input_ids, past_key_values=kv_cache, use_cache=use_cache)
+        outputs = model(
+            input_ids, past_key_values=kv_cache, use_cache=use_cache, attention_mask=torch.ones(input_ids.shape)
+        )
         return (
             post_processor(logits=outputs.logits),
             outputs.past_key_values,
@@ -159,7 +161,7 @@ def test_falcon7b_instruct():
     num_tokens = 3
 
     logger.info("Creating inputs")
-    prompt_text = ["Write a poem about Valencia"] * batch_size
+    prompt_text = ["Write a creative poem about Valencia"] * batch_size
 
     logger.info("Tokenizing inputs")
     tokenized_inputs = tokenizer(prompt_text, padding=False, add_special_tokens=False, return_tensors="pt")
@@ -169,9 +171,10 @@ def test_falcon7b_instruct():
     with trace():
         logger.info("Generating new ids")
         ids = input_ids
+        kv_cache = None
         for i in range(num_tokens):
             logger.info(f"generating token {i}")
-            ids, kv_cache = generator(input_ids=ids)
+            ids, kv_cache = generator(input_ids=ids, kv_cache=kv_cache, use_cache=True)
 
     logger.info("Visualizing")
-    visualize(ids)
+    visualize(ids, file_name="falcon7b_instruct.svg", verbose=True)
