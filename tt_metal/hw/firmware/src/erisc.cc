@@ -107,10 +107,8 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
     static constexpr uint32_t command_start_addr = eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE;
     static constexpr uint32_t data_buffer_size = eth_l1_mem::address_map::ERISC_APP_RESERVED_SIZE - (DeviceCommand::NUM_ENTRIES_IN_DEVICE_COMMAND * sizeof(uint32_t));
 
-    bool db_buf_switch = false;
-    db_cb_config_t *eth_db_cb_config = get_local_db_cb_config(eth_l1_mem::address_map::CQ_CONSUMER_CB_BASE, false);
-    volatile db_cb_config_t *remote_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, false);
-    // const db_cb_config_t *remote_dst_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, true);
+    db_cb_config_t *eth_db_cb_config = get_local_db_cb_config(eth_l1_mem::address_map::CQ_CONSUMER_CB_BASE);
+    volatile db_cb_config_t *remote_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE);
 
     erisc_info->unused_arg0 = 0;
     erisc_info->unused_arg1 = 0;
@@ -143,7 +141,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                 reinterpret_cast<volatile tt_l1_ptr uint32_t *>(command_start_addr);
             volatile tt_l1_ptr CommandHeader *header = (CommandHeader *)command_ptr;
             uint32_t num_buffer_transfers = header->num_buffer_transfers;
-            uint32_t producer_consumer_transfer_num_pages = header->producer_consumer_transfer_num_pages;
+            uint32_t router_transfer_num_pages = header->router_transfer_num_pages;
             bool is_program = header->is_program_buffer;
             bool fwd_path = header->fwd_path;
             command_ptr += DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
@@ -170,7 +168,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     continue;
                 }
 
-                uint32_t num_to_write = min(num_pages, producer_consumer_transfer_num_pages);
+                uint32_t num_to_write = min(num_pages, router_transfer_num_pages);
 
                 uint32_t num_pages_tunneled = 0;
                 while (num_pages_tunneled != num_pages) {
@@ -181,7 +179,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     multicore_eth_cb_pop_front(
                         eth_db_cb_config, remote_db_cb_config, ((uint64_t)relay_src_noc_encoding << 32), num_to_write);
                     num_pages_tunneled += num_to_write;
-                    num_to_write = min(num_pages - num_pages_tunneled, producer_consumer_transfer_num_pages);
+                    num_to_write = min(num_pages - num_pages_tunneled, router_transfer_num_pages);
                 }
                 command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
             }
@@ -216,9 +214,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                 reinterpret_cast<volatile tt_l1_ptr uint32_t *>(command_start_addr);
             volatile tt_l1_ptr CommandHeader *header = (CommandHeader *)command_ptr;
             uint32_t num_buffer_transfers = header->num_buffer_transfers;
-            uint32_t producer_consumer_transfer_num_pages = header->producer_consumer_transfer_num_pages;
-            uint32_t consumer_cb_num_pages = header->consumer_cb_num_pages;
-            uint32_t consumer_cb_size = header->consumer_cb_size;
+            uint32_t router_transfer_num_pages = header->router_transfer_num_pages;
             uint32_t page_size = header->page_size;
             bool is_program = header->is_program_buffer;
             bool fwd_path = header->fwd_path;
@@ -253,7 +249,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                 }
 
                 // producer_consumer_transfer_num_pages is the total num of data pages that could fit in a FD packet
-                uint32_t num_pages_to_signal = min(num_pages, producer_consumer_transfer_num_pages);
+                uint32_t num_pages_to_signal = min(num_pages, router_transfer_num_pages);
                 uint32_t num_pages_transferred = 0;
 
                 while (num_pages_transferred != num_pages) {
@@ -278,7 +274,7 @@ void __attribute__((section("erisc_l1_code"))) ApplicationHandler(void) {
                     internal_::ack_fd_packet(); // signal to SRC router that more data can be sent
 
                     num_pages_transferred += num_pages_to_signal;
-                    num_pages_to_signal = min(num_pages - num_pages_transferred, producer_consumer_transfer_num_pages);
+                    num_pages_to_signal = min(num_pages - num_pages_transferred, router_transfer_num_pages);
                 }
                 command_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;  // jump to buffer transfer region
             }
