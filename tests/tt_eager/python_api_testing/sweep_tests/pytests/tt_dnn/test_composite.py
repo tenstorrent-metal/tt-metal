@@ -49,7 +49,7 @@ def custom_compare(*args, **kwargs):
     return result
 
 
-shapes = ([[1, 1, 32, 32]], [[4, 3, 32, 64]])
+shapes = ([[1, 1, 32, 32]], [[1, 3, 320, 64]])
 if is_wormhole_b0():
     shapes = (shapes[0],)
 
@@ -60,58 +60,58 @@ if is_wormhole_b0():
     list(
         product(
             (
-                # "lerp_binary",
-                # "lerp_ternary",
-                # "addcmul",
-                # "addcdiv",
-                # "min",
-                # "max",
-                # "swish",
-                # "log1p",
-                # "softplus",
-                # "mish",
-                # "silu",
-                # "polyval",
-                # "mac",
-                # "cbrt",
-                # "threshold",
-                # "hypot",
-                # "hardswish",
-                # "hardsigmoid",
-                # "ones_like",
-                # "zeros_like",
-                # "full_like",
-                # "ones",
-                # "empty",
-                # "zeros",
-                # "full",
-                # "arange",
-                # "hardshrink",
-                # "softshrink",
-                # "sinh",
-                # "cosh",
-                # "tanhshrink",
-                # "xlogy",
-                # "asinh",
-                # "acosh",
-                # "atanh",
-                # "atan2",
-                # "subalpha",
-                # "bias_gelu_unary",
-                # "addalpha",
-                # "logit",
-                # "logical_ori",
-                # "logical_xor",
-                # "logical_xori",
-                # "logical_noti",
-                # "logical_andi",
-                # "isclose",
-                # "digamma",
-                # "lgamma",
-                # "multigammaln",
-                # "polygamma",
-                # "nextafter",
-                # "scatter",
+                "lerp_binary",
+                "lerp_ternary",
+                "addcmul",
+                "addcdiv",
+                "min",
+                "max",
+                "swish",
+                "log1p",
+                "softplus",
+                "mish",
+                "silu",
+                "polyval",
+                "mac",
+                "cbrt",
+                "threshold",
+                "hypot",
+                "hardswish",
+                "hardsigmoid",
+                "ones_like",
+                "zeros_like",
+                "full_like",
+                "ones",
+                "empty",
+                "zeros",
+                "full",
+                "arange",
+                "hardshrink",
+                "softshrink",
+                "sinh",
+                "cosh",
+                "tanhshrink",
+                "xlogy",
+                "asinh",
+                "acosh",
+                "atanh",
+                "atan2",
+                "subalpha",
+                "bias_gelu_unary",
+                "addalpha",
+                "logit",
+                "logical_ori",
+                "logical_xor",
+                "logical_xori",
+                "logical_noti",
+                "logical_andi",
+                "isclose",
+                "digamma",
+                "lgamma",
+                "multigammaln",
+                "polygamma",
+                "nextafter",
+                "scatter",
                 "prod",
             ),
             shapes,
@@ -205,7 +205,7 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
     input_shapes = input_shapes * num_inputs
     datagen_func = datagen_func * num_inputs
     test_args = generation_funcs.gen_default_dtype_layout_device(input_shapes)[0]
-    # test_args.update({"scalar": np.random.randint(-100, 100)})
+    test_args.update({"scalar": np.random.randint(-100, 100)})
     if fn == "arange":
         test_args.update({"start": -10, "end": 1024 - 10, "step": 1})
     elif fn == "polyval":
@@ -231,7 +231,7 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
     elif fn in ["logical_ori", "logical_andi", "logical_xori", "logical_noti"]:
         test_args.update({"immediate": np.random.randint(0, 100)})
     elif fn in ["prod"]:
-        test_args.update({"dim": 1})
+        test_args.update({"dim": random.choice([0, 1, 2, 3])})
     elif fn in ["isclose"]:
         test_args.update(
             {

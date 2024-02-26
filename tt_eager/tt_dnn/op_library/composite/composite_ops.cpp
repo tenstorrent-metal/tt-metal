@@ -908,7 +908,7 @@ Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_
         std::vector<int64_t> permute_dims = {3, 0, 1, 2};
         temp = permute(input_a, permute_dims, output_mem_config);
     }
-    //layout conversion`
+    //layout conversion
     auto formatted_input_tensor = temp;
     if(formatted_input_tensor.layout()==Layout::ROW_MAJOR){
         auto a_pad_shape = AutoFormat::pad_to_tile_shape(temp.shape(), false, false, true, true);
@@ -933,13 +933,18 @@ Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_
         const Shape start_index = {0, 0, 0, 0};
         const Shape end_index = {input_shape[0]-1, input_shape[1]-1, 0, input_shape[3]-1};
         return unpad( required, start_index, end_index);
-    }else{
-        std::vector<int64_t> after_permute_dims = {1, 2, 3, 0};
+    }else{ //dim 3
+        //permute
+        std::vector<int64_t> after_permute_dims = {1, 2, 0, 3};
         Tensor required = permute(result, after_permute_dims, output_mem_config);
+        //unpad
         input_shape = input_a.shape();
         const Shape start_index = {0, 0, 0, 0};
-        const Shape end_index = {input_shape[0]-1, input_shape[1]-1, input_shape[2]-1, 0};
-        return unpad( required, start_index, end_index);
+        const Shape end_index = {input_shape[0]-1, input_shape[1]-1, 0, input_shape[2]-1};
+        Tensor new_unpad_tensor = unpad( required, start_index, end_index);
+        //permute back
+        after_permute_dims = {0, 1, 3, 2};
+        return permute(new_unpad_tensor, after_permute_dims, output_mem_config);
     }
 }
 Tensor prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_config) {
