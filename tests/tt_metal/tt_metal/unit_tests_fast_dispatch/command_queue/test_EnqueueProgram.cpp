@@ -295,7 +295,6 @@ namespace compiler_workaround_hardware_bug_tests {
 
 TEST_F(CommandQueueSingleCardFixture, TestArbiterDoesNotHang) {
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         Program program;
 
         CoreRange cr({0, 0}, {0, 0});
@@ -347,7 +346,6 @@ TEST_F(CommandQueueSingleCardFixture, TestSingleCbConfigCorrectlySentSingleCore)
     DummyProgramMultiCBConfig config = {.cr_set = cr_set, .cb_config_vector = {cb_config} };
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_cbs(device, device->command_queue(), config));
     }
 }
@@ -365,7 +363,6 @@ TEST_F(CommandQueueSingleCardFixture, TestMultiCbSeqConfigCorrectlySentSingleCor
     DummyProgramMultiCBConfig config = {.cr_set = cr_set, .cb_config_vector = {cb_config_0, cb_config_1, cb_config_2, cb_config_3}};
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_cbs(device, device->command_queue(), config));
     }
 }
@@ -383,7 +380,6 @@ TEST_F(CommandQueueSingleCardFixture, TestMultiCbRandomConfigCorrectlySentSingle
     DummyProgramMultiCBConfig config = {.cr_set = cr_set, .cb_config_vector = {cb_config_0, cb_config_1, cb_config_2, cb_config_3}};
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_cbs(device, device->command_queue(), config));
     }
 }
@@ -408,7 +404,6 @@ TEST_F(CommandQueueSingleCardFixture, TestMultiCBSharedAddressSpaceSentSingleCor
     CoreCoord core_coord(0,0);
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         Program program;
         CircularBufferConfig cb_config = CircularBufferConfig(cb_size, intermediate_and_out_data_format_spec)
             .set_page_size(intermediate_cb, single_tile_size)
@@ -453,7 +448,6 @@ TEST_F(CommandQueueSingleCardFixture, TestSingleCbConfigCorrectlyUpdateSizeSentS
     DummyProgramMultiCBConfig config = {.cr_set = cr_set, .cb_config_vector = {cb_config}};
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_cbs_update_size(device, device->command_queue(), config));
     }
 }
@@ -465,14 +459,12 @@ TEST_F(CommandQueueSingleCardFixture, TestSingleSemaphoreConfigCorrectlySentSing
     DummyProgramConfig config = {.cr_set = cr_set, .num_sems = NUM_SEMAPHORES};
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_sems(device, device->command_queue(), config));
     }
 }
 
 TEST_F(CommandQueueSingleCardFixture, TestAutoInsertedBlankBriscKernelInDeviceDispatchMode) {
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         Program program;
 
         CoreRange cr({0, 0}, {0, 0});
@@ -490,7 +482,6 @@ TEST_F(CommandQueueSingleCardFixture, TestAutoInsertedBlankBriscKernelInDeviceDi
 
 TEST_F(CommandQueueSingleCardFixture, ComputeRuntimeArgs) {
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         Program program;
 
         CoreRange cr({0, 0}, {0, 0});
@@ -527,7 +518,6 @@ TEST_F(CommandQueueSingleCardFixture, TestRuntimeArgsCorrectlySentSingleCore) {
 
     DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(device, device->command_queue(), dummy_program_config);
     }
 }
@@ -543,7 +533,6 @@ TEST_F(CommandQueueSingleCardFixture, TestAllCbConfigsCorrectlySentMultiCore) {
         cb_config_vector[i].cb_id = i;
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         CoreCoord worker_grid_size = device->compute_with_storage_grid_size();
 
         CoreRange cr({0, 0}, {worker_grid_size.x - 1, worker_grid_size.y - 1});
@@ -564,7 +553,6 @@ TEST_F(CommandQueueSingleCardFixture, TestAllCbConfigsCorrectlySentUpdateSizeMul
         cb_config_vector[i].cb_id = i;
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         CoreCoord worker_grid_size = device->compute_with_storage_grid_size();
 
         CoreRange cr({0, 0}, {worker_grid_size.x - 1, worker_grid_size.y - 1});
@@ -587,7 +575,6 @@ TEST_F(CommandQueueSingleCardFixture, TestMultiCbConfigsCorrectlySentUpdateSizeM
     std::vector <CBConfig> cb_config_vector = {cb_config_0, cb_config_1, cb_config_2, cb_config_3};
 
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         CoreCoord worker_grid_size = device->compute_with_storage_grid_size();
 
         CoreRange cr({0, 0}, {worker_grid_size.x - 1, worker_grid_size.y - 1});
@@ -602,7 +589,6 @@ TEST_F(CommandQueueSingleCardFixture, TestMultiCbConfigsCorrectlySentUpdateSizeM
 
 TEST_F(CommandQueueSingleCardFixture, TestAllSemConfigsCorrectlySentMultiCore) {
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         CoreCoord worker_grid_size = device->compute_with_storage_grid_size();
 
         CoreRange cr({0, 0}, {worker_grid_size.x - 1, worker_grid_size.y - 1});
@@ -616,7 +602,6 @@ TEST_F(CommandQueueSingleCardFixture, TestAllSemConfigsCorrectlySentMultiCore) {
 
 TEST_F(CommandQueueSingleCardFixture, TestAllRuntimeArgsCorrectlySentMultiCore) {
     for (Device *device : devices_) {
-        if (device->is_mmio_capable()) { continue; }
         CoreCoord worker_grid_size = device->compute_with_storage_grid_size();
 
         CoreRange cr({0, 0}, {worker_grid_size.x - 1, worker_grid_size.y - 1});

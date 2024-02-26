@@ -144,6 +144,7 @@ const DeviceCommand EnqueueReadBufferCommand::assemble_device_command(uint32_t d
     } else {
         uint32_t pull_and_push_data_buffer_size = get_cq_data_buffer_size(false);
         push_and_pull_cb_num_pages = pull_and_push_data_buffer_size / padded_page_size;
+        push_and_pull_cb_num_pages = push_and_pull_cb_num_pages / 2 * 2;
     }
 
     uint32_t push_and_pull_cb_size = push_and_pull_cb_num_pages * padded_page_size;
@@ -291,6 +292,7 @@ const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t 
     else {
         uint32_t pull_and_push_data_buffer_size = get_cq_data_buffer_size(false);
         push_and_pull_cb_num_pages = pull_and_push_data_buffer_size / padded_page_size;
+        push_and_pull_cb_num_pages = push_and_pull_cb_num_pages / 2 * 2;
     }
 
     uint32_t push_and_pull_cb_size = push_and_pull_cb_num_pages * padded_page_size;

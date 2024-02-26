@@ -195,7 +195,21 @@ void kernel_main() {
             }
         }
 
-        // DPRINT << "PROGRAM LOCAL CB" << ENDL();
+        if constexpr (pull_and_push_config == tt::PullAndPushConfig::LOCAL) {
+            if (wrap == DeviceCommand::WrapRegion::COMPLETION) {
+                completion_queue_reserve_back(completion_data_size);
+                write_event((uint32_t)&header->event);
+                cq_write_interface.completion_fifo_wr_ptr = cq_write_interface.completion_fifo_limit - cq_write_interface.completion_fifo_size;     // Head to the beginning of the completion region
+                cq_write_interface.completion_fifo_wr_toggle = not cq_write_interface.completion_fifo_wr_toggle;
+                notify_host_of_completion_queue_write_pointer(host_completion_queue_write_ptr_addr);
+                noc_async_write_barrier();
+                completion_queue_push_back(completion_data_size, completion_queue_start_addr, host_completion_queue_write_ptr_addr);
+                issue_queue_pop_front<host_issue_queue_read_ptr_addr>(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + issue_data_size);
+                continue;
+            }
+        }
+
+        DPRINT << "LOCAL CB SIZE: " << pull_and_push_cb_size << ", NUM PAGES: " << pull_and_push_cb_num_pages << ", PAGE SIZE: " << page_size << ENDL();
         program_local_cb(data_section_addr, pull_and_push_cb_num_pages, page_size, pull_and_push_cb_size);
 
         if constexpr (pull_and_push_config == tt::PullAndPushConfig::LOCAL) {
@@ -211,8 +225,8 @@ void kernel_main() {
             }
 
             volatile tt_l1_ptr uint32_t* buffer_transfer_ptr = command_ptr + DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
-            uint32_t num_pages_to_read =  pull_and_push_cb_num_pages / 2;
-            uint32_t num_pages_to_write = program_transfer_num_pages;
+            uint32_t num_pages_to_read = pull_and_push_cb_num_pages / 2;
+            uint32_t num_pages_to_write = 1;//max(num_pages_to_read / 4, 1);
 
             if (is_program) {
                 program_event_buffer.push_event(event);
