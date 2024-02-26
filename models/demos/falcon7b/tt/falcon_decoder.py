@@ -136,15 +136,19 @@ class TtFalconDecoderLayer(nn.Module):
             epsilon=self.layernorm_eps,
             memory_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
         )
-        layernorm_output = ttnn.mul(
+        layernorm_output = ttnn.experimental.tensor.bcast(
             layernorm_output,
             self.layernorm_gamma,
-            memory_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
+            tt_lib.tensor.BcastOpMath.MUL,
+            tt_lib.tensor.BcastOpDim.H,
+            output_mem_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
         )
-        layernorm_output = ttnn.add(
+        layernorm_output = ttnn.experimental.tensor.bcast(
             layernorm_output,
             self.layernorm_beta,
-            memory_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
+            tt_lib.tensor.BcastOpMath.ADD,
+            tt_lib.tensor.BcastOpDim.H,
+            output_mem_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
         )
 
         residual = hidden_states
