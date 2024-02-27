@@ -33,6 +33,7 @@ void kernel_main() {
         uint32_t completion_data_size = header->completion_data_size;
         reset_dispatch_message_addr();
         // DPRINT << "Dispatcher got program" << ENDL();
+        DPRINT << "LAUNCH PROGRAM" << ENDL();
         write_and_launch_program(
             db_cb_config,
             remote_db_cb_config,
@@ -42,7 +43,9 @@ void kernel_main() {
             program_transfer_num_pages,
             l1_consumer_fifo_limit);
         // DPRINT << "Dispatcher launched program" << ENDL();
+        DPRINT << "WAIT FOR PROGRAM" << ENDL();
         wait_for_program_completion(num_workers);
+        DPRINT << "DONE WAIT" << ENDL();
         // DPRINT << "Dispatcher done program" << ENDL();
 
         // notify producer that it has completed a command

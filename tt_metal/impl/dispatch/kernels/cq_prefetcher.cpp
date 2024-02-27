@@ -249,23 +249,20 @@ void kernel_main() {
                         dispatch_multicore_cb_cfg
                     );
                     pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER, write_to_completion_queue>(src_pr_cfg, dst_pr_cfg, num_pages_in_transfer);
+                    uint32_t aligned_global_page_idx = align(dst_pr_cfg.cb_buff_cfg.global_page_idx, program_transfer_num_pages);
+                    if (aligned_global_page_idx != dst_pr_cfg.cb_buff_cfg.global_page_idx) {
+                        DPRINT << "PUSHBACK " << aligned_global_page_idx - dst_pr_cfg.cb_buff_cfg.global_page_idx << ENDL();
+                        multicore_cb_push_back(
+                            dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg,
+                            dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg,
+                            dst_pr_cfg.cb_buff_cfg.remote_noc_encoding,
+                            dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg->fifo_limit_16B,
+                            aligned_global_page_idx - dst_pr_cfg.cb_buff_cfg.global_page_idx);
+                    }
                     buffer_transfer_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
                     program_local_cb(data_section_addr, pull_and_push_cb_num_pages, page_size, pull_and_push_cb_size);
                 }
 
-                uint32_t aligned_global_page_idx = align(dst_pr_cfg.cb_buff_cfg.global_page_idx, dst_pr_cfg.num_pages_to_write);
-                DPRINT << "NUM TO WRITE " << dst_pr_cfg.num_pages_to_write << ENDL();
-                DPRINT << "ALIGNED PAGE " << aligned_global_page_idx << ENDL();
-
-                if (aligned_global_page_idx != dst_pr_cfg.cb_buff_cfg.global_page_idx) {
-                    DPRINT << "PUSHBACK " << aligned_global_page_idx - dst_pr_cfg.cb_buff_cfg.global_page_idx << ENDL();
-                    multicore_cb_push_back(
-                        dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg,
-                        dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg,
-                        dst_pr_cfg.cb_buff_cfg.remote_noc_encoding,
-                        dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg->fifo_limit_16B,
-                        aligned_global_page_idx - dst_pr_cfg.cb_buff_cfg.global_page_idx);
-                }
             } else {
                 completion_queue_reserve_back(completion_data_size);
                 for (uint32_t i = 0; i < num_buffer_transfers; i++) {
@@ -387,7 +384,7 @@ void kernel_main() {
 
             // Program the CB on the DST router because we may need to pull in data from DST
             volatile db_cb_config_t* remote_multicore_cb_cfg = get_remote_db_cb_config(eth_l1_mem::address_map::ISSUE_CQ_CB_BASE);
-             program_remote_sync_cb<true, 0>(
+            program_remote_sync_cb<true, 0>(
                  local_multicore_cb_cfg,
                  remote_multicore_cb_cfg,
                  pull_noc_encoding,
@@ -454,6 +451,17 @@ void kernel_main() {
                             dispatch_multicore_cb_cfg
                         );
                         pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER, write_to_completion_queue>(src_pr_cfg, dst_pr_cfg, num_pages_in_transfer);
+                    }
+
+                    uint32_t aligned_global_page_idx = align(dst_pr_cfg.cb_buff_cfg.global_page_idx, program_transfer_num_pages);
+                    if (aligned_global_page_idx != dst_pr_cfg.cb_buff_cfg.global_page_idx) {
+                        DPRINT << "PUSHBACK " << aligned_global_page_idx - dst_pr_cfg.cb_buff_cfg.global_page_idx << ENDL();
+                        multicore_cb_push_back(
+                            dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg,
+                            dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg,
+                            dst_pr_cfg.cb_buff_cfg.remote_noc_encoding,
+                            dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg->fifo_limit_16B,
+                            aligned_global_page_idx - dst_pr_cfg.cb_buff_cfg.global_page_idx);
                     }
 
                     buffer_transfer_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;

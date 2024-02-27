@@ -393,6 +393,7 @@ void pull_and_relay(
     uint32_t num_pages_to_read = min(num_pages, src_pr_cfg.num_pages_to_read);
     uint32_t num_pages_to_write = min(num_pages, dst_pr_cfg.num_pages_to_write);
 
+    dst_pr_cfg.cb_buff_cfg.global_page_idx = 0;
     while (num_writes_completed != num_pages) {
         if (cb_producer_space_available(src_pr_cfg.num_pages_to_read) and num_reads_issued < num_pages) {
             if constexpr (src_type == PullAndRelayType::CIRCULAR_BUFFER) {
