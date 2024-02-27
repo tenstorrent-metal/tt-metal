@@ -97,7 +97,7 @@ bool reader_kernel_no_send(
     uint32_t dram_byte_address = input_dram_buffer->address();
     auto dram_noc_xy = input_dram_buffer->noc_coordinates();
     auto eth_noc_xy = device->ethernet_core_from_logical_core(eth_reader_core);
-    log_debug(
+    log_info(
         tt::LogTest,
         "Device {}: reading {} bytes from dram {} addr {} to ethernet core {} addr {}",
         device->id(),
