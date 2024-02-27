@@ -269,7 +269,7 @@ def test_torch_functional_falcon_attention(model_name, batch_size, sequence_leng
 @pytest.mark.parametrize("model_name", ["tiiuae/falcon-7b-instruct"])
 @pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("sequence_length", [128])
-def test_ttnn_functional_falcon_attention(model_name, batch_size, sequence_length):
+def test_ttnn_functional_falcon_attention(device, model_name, batch_size, sequence_length):
     config = transformers.FalconConfig.from_pretrained(model_name)
     model = transformers.models.falcon.modeling_falcon.FalconAttention(config).eval()
 
@@ -282,7 +282,7 @@ def test_ttnn_functional_falcon_attention(model_name, batch_size, sequence_lengt
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
-        convert_to_ttnn=lambda *_: True,
+        device=device,
     )
 
     output, present = ttnn_functional_falcon_attention(

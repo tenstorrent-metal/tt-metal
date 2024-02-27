@@ -156,8 +156,10 @@ def repr_parameters(file, parameters, indentation=""):
             file.write(",\n" if index < len(parameters) - 1 else "\n")
         file.write(indentation)
         file.write("]")
-    elif isinstance(parameters, (ttnn.Tensor, torch.Tensor)):
-        file.write(repr(parameters.shape))
+    elif isinstance(parameters, ttnn.Tensor):
+        file.write(f"ttnn.Tensor(shape={parameters.shape}, layout={parameters.layout}, dtype={parameters.dtype})")
+    elif isinstance(parameters, torch.Tensor):
+        file.write(f"torch.Tensor(shape={parameters.shape}, dtype={parameters.dtype})")
     elif isinstance(parameters, ModuleArgs):
         if not parameters:
             file.write("{}")

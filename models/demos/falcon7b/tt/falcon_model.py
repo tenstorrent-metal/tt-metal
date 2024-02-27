@@ -11,8 +11,6 @@ import ttnn
 
 from models.demos.falcon7b.tt.falcon_decoder import TtFalconDecoderLayer
 from models.utility_functions import (
-    torch2tt_tensor,
-    pad_by_zero,
     nearest_32,
 )
 
@@ -29,6 +27,7 @@ class TtFalconModelShared(torch.nn.Module):
         max_position_embeddings,
         model_config,
         tt_cache_path,
+        parameters,
     ):
         super().__init__()
 
@@ -36,6 +35,7 @@ class TtFalconModelShared(torch.nn.Module):
         # instead of model itself
         self.device = device
         self.state_dict = state_dict
+        self.parameters = parameters
         self.base_url = base_url
         self.config = config
         self.max_position_embeddings = max_position_embeddings
@@ -65,6 +65,7 @@ class TtFalconModelShared(torch.nn.Module):
                     max_position_embeddings=max_position_embeddings,
                     model_config=model_config,
                     tt_cache_path=tt_cache_path,
+                    parameters=parameters,
                 )
                 for layer_num in range(num_layers)
             ]

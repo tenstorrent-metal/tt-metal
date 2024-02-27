@@ -22,6 +22,7 @@ from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_allclose,
     comp_pcc,
 )
+from ttnn.model_preprocessing import preprocess_model_parameters
 
 
 class PytorchFalconCausalLM(torch.nn.Module):
@@ -133,6 +134,10 @@ def run_test_FalconCausalLM_inference(
     # NOTE: Passing in pytorch tensor here instead of ll buda tensor
     # since we don't yet have embedding support on device
     # device, state_dict, base_url, max_position_embeddings, config, num_decoders
+    parameters = preprocess_model_parameters(
+        initialize_model=lambda: hugging_face_reference_model,
+        device=device,
+    )
     tt_FalconCausalLM = TtFalconCausalLM(
         device,
         state_dict,
@@ -142,6 +147,7 @@ def run_test_FalconCausalLM_inference(
         max_position_embeddings,
         model_config,
         tt_cache_path,
+        parameters=parameters,
     )
 
     # TODO: Generate embeddings and attention_mask on device

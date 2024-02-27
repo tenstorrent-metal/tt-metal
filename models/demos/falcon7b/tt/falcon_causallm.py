@@ -25,6 +25,7 @@ class TtFalconCausalLM(TtFalconModelShared):
         max_position_embeddings,
         model_config,
         tt_cache_path,
+        parameters,
     ):
         assert base_url == "", "base_url should be empty at the root of the model!"
 
@@ -37,29 +38,10 @@ class TtFalconCausalLM(TtFalconModelShared):
             max_position_embeddings=max_position_embeddings,
             model_config=model_config,
             tt_cache_path=tt_cache_path,
+            parameters=parameters,
         )
         self.model_config = model_config
-
-        lm_head_str = f"lm_head.weight"
-        if (tt_cache_path / f"{lm_head_str}_{self.model_config['LM_HEAD_MM_WEIGHTS_DTYPE'].name}.bin").exists():
-            loaded_tensor = ttnn.load_tensor(
-                str(tt_cache_path / f"{lm_head_str}_{self.model_config['LM_HEAD_MM_WEIGHTS_DTYPE'].name}.bin")
-            )
-            self.lm_head_weights = ttnn.to_device(
-                loaded_tensor, device=device, memory_config=self.model_config["LM_HEAD_MM_WEIGHTS_MEMCFG"]
-            )
-        else:
-            self.lm_head_weights = ttnn.from_torch(
-                torch.transpose(self.state_dict[f"lm_head.weight"], -2, -1),
-                device=self.device,
-                memory_config=self.model_config["LM_HEAD_MM_WEIGHTS_MEMCFG"],
-                dtype=self.model_config["LM_HEAD_MM_WEIGHTS_DTYPE"],
-                layout=ttnn.TILE_LAYOUT,
-            )
-            ttnn.dump_tensor(
-                str(tt_cache_path / f"{lm_head_str}_{self.model_config['LM_HEAD_MM_WEIGHTS_DTYPE'].name}.bin"),
-                ttnn.from_device(self.lm_head_weights),
-            )
+        self.lm_head_weights = parameters.lm_head.weight
 
     def forward(
         self,
@@ -105,7 +87,6 @@ class TtFalconCausalLM(TtFalconModelShared):
         """
         ##"""
         hidden_states = ttnn.unsqueeze_to_4D(hidden_states)
-        self.lm_head_weights = ttnn.unsqueeze_to_4D(self.lm_head_weights)
         lm_logits = ttnn.experimental.tensor.falcon_lm_head_matmul(
             hidden_states,
             self.lm_head_weights,
