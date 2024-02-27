@@ -136,6 +136,10 @@ class Cluster {
     tt_cxy_pair get_eth_core_for_dispatch_core(
         tt_cxy_pair logical_dispatch_core, EthRouterMode mode, chip_id_t connected_chip_id) const;
 
+    // Writes router config to corresponding eth core
+//    void configure_eth_core_for_dispatch_core(
+  //      tt_cxy_pair logical_dispatch_core, EthRouterMode mode, chip_id_t connected_chip_id) const;
+
     // Internal routing for SD and FD enables launching user ethernet kernels and FD tunneling for all devices in the
     // cluster. When using multiple devices in a cluster, this should be the flow:
     //       CreateDevice(0)
