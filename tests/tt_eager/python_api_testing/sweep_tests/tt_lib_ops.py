@@ -1316,8 +1316,11 @@ def eltwise_prod(
 ):
     t0 = setup_tt_tensor(x, device, layout[0], input_mem_config[0], dtype[0])
     t1 = ttl.tensor.prod(t0, all_dimensions, dim, output_mem_config=output_mem_config)
-
-    return tt2torch_tensor(t1)
+    output = tt2torch_tensor(t1)
+    if all_dimensions:
+        return output[:1, :1, :1, :1]
+    else:
+        return output
 
 
 @setup_host_and_device

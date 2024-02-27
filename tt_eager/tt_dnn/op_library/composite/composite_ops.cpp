@@ -17,6 +17,7 @@
 #include "tt_eager/tt_dnn/op_library/pad/pad_op.hpp"
 #include "tt_numpy/functions.hpp"
 #include "tt_dnn/op_library/prod/prod_nc_op.hpp"
+#include "tt_dnn/op_library/prod/prod_op_all.hpp"
 #include "tt_dnn/op_library/permute/permute_op.hpp"
 #include "tt_eager/tt_dnn/op_library/unpad/unpad_op.hpp"
 namespace tt {
@@ -900,8 +901,16 @@ Tensor xlogy(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& o
 
 Tensor _prod(const Tensor& input_a, bool all_dimensions, int64_t dim, const MemoryConfig& output_mem_config) {
     if(all_dimensions){
-        std::cout<<"all dims"<<endl;
-        return input_a;
+        auto formatted_input_tensor = input_a;
+        if(formatted_input_tensor.layout()==Layout::ROW_MAJOR){
+            auto a_pad_shape = AutoFormat::pad_to_tile_shape(input_a.shape(), false, false, true, true);
+            auto out_shape = input_a.shape();
+            out_shape = {out_shape[0], out_shape[1], out_shape[2], out_shape[3]};
+            if (!AutoFormat::check_input_tensor_format(input_a, a_pad_shape)) {
+                formatted_input_tensor = AutoFormat::format_input_tensor(input_a, input_a.device(), a_pad_shape, 1.0, Layout::TILE);
+            }
+        }
+        return tt::operations::primary::prod_all(formatted_input_tensor, output_mem_config);
     }
     TT_ASSERT(dim >= -4 && dim <= 3 && "Dimension out of range (expected to be in range of [-4, 3]");
     Tensor temp = input_a;

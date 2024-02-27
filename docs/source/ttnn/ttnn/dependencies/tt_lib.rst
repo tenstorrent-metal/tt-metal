@@ -785,6 +785,8 @@ Other Operations
 
 .. autofunction:: tt_lib.tensor.prod
 
+.. autofunction:: tt_lib.tensor.tiled_prod
+
 .. autofunction:: tt_lib.tensor.addcmul
 
 .. autofunction:: tt_lib.tensor.addcdiv

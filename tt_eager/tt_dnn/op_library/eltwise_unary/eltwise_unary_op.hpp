@@ -74,7 +74,8 @@ enum class UnaryOpType {
     SUB_UNARY_SFPU = 56,
     MUL_UNARY_SFPU = 57,
     DIV_UNARY_SFPU = 58,
-    IDENTITY_UINT32 = 59
+    IDENTITY_UINT32 = 59,
+    TILED_PROD = 60
 };
 
 template <typename T>
@@ -261,6 +262,7 @@ constexpr auto recip = make_eltwise_unary<UnaryOpType::RECIP>{};
 constexpr auto relu = make_eltwise_unary<UnaryOpType::RELU>{};
 constexpr auto relu6 = make_eltwise_unary<UnaryOpType::RELU6>{};
 constexpr auto sigmoid = make_eltwise_unary<UnaryOpType::SIGMOID>{};
+constexpr auto tiled_prod = make_eltwise_unary<UnaryOpType::TILED_PROD>{};
 constexpr auto log = make_eltwise_unary<UnaryOpType::LOG>{};
 constexpr auto tanh = make_eltwise_unary<UnaryOpType::TANH>{};
 constexpr auto log2 = make_eltwise_unary<UnaryOpType::LOG2>{};

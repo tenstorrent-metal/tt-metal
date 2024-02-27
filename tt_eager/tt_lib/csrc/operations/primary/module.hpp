@@ -40,6 +40,7 @@
 #include "tt_dnn/op_library/moreh_mean/moreh_mean_op.hpp"
 #include "tt_dnn/op_library/moreh_mean_backward/moreh_mean_backward_op.hpp"
 #include "tt_dnn/op_library/moreh_getitem/moreh_getitem_op.hpp"
+#include "tt_dnn/op_library/prod/prod_op_all.hpp"
 
 namespace py = pybind11;
 
@@ -478,6 +479,14 @@ void py_module(py::module& m_primary) {
         R"doc(
             Performs a rmsnorm(a+b)*gamma + beta operation.
         )doc");
+
+    //prod along all dimensions
+    m_primary.def(
+        "prod_all",
+        &prod_all,
+        py::arg("input").noconvert(),
+        py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+        "Computes prod along along dimensions of the tensor.");
 
     // moreh_adam
     m_primary.def(
