@@ -296,7 +296,7 @@ namespace dram_tests {
 TEST_F(CommandQueueSingleCardFixture, WriteOneTileToDramBank0) {
     TestBufferConfig config = {.num_pages = 1, .page_size = 2048, .buftype = BufferType::DRAM};
     for (Device *device : devices_) {
-        EXPECT_TRUE(local_test_functions::test_EnqueueWriteBuffer_and_EnqueueReadBuffer(device_, device_->command_queue(), config));
+        EXPECT_TRUE(local_test_functions::test_EnqueueWriteBuffer_and_EnqueueReadBuffer(device, device->command_queue(), config));
     }
 }
 
