@@ -1483,7 +1483,6 @@ def test_sharded_concat_heads(
     assert passing
 
 
-@skip_for_wormhole_b0("WH ND hang, see issue #4392")
 @pytest.mark.parametrize(
     "input_shape, input_layout, input_shard_grid,  input_shard_shape, input_shard_orientation, input_sharding_scheme, output_shard_grid, output_shard_shape, output_shard_orientation, output_sharding_scheme ",
     [
