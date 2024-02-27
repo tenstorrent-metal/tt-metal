@@ -1305,6 +1305,7 @@ def arange(
 def eltwise_prod(
     x,
     *args,
+    all_dimensions,
     dim,
     device,
     dtype,
@@ -1314,7 +1315,7 @@ def eltwise_prod(
     **kwargs,
 ):
     t0 = setup_tt_tensor(x, device, layout[0], input_mem_config[0], dtype[0])
-    t1 = ttl.tensor.prod(t0, dim, output_mem_config=output_mem_config)
+    t1 = ttl.tensor.prod(t0, all_dimensions, dim, output_mem_config=output_mem_config)
 
     return tt2torch_tensor(t1)
 

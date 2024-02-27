@@ -181,7 +181,8 @@ Tensor logical_noti(
 //prod
 Tensor prod(
     const Tensor& input_a,
-    int64_t dim,
+    bool all_dimensions = false,
+    int64_t dim = 0,
     const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
 

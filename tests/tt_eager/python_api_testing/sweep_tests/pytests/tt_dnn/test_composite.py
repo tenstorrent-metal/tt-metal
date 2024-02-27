@@ -231,7 +231,12 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
     elif fn in ["logical_ori", "logical_andi", "logical_xori", "logical_noti"]:
         test_args.update({"immediate": np.random.randint(0, 100)})
     elif fn in ["prod"]:
-        test_args.update({"dim": random.choice([0, 1, 2, 3])})
+        test_args.update(
+            {
+                "all_dimensions": random.choice([False]),
+                "dim": random.choice([-4, -3, -2, -1, 0, 1, 2, 3]),
+            }
+        )
     elif fn in ["isclose"]:
         test_args.update(
             {

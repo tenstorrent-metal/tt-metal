@@ -898,13 +898,18 @@ Tensor xlogy(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& o
     return operation::decorate_as_composite(__func__, _xlogy)(input_a, input_b, output_mem_config);
 }
 
-Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_config) {
+Tensor _prod(const Tensor& input_a, bool all_dimensions, int64_t dim, const MemoryConfig& output_mem_config) {
+    if(all_dimensions){
+        std::cout<<"all dims"<<endl;
+        return input_a;
+    }
+    TT_ASSERT(dim >= -4 && dim <= 3 && "Dimension out of range (expected to be in range of [-4, 3]");
     Tensor temp = input_a;
     //Permute for dim 2,3
-    if(dim == 2){
+    if(dim == 2 || dim == -2){
         std::vector<int64_t> permute_dims = {2, 0, 1, 3};
         temp = permute(input_a, permute_dims, output_mem_config);
-    }else if(dim == 3){
+    }else if(dim == 3 || dim == -1){
         std::vector<int64_t> permute_dims = {3, 0, 1, 2};
         temp = permute(input_a, permute_dims, output_mem_config);
     }
@@ -919,14 +924,14 @@ Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_
         }
     }
     //Apply prod
-    std::vector<int64_t> dimension = {(dim == 1) ? dim : 0};
+    std::vector<int64_t> dimension = {(dim == 1 || dim == -3) ? 1 : 0};
     Shape input_shape = formatted_input_tensor.shape();
-    Shape required = { ((dim == 1) ? input_shape[0] : 1), ((dim == 1) ? 1 : input_shape[1]) , input_shape[2], input_shape[3]};
+    Shape required = { ((dim == 1 || dim == -3) ? input_shape[0] : 1), ((dim == 1 || dim == -3) ? 1 : input_shape[1]) , input_shape[2], input_shape[3]};
     Tensor result = tt::operations::primary::prod_nc(formatted_input_tensor, zeros( required, formatted_input_tensor.dtype(), formatted_input_tensor.layout(), formatted_input_tensor.device(), output_mem_config), dimension, output_mem_config);
     //Permute and unpad result for dim 2,3
-    if(dim == 0 || dim == 1){
+    if(dim == 0 || dim == 1 || dim == -4 || dim == -3){
         return result;
-    }else if(dim == 2){
+    }else if(dim == 2 || dim == -2){
         std::vector<int64_t> after_permute_dims = {1, 2, 0, 3};
         Tensor required = permute(result, after_permute_dims, output_mem_config);
         input_shape = input_a.shape();
@@ -947,8 +952,8 @@ Tensor _prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_
         return permute(new_unpad_tensor, after_permute_dims, output_mem_config);
     }
 }
-Tensor prod(const Tensor& input_a, int64_t dim, const MemoryConfig& output_mem_config) {
-    return operation::decorate_as_composite(__func__, _prod)(input_a, dim, output_mem_config);
+Tensor prod(const Tensor& input_a, bool all_dimensions, int64_t dim, const MemoryConfig& output_mem_config) {
+    return operation::decorate_as_composite(__func__, _prod)(input_a, all_dimensions, dim, output_mem_config);
 }
 
 Tensor _variance_impl(
