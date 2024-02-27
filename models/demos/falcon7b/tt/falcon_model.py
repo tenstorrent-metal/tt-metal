@@ -11,8 +11,6 @@ import ttnn
 
 from models.demos.falcon7b.tt.falcon_decoder import TtFalconDecoderLayer
 from models.utility_functions import (
-    torch2tt_tensor,
-    pad_by_zero,
     nearest_32,
 )
 
@@ -22,103 +20,39 @@ class TtFalconModelShared(torch.nn.Module):
     def __init__(
         self,
         device,
-        state_dict,
-        base_url,
         num_layers,
         config,
         max_position_embeddings,
         model_config,
-        tt_cache_path,
+        parameters,
     ):
         super().__init__()
 
-        # NOTE: Once we make embeddings run on device, pass in state dict
-        # instead of model itself
         self.device = device
-        self.state_dict = state_dict
-        self.base_url = base_url
+        self.parameters = parameters
         self.config = config
         self.max_position_embeddings = max_position_embeddings
         self.model_config = model_config
 
         # So far on CPU until we add embeddings support on device
         self.embeddings = torch.nn.Embedding(config.vocab_size, config.hidden_size)
-        word_embeddings_path = tt_cache_path / "embedding.pt"
-        if (word_embeddings_path).exists():
-            self.embeddings.weight = torch.nn.Parameter(
-                torch.load(word_embeddings_path, map_location=torch.device("cpu"))
-            )
-        else:
-            embed_weights = state_dict["transformer.word_embeddings.weight"]
-            torch.save(embed_weights, word_embeddings_path)
-            self.embeddings.weight = torch.nn.Parameter(embed_weights)
+        self.embeddings.weight = torch.nn.Parameter(parameters.word_embeddings.weight)
 
         # stack all decoders
         self.layers = torch.nn.ModuleList(
             [
                 TtFalconDecoderLayer(
                     device=device,
-                    state_dict=state_dict,
-                    base_url=f"{base_url}.h",
-                    layer_num=layer_num,
                     config=config,
                     max_position_embeddings=max_position_embeddings,
                     model_config=model_config,
-                    tt_cache_path=tt_cache_path,
+                    parameters=parameters.h[layer_num],
                 )
                 for layer_num in range(num_layers)
             ]
         )
-
-        layer_name = f"{base_url}"
-
-        layernorm_weights_str = f"{layer_name}.ln_f.weight"
-        layernorm_bias_str = f"{layer_name}.ln_f.bias"
-
-        if (tt_cache_path / f"{layernorm_weights_str}_{self.model_config['LN_F_WEIGHTS_DTYPE'].name}.bin").exists():
-            loaded_tensor = ttnn.load_tensor(
-                str(tt_cache_path / f"{layernorm_weights_str}_{self.model_config['LN_F_WEIGHTS_DTYPE'].name}.bin")
-            )
-            self.layernorm_gamma = ttnn.to_device(
-                loaded_tensor, device=device, memory_config=self.model_config["LN_F_WEIGHTS_MEMCFG"]
-            )
-            self.layernorm_gamma = ttnn.unsqueeze_to_4D(self.layernorm_gamma)
-        else:
-            self.layernorm_gamma = ttnn.from_torch(
-                self.state_dict[layernorm_weights_str],
-                device=device,
-                layout=ttnn.TILE_LAYOUT,
-                dtype=self.model_config["LN_F_WEIGHTS_DTYPE"],
-                memory_config=self.model_config["LN_F_WEIGHTS_MEMCFG"],
-            )
-            self.layernorm_gamma = ttnn.unsqueeze_to_4D(self.layernorm_gamma)
-            ttnn.dump_tensor(
-                str(tt_cache_path / f"{layernorm_weights_str}_{self.model_config['LN_F_WEIGHTS_DTYPE'].name}.bin"),
-                ttnn.from_device(self.layernorm_gamma),
-            )
-
-        if (tt_cache_path / f"{layernorm_bias_str}_{self.model_config['LN_F_BIAS_DTYPE'].name}.bin").exists():
-            loaded_tensor = ttnn.load_tensor(
-                str(tt_cache_path / f"{layernorm_bias_str}_{self.model_config['LN_F_BIAS_DTYPE'].name}.bin")
-            )
-            self.layernorm_beta = ttnn.to_device(
-                loaded_tensor, device=device, memory_config=self.model_config["LN_F_BIAS_MEMCFG"]
-            )
-            self.layernorm_beta = ttnn.unsqueeze_to_4D(self.layernorm_beta)
-        else:
-            self.layernorm_beta = ttnn.from_torch(
-                self.state_dict[layernorm_bias_str],
-                device=device,
-                layout=ttnn.TILE_LAYOUT,
-                dtype=self.model_config["LN_F_BIAS_DTYPE"],
-                memory_config=self.model_config["LN_F_BIAS_MEMCFG"],
-            )
-            self.layernorm_beta = ttnn.unsqueeze_to_4D(self.layernorm_beta)
-            ttnn.dump_tensor(
-                str(tt_cache_path / f"{layernorm_bias_str}_{self.model_config['LN_F_BIAS_DTYPE'].name}.bin"),
-                ttnn.from_device(self.layernorm_beta),
-            )
-
+        self.ln_f_weight = parameters.ln_f.weight
+        self.ln_f_bias = parameters.ln_f.bias
         self.layernorm_eps = config.layer_norm_epsilon
 
     def model_preprocessing(self, llm_mode, input_ids, kv_cache_len, num_input_tokens):
@@ -232,12 +166,12 @@ class TtFalconModelShared(torch.nn.Module):
         )
         layer_output = ttnn.mul(
             layer_output,
-            self.layernorm_gamma,
+            self.ln_f_weight,
             memory_config=self.model_config["LN_F_OUTPUT_MEMCFG"],
         )
         layer_output = ttnn.add(
             layer_output,
-            self.layernorm_beta,
+            self.ln_f_bias,
             memory_config=self.model_config["LN_F_OUTPUT_MEMCFG"],
         )
 
@@ -248,23 +182,19 @@ class TtFalconModel(TtFalconModelShared):
     def __init__(
         self,
         device,
-        state_dict,
-        base_url,
         num_layers,
         config,
         max_position_embeddings,
         model_config,
-        tt_cache_path,
+        parameters,
     ):
         super().__init__(
             device=device,
-            state_dict=state_dict,
-            base_url=base_url,
             num_layers=num_layers,
             config=config,
             max_position_embeddings=max_position_embeddings,
             model_config=model_config,
-            tt_cache_path=tt_cache_path,
+            parameters=parameters,
         )
 
     def forward(

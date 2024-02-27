@@ -7,71 +7,39 @@ import pytest
 from loguru import logger
 import ttnn
 
-import tt_lib
-from models.demos.falcon7b.reference.hf_modeling_falcon import (
-    FalconForCausalLM,
-)
 from models.demos.falcon7b.tt.falcon_mlp import TtFalconMLP
-from models.demos.falcon7b.tt.model_config import (
-    get_model_config,
-    get_tt_cache_path,
-)
-from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
-    comp_allclose,
-    comp_pcc,
-)
-from models.utility_functions import torch2tt_tensor, tt2torch_tensor
+from models.demos.falcon7b.tt.model_config import get_model_config
+from ttnn.model_preprocessing import preprocess_model_parameters
+from tests.ttnn.utils_for_testing import assert_with_pcc
+import transformers
 
+torch.manual_seed(0)
 
-class PytorchFalconMLPModel(torch.nn.Module):
-    def __init__(self, hf_reference_model, layer_num):
-        super().__init__()
-        self.mlp = hf_reference_model.transformer.h[layer_num].mlp
-
-        # Disable dropout
-        self.mlp.eval()
-
-    def forward(self, x):
-        result = self.mlp(x)
-        return result
+from .common import create_custom_preprocessor
 
 
 def run_test_FalconMLP_inference(
     device,
-    model_version,
+    model_name,
     batch,
     seq_len,
     pcc,
     model_config,
-    tt_cache_path,
-    model_location_generator,
 ):
-    model_name = model_location_generator(model_version, model_subdir="Falcon")
-
-    hugging_face_reference_model = FalconForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
-    hugging_face_reference_model.eval()
-    configuration = hugging_face_reference_model.config
-    state_dict = hugging_face_reference_model.state_dict()
-
-    # Prepare input
-    torch.manual_seed(0)
+    configuration = transformers.FalconConfig.from_pretrained(model_name)
     mlp_input = (torch.rand(batch, 1, seq_len, configuration.hidden_size) * 2) - 1
-    layer_num = 0
-    base_url = "transformer.h"
+    model = transformers.models.falcon.modeling_falcon.FalconMLP(configuration).eval()
+    torch_output = model(mlp_input)
 
-    # PyTorch output --------------------------------------------------------------------
-    pytorch_FalconMLP_model = PytorchFalconMLPModel(hugging_face_reference_model, layer_num)
-    pytorch_out = pytorch_FalconMLP_model(mlp_input)
-
-    # TT hardware execution -------------------------------------------------------------
+    parameters = preprocess_model_parameters(
+        initialize_model=lambda: model,
+        device=device,
+        custom_preprocessor=create_custom_preprocessor(model_config),
+    )
     tt_FalconMLP_model = TtFalconMLP(
         device,
-        state_dict,
-        base_url,
-        layer_num,
-        configuration.hidden_size,
         model_config,
-        tt_cache_path,
+        parameters,
     )
 
     tt_mlp_input = ttnn.from_torch(
@@ -81,17 +49,7 @@ def run_test_FalconMLP_inference(
     tt_out = tt_FalconMLP_model(tt_mlp_input)
     tt_out = ttnn.to_torch(tt_out)
 
-    # check outputs ----------------------------------------------------------------------
-    logger.info(comp_allclose(pytorch_out, tt_out))
-
-    does_pass, output_pcc = comp_pcc(pytorch_out, tt_out, pcc)
-    logger.info(f"PCC value: {output_pcc}")
-
-    if does_pass:
-        logger.info("Falcon MLP output Passed!")
-    else:
-        logger.warning("Falcon MLP output Failed!")
-        assert does_pass, f"PCC value is lower than {pcc}"
+    assert_with_pcc(torch_output, tt_out.to(torch_output.dtype), pcc)
 
 
 @pytest.mark.parametrize(
@@ -112,11 +70,9 @@ def test_FalconMLP_inference(
     seq_len,
     pcc,
     model_config_str,
-    model_location_generator,
     device,
 ):
     model_config = get_model_config(model_config_str)
-    tt_cache_path = get_tt_cache_path(model_version)
 
     run_test_FalconMLP_inference(
         device,
@@ -125,6 +81,4 @@ def test_FalconMLP_inference(
         seq_len,
         pcc,
         model_config,
-        tt_cache_path,
-        model_location_generator,
     )

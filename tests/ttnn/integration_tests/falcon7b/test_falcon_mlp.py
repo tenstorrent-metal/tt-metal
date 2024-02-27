@@ -8,7 +8,6 @@ import pytest
 from loguru import logger
 
 import ttnn
-from models.experimental.ttnn_falcon7b.tt.falcon_mlp import TtFalconMLP
 from ttnn.model_preprocessing import preprocess_model_parameters
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -66,17 +65,15 @@ def test_torch_functional_falcon_mlp(model_name, batch_size, sequence_length):
 @pytest.mark.parametrize("model_name", ["tiiuae/falcon-7b-instruct"])
 @pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("sequence_length", [128])
-@pytest.mark.parametrize("torch_dtype", [torch.bfloat16])
-def test_ttnn_functional_falcon_mlp(device, model_name, batch_size, sequence_length, torch_dtype):
+def test_ttnn_functional_falcon_mlp(device, model_name, batch_size, sequence_length):
     config = transformers.FalconConfig.from_pretrained(model_name)
     model = transformers.models.falcon.modeling_falcon.FalconMLP(config).eval()
-    model = model.to(torch_dtype)
 
-    torch_hidden_states = (torch.rand(batch_size, 1, sequence_length, config.hidden_size, dtype=torch.bfloat16) * 2) - 1
+    torch_hidden_states = (torch.rand(batch_size, 1, sequence_length, config.hidden_size) * 2) - 1
     torch_output = model(torch_hidden_states)
 
     parameters = preprocess_model_parameters(
-        initialize_model=lambda: model.to(torch.bfloat16),
+        initialize_model=lambda: model,
         device=device,
     )
 
@@ -87,7 +84,7 @@ def test_ttnn_functional_falcon_mlp(device, model_name, batch_size, sequence_len
     )
     output = ttnn.to_torch(output)
 
-    assert_with_pcc(torch_output, output.to(torch_output.dtype), 0.98)
+    assert_with_pcc(torch_output, output.to(torch_output.dtype), 0.985)
 
 
 def test_ttnn_optimized_functional_mlp():

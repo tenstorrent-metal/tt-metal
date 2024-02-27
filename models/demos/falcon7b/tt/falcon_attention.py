@@ -13,98 +13,7 @@ from models.utility_functions import (
     nearest_32,
     is_wormhole_b0,
 )
-
-
-class TtFalconRotaryEmbedding(torch.nn.Module):
-    """
-    See FalconRotaryEmbedding from hf_modeling_falcon.py
-    """
-
-    def __init__(
-        self,
-        tt_device,
-        dim,
-        base_url,
-        layer_num,
-        max_position_embeddings=2048,
-        base=10000,
-        model_config=None,
-        tt_cache_path=None,
-    ):
-        super().__init__()
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
-
-        self.max_seq_len_cached = max_position_embeddings
-        self.model_config = model_config
-        self.device = tt_device
-        t = torch.arange(
-            self.max_seq_len_cached,
-            device=inv_freq.device,
-            dtype=inv_freq.dtype,
-        )
-        freqs = torch.einsum("i,j->ij", t, inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        emb = torch.cat((freqs, freqs), dim=-1)
-
-        layer_name = f"{base_url}.{layer_num}.rotary_embedding"
-        if (
-            tt_cache_path / f"{layer_name}.cos_cached_{self.model_config['COS_CACHED_WEIGHTS_DTYPE'].name}.bin"
-        ).exists():
-            self.tt_cos_cached = ttnn.load_tensor(
-                str(tt_cache_path / f"{layer_name}.cos_cached_{self.model_config['COS_CACHED_WEIGHTS_DTYPE'].name}.bin")
-            )
-            self.tt_cos_cached = ttnn.to_device(
-                self.tt_cos_cached, self.device, memory_config=self.model_config["COS_CACHED_WEIGHTS_MEMCFG"]
-            )
-        else:
-            self.tt_cos_cached = ttnn.from_torch(
-                emb.cos()[None, None, :, :],
-                dtype=self.model_config["COS_CACHED_WEIGHTS_DTYPE"],
-                memory_config=self.model_config["COS_CACHED_WEIGHTS_MEMCFG"],
-                device=self.device,
-            )
-
-            ttnn.dump_tensor(
-                str(
-                    tt_cache_path / f"{layer_name}.cos_cached_{self.model_config['COS_CACHED_WEIGHTS_DTYPE'].name}.bin"
-                ),
-                ttnn.from_device(self.tt_cos_cached),
-            )
-        if (
-            tt_cache_path / f"{layer_name}.sin_cached_{self.model_config['SIN_CACHED_WEIGHTS_DTYPE'].name}.bin"
-        ).exists():
-            self.tt_sin_cached = ttnn.load_tensor(
-                str(tt_cache_path / f"{layer_name}.sin_cached_{self.model_config['SIN_CACHED_WEIGHTS_DTYPE'].name}.bin")
-            )
-            self.tt_sin_cached = ttnn.to_device(
-                self.tt_sin_cached, self.device, memory_config=self.model_config["SIN_CACHED_WEIGHTS_MEMCFG"]
-            )
-
-        else:
-            self.tt_sin_cached = ttnn.from_torch(
-                emb.sin()[None, None, :, :],
-                memory_config=self.model_config["SIN_CACHED_WEIGHTS_MEMCFG"],
-                dtype=self.model_config["SIN_CACHED_WEIGHTS_DTYPE"],
-                device=self.device,
-            )
-            ttnn.dump_tensor(
-                str(
-                    tt_cache_path / f"{layer_name}.sin_cached_{self.model_config['SIN_CACHED_WEIGHTS_DTYPE'].name}.bin"
-                ),
-                ttnn.from_device(self.tt_sin_cached),
-            )
-
-    def forward(self, layer: ttnn.Tensor, token_idx: Optional[int] = None) -> ttnn.Tensor:
-        seq_len = layer.shape[2]
-        assert seq_len <= self.max_seq_len_cached, "seq_len exceeds max_seq_len_cached in RotaryEmbedding!"
-
-        return ttnn.transformer.rotary_embedding(
-            layer,
-            self.tt_cos_cached,
-            self.tt_sin_cached,
-            token_idx,
-            memory_config=self.model_config["ROTARY_EMBEDDING_OUTPUT_MEMCFG"],
-        )
+from .falcon_rotary_embedding import TtFalconRotaryEmbedding
 
 
 class TtFalconAttention(nn.Module):
@@ -113,14 +22,11 @@ class TtFalconAttention(nn.Module):
     def __init__(
         self,
         device,
-        state_dict,
-        base_url,
-        layer_num,
         hidden_size: int,
         num_heads: int,
         max_position_embeddings: int = 2048,
         model_config=None,
-        tt_cache_path=None,
+        parameters=None,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -128,7 +34,7 @@ class TtFalconAttention(nn.Module):
         self.head_dim = hidden_size // num_heads
         self.max_position_embeddings = max_position_embeddings
         self.device = device
-        self.state_dict = state_dict
+        self.parameters = parameters
         self.model_config = model_config
 
         if (self.head_dim * num_heads) != self.hidden_size:
@@ -137,44 +43,13 @@ class TtFalconAttention(nn.Module):
                 f" and `num_heads`: {num_heads})."
             )
 
-        layer_name = f"{base_url}.{layer_num}.self_attention"
-        query_key_value_str = f"{layer_name}.query_key_value.weight"
-        selfout_str = f"{layer_name}.dense.weight"
-
-        torch_qkv_weights = torch.transpose(
-            self.state_dict[query_key_value_str],
-            -2,
-            -1,
-        )
-
-        self.query_key_value_weights = ttnn.from_torch(
-            torch_qkv_weights,
-            memory_config=self.model_config["FUSED_QKV_MM_WEIGHTS_MEMCFG"],
-            dtype=self.model_config["FUSED_QKV_MM_WEIGHTS_DTYPE"],
-            device=self.device,
-            layout=ttnn.TILE_LAYOUT,
-        )
-
-        self.dense_weights = ttnn.from_torch(
-            torch.transpose(
-                self.state_dict[selfout_str],
-                -2,
-                -1,
-            ),
-            device=self.device,
-            memory_config=self.model_config["SELFOUT_MM_WEIGHTS_MEMCFG"],
-            dtype=self.model_config["SELFOUT_MM_WEIGHTS_DTYPE"],
-            layout=ttnn.TILE_LAYOUT,
-        )
+        self.query_key_value_weights = self.parameters.query_key_value.weight
+        self.dense_weights = self.parameters.dense.weight
 
         self.rotary_embedding = TtFalconRotaryEmbedding(
-            self.device,
-            self.head_dim,
-            base_url,
-            layer_num,
-            max_position_embeddings=self.max_position_embeddings,
+            parameters=parameters.rotary_emb,
             model_config=model_config,
-            tt_cache_path=tt_cache_path,
+            max_position_embeddings=self.max_position_embeddings,
         )
 
         self.scalar = 1 / math.sqrt(self.head_dim)
@@ -308,7 +183,6 @@ class TtFalconAttention(nn.Module):
         )
 
         if attention_mask is not None:
-            # TODO(cfjchu): change 71 to 1 on attention_mas
             attn_weights = ttnn.add(
                 attn_weights,
                 attention_mask,

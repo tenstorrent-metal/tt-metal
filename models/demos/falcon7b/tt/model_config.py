@@ -139,7 +139,7 @@ def get_model_config(model_config_str):
 
 # TODO: Generalize TT tensor caching
 def get_tt_cache_path(model_version):
-    tt_cache_path = Path("/mnt/MLPerf/tt_dnn-models/tt/Falcon") / model_version
+    tt_cache_path = Path("/mnt/MLPerf/ttnn/models/demos/falcon7b/datasets") / model_version
     if tt_cache_path.exists():
         return tt_cache_path
     else:
