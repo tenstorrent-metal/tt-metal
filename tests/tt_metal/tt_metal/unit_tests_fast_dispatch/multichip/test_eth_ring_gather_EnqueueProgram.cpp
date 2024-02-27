@@ -451,7 +451,7 @@ bool eth_interleaved_ring_gather_sender_receiver_kernels(
 }
 }  // namespace fd_unit_tests::erisc::kernels
 
-TEST_F(CommandQueuePCIDevicesFixture, EthKernelsDirectRingGatherAllChips) {
+TEST_F(CommandQueueMultiDeviceFixture, EthKernelsDirectRingGatherAllChips) {
     const size_t src_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + 32;
     const size_t dst_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + 32;
     const size_t sem_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
@@ -463,7 +463,7 @@ TEST_F(CommandQueuePCIDevicesFixture, EthKernelsDirectRingGatherAllChips) {
         device_ring, WORD_SIZE, src_eth_l1_byte_address, dst_eth_l1_byte_address, sem_l1_byte_address));
 }
 
-TEST_F(CommandQueuePCIDevicesFixture, EthKernelsInterleavedRingGatherAllChips) {
+TEST_F(CommandQueueMultiDeviceFixture, EthKernelsInterleavedRingGatherAllChips) {
     const size_t src_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + 32;
     const size_t dst_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + 32;
     const size_t sem_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;

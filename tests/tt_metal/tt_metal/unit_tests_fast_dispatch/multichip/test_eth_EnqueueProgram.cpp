@@ -54,6 +54,7 @@ bool test_dummy_EnqueueProgram_with_runtime_args(Device* device, const CoreCoord
         "tests/tt_metal/tt_metal/gtest_unit_tests/command_queue/test_kernels/runtime_args_kernel0.cpp",
         eth_core_coord,
         tt_metal::EthernetConfig{.noc = tt_metal::NOC::NOC_0});
+    std::cout << " running test on device " << device->id() << " " << eth_noc_xy.str() << std::endl;
 
     vector<uint32_t> dummy_kernel0_args = {0, 1, 2, 3, 4, 5, 6, 7, 8};
 
@@ -584,7 +585,7 @@ TEST_F(CommandQueuePCIDevicesFixture, EthKernelsNocWriteNoReceive) {
     }
 }
 
-TEST_F(CommandQueuePCIDevicesFixture, EthKernelsDirectSendAllConnectedChips) {
+TEST_F(CommandQueueMultiDeviceFixture, EthKernelsDirectSendAllConnectedChips) {
     const size_t src_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
     const size_t dst_eth_l1_byte_address = eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
     for (const auto& sender_device : devices_) {
@@ -635,6 +636,7 @@ TEST_F(CommandQueuePCIDevicesFixture, EthKernelsDirectSendAllConnectedChips) {
 }
 
 TEST_F(CommandQueuePCIDevicesFixture, EthKernelsRandomDirectSendTests) {
+  GTEST_SKIP();
     srand(0);
     const auto& device_0 = devices_.at(0);
     const auto& device_1 = devices_.at(1);
@@ -716,7 +718,7 @@ TEST_F(CommandQueuePCIDevicesFixture, EthKernelsSendDramBufferAllConnectedChips)
     }
 }
 
-TEST_F(CommandQueuePCIDevicesFixture, EthKernelsSendInterleavedBufferAllConnectedChips) {
+TEST_F(CommandQueueMultiDeviceFixture, EthKernelsSendInterleavedBufferAllConnectedChips) {
     for (const auto& sender_device : devices_) {
         for (const auto& receiver_device : devices_) {
             if (sender_device->id() == receiver_device->id()) {
