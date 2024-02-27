@@ -101,7 +101,7 @@ void kernel_main() {
     volatile tt_l1_ptr uint32_t *dispatch_semaphore_addr =
         reinterpret_cast<volatile tt_l1_ptr uint32_t*>(get_semaphore(2));   // Should be initialized to num commands slots on dispatch core by host
 
-    // DPRINT << "SEM INIT: " << push_semaphore_addr[0] << ENDL();
+    // //DPRINT << "SEM INIT: " << push_semaphore_addr[0] << ENDL();
     volatile db_cb_config_t* local_multicore_cb_cfg = get_local_db_cb_config(CQ_CONSUMER_CB_BASE);
     volatile db_cb_config_t* local_dispatch_multicore_cb_cfg = get_local_db_cb_config(CQ_DISPATCHER_CB_CONFIG_BASE);
     volatile db_cb_config_t* dispatch_multicore_cb_cfg = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE);
@@ -110,7 +110,7 @@ void kernel_main() {
     constexpr uint32_t dispatch_cb_size = dispatch_cb_num_pages * DeviceCommand::PROGRAM_PAGE_SIZE;
 
     if constexpr (pull_and_push_config == tt::PullAndPushConfig::LOCAL or pull_and_push_config == tt::PullAndPushConfig::REMOTE_PULL_AND_PUSH) {
-        // DPRINT << "Programming cb for programs on dispatch core" << ENDL();
+        // //DPRINT << "Programming cb for programs on dispatch core" << ENDL();
         // Dispatch core has a constant CB
         program_remote_sync_cb<false>(
             local_dispatch_multicore_cb_cfg,
@@ -127,11 +127,11 @@ void kernel_main() {
     PullAndRelayCfg dst_pr_cfg(program_event_buffer);
     dst_pr_cfg.dispatch_synchronization_semaphore = dispatch_semaphore_addr;
 
-    DPRINT << "MY_X: " << (uint32_t) my_x[0] << ", MY_Y: " << (uint32_t) my_y[0] << ENDL();
+    //DPRINT << "MY_X: " << (uint32_t) my_x[0] << ", MY_Y: " << (uint32_t) my_y[0] << ENDL();
     while (true) {
         if constexpr (read_from_issue_queue) {
             // we will also need to poll the program event buffer
-            DPRINT << "WAIT CMD" << ENDL();
+            //DPRINT << "WAIT CMD" << ENDL();
             while (not issue_queue_space_available()) {
                 if constexpr (pull_and_push_config == tt::PullAndPushConfig::LOCAL) {
                     if (consumer_is_idle<2>(dispatch_semaphore_addr)) {
@@ -139,14 +139,14 @@ void kernel_main() {
                     }
                 }
             }
-            DPRINT << "GOT CMD" << ENDL();
+            //DPRINT << "GOT CMD" << ENDL();
 
             uint32_t rd_ptr = (cq_read_interface.issue_fifo_rd_ptr << 4);
             uint64_t src_noc_addr = pcie_core_noc_encoding | rd_ptr;
             noc_async_read(src_noc_addr, command_start_addr, min(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, issue_queue_size - rd_ptr));
         } else {
 
-            DPRINT << "WAIT FOR DST TO GET CMD" << ENDL();
+            //DPRINT << "WAIT FOR DST TO GET CMD" << ENDL();
             uint64_t src_noc_addr;
             if constexpr (pull_and_push_config == tt::PullAndPushConfig::REMOTE_PULL_AND_PUSH) {
                 while (pull_semaphore_addr[0] == 0) { // dst routers increments this semaphore when cmd is available in the dst router
@@ -161,7 +161,7 @@ void kernel_main() {
                 db_acquire(pull_semaphore_addr, my_noc_encoding); // dst routers increments this semaphore when cmd is available in the dst router
                 src_noc_addr = pull_noc_encoding |  completion_cmd_eth_dst_base;
             }
-            DPRINT << "DONE WAIT FOR DST TO GET CMD" << ENDL();
+            //DPRINT << "DONE WAIT FOR DST TO GET CMD" << ENDL();
             noc_async_read(src_noc_addr, command_start_addr, DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND); // read in cmd header only
         }
         noc_async_read_barrier();
@@ -184,6 +184,8 @@ void kernel_main() {
         uint32_t completion_data_size = header->completion_data_size;
         DeviceCommand::WrapRegion wrap = (DeviceCommand::WrapRegion)header->wrap;
         uint32_t event = header->event;
+
+        dst_pr_cfg.cb_buff_cfg.global_page_idx = 0;
 
         if constexpr (read_from_issue_queue) { // don't wrap issue queue on completion path
             if (wrap == DeviceCommand::WrapRegion::ISSUE) {
@@ -209,7 +211,7 @@ void kernel_main() {
             }
         }
 
-        DPRINT << "LOCAL CB SIZE: " << pull_and_push_cb_size << ", NUM PAGES: " << pull_and_push_cb_num_pages << ", PAGE SIZE: " << page_size << ENDL();
+        //DPRINT << "LOCAL CB SIZE: " << pull_and_push_cb_size << ", NUM PAGES: " << pull_and_push_cb_num_pages << ", PAGE SIZE: " << page_size << ENDL();
         program_local_cb(data_section_addr, pull_and_push_cb_num_pages, page_size, pull_and_push_cb_size);
 
         if constexpr (pull_and_push_config == tt::PullAndPushConfig::LOCAL) {
@@ -226,7 +228,7 @@ void kernel_main() {
 
             volatile tt_l1_ptr uint32_t* buffer_transfer_ptr = command_ptr + DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
             uint32_t num_pages_to_read = pull_and_push_cb_num_pages / 2;
-            uint32_t num_pages_to_write = 1;//max(num_pages_to_read / 4, 1);
+            uint32_t num_pages_to_write = 4;//max(num_pages_to_read / 4, 1);
 
             if (is_program) {
                 program_event_buffer.push_event(event);
@@ -249,6 +251,20 @@ void kernel_main() {
                     pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER, write_to_completion_queue>(src_pr_cfg, dst_pr_cfg, num_pages_in_transfer);
                     buffer_transfer_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
                     program_local_cb(data_section_addr, pull_and_push_cb_num_pages, page_size, pull_and_push_cb_size);
+                }
+
+                uint32_t aligned_global_page_idx = align(dst_pr_cfg.cb_buff_cfg.global_page_idx, dst_pr_cfg.num_pages_to_write);
+                DPRINT << "NUM TO WRITE " << dst_pr_cfg.num_pages_to_write << ENDL();
+                DPRINT << "ALIGNED PAGE " << aligned_global_page_idx << ENDL();
+
+                if (aligned_global_page_idx != dst_pr_cfg.cb_buff_cfg.global_page_idx) {
+                    DPRINT << "PUSHBACK " << aligned_global_page_idx - dst_pr_cfg.cb_buff_cfg.global_page_idx << ENDL();
+                    multicore_cb_push_back(
+                        dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg,
+                        dst_pr_cfg.cb_buff_cfg.remote_multicore_cb_cfg,
+                        dst_pr_cfg.cb_buff_cfg.remote_noc_encoding,
+                        dst_pr_cfg.cb_buff_cfg.local_multicore_cb_cfg->fifo_limit_16B,
+                        aligned_global_page_idx - dst_pr_cfg.cb_buff_cfg.global_page_idx);
                 }
             } else {
                 completion_queue_reserve_back(completion_data_size);
@@ -301,7 +317,7 @@ void kernel_main() {
                     router_cb_size
                 );
 
-                DPRINT << "Pushing program" << ENDL();
+                //DPRINT << "Pushing program" << ENDL();
 
                 for (uint32_t i = 0; i < num_buffer_transfers; i++) {
                     uint32_t src_buf_type = buffer_transfer_ptr[4];
@@ -326,7 +342,7 @@ void kernel_main() {
                     pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER, write_to_completion_queue>(src_pr_cfg, dst_pr_cfg, num_pages_in_transfer);
                     buffer_transfer_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
                 }
-                DPRINT << "Done pushing program" << ENDL();
+                //DPRINT << "Done pushing program" << ENDL();
 
             } else if (num_buffer_transfers == 1) {
                 uint32_t src_buf_type = buffer_transfer_ptr[4];
@@ -362,7 +378,7 @@ void kernel_main() {
                     pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER, write_to_completion_queue>(src_pr_cfg, dst_pr_cfg, num_pages_in_transfer);
                 }
             }
-            DPRINT << "DONE sending cmd and data to src router" << ENDL();
+            //DPRINT << "DONE sending cmd and data to src router" << ENDL();
 
             issue_queue_pop_front<host_issue_queue_read_ptr_addr>(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + issue_data_size);
 
@@ -397,14 +413,14 @@ void kernel_main() {
                 program_event_buffer.push_event(event);
                 update_producer_consumer_sync_semaphores(my_noc_encoding, dispatch_noc_encoding, dispatch_semaphore_addr, get_semaphore(0));
 
-                DPRINT << "REMOTE PNP GOT PROGRAM" << ENDL();
+                //DPRINT << "REMOTE PNP GOT PROGRAM" << ENDL();
 
                 volatile tt_l1_ptr uint32_t* buffer_transfer_ptr = command_ptr + DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
                 for (uint32_t i = 0; i < num_buffer_transfers; i++) {
                     uint32_t src_buf_type = buffer_transfer_ptr[4];
 
                     if ((BufferType)src_buf_type == BufferType::SYSTEM_MEMORY) {
-                        DPRINT << "TX program from dst router " << ENDL();
+                        //DPRINT << "TX program from dst router " << ENDL();
                         uint32_t num_pages_in_transfer = program_pull_and_push_config<PullAndRelayType::CIRCULAR_BUFFER, PullAndRelayType::CIRCULAR_BUFFER>(
                             buffer_transfer_ptr,
                             src_pr_cfg,
@@ -422,7 +438,7 @@ void kernel_main() {
                         pull_and_relay<PullAndRelayType::CIRCULAR_BUFFER, PullAndRelayType::CIRCULAR_BUFFER, write_to_completion_queue>(src_pr_cfg, dst_pr_cfg, num_pages_in_transfer);
                     } else {
                         // transfer cached binary to dispatch core
-                        DPRINT << "TX program from buffer " << ENDL();
+                        //DPRINT << "TX program from buffer " << ENDL();
                         uint32_t num_pages_in_transfer = program_pull_and_push_config<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER>(
                             buffer_transfer_ptr,
                             src_pr_cfg,
@@ -443,7 +459,7 @@ void kernel_main() {
                     buffer_transfer_ptr += DeviceCommand::NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION;
                     program_local_cb(data_section_addr, pull_and_push_cb_num_pages, page_size, pull_and_push_cb_size);
                 }
-                DPRINT << "REMOTE PNP DONE SENDING PROGRAM" << ENDL();
+                //DPRINT << "REMOTE PNP DONE SENDING PROGRAM" << ENDL();
 
             } else if (num_buffer_transfers == 1) {
                 volatile tt_l1_ptr uint32_t* buffer_transfer_ptr = command_ptr + DeviceCommand::NUM_ENTRIES_IN_COMMAND_HEADER;
@@ -456,7 +472,7 @@ void kernel_main() {
 
                     // remote pull and relay
                     // doing a write so we pull from eth router cb and write to buffer
-                    // DPRINT << "Read from eth cb and write to dst buffer - pull sem is " << pull_semaphore_addr[0] << ENDL();
+                    // //DPRINT << "Read from eth cb and write to dst buffer - pull sem is " << pull_semaphore_addr[0] << ENDL();
 
                     uint32_t num_pages_in_transfer = program_pull_and_push_config<PullAndRelayType::CIRCULAR_BUFFER, PullAndRelayType::BUFFER>(
                         buffer_transfer_ptr,
@@ -473,20 +489,20 @@ void kernel_main() {
 
                     pull_and_relay<PullAndRelayType::CIRCULAR_BUFFER, PullAndRelayType::BUFFER, write_to_completion_queue>(src_pr_cfg, dst_pr_cfg, num_pages_in_transfer); // write all the data
 
-                    DPRINT << "DONE WRITE R BUFFER" << ENDL();
+                    //DPRINT << "DONE WRITE R BUFFER" << ENDL();
 
                     // Doing doing the write now send the write buffer command back to the src router without any data
                     header->num_buffer_transfers = 0; // make sure src router doesn't expect any data incoming
                     relay_command<command_start_addr, completion_cmd_eth_src_base, consumer_data_buffer_size>(false, push_noc_encoding); // SRC router has one cmd slot
                     update_producer_consumer_sync_semaphores(my_noc_encoding, push_noc_encoding, push_semaphore_addr, eth_get_semaphore(0));
 
-                    DPRINT << "DONE TX COMPLETION WRITE BUFFER" << ENDL();
+                    //DPRINT << "DONE TX COMPLETION WRITE BUFFER" << ENDL();
 
                 } else if ((BufferType)dst_buf_type == BufferType::SYSTEM_MEMORY) {
                     // Reading data from buffer on R chip and sending command + buffer data back to L chip
                     volatile db_cb_config_t* remote_multicore_cb_cfg = get_remote_db_cb_config(eth_l1_mem::address_map::COMPLETION_CQ_CB_BASE);
 
-                    DPRINT << "Programming remote CB" << ENDL();
+                    //DPRINT << "Programming remote CB" << ENDL();
                     program_remote_sync_cb<true, 1>(
                         local_multicore_cb_cfg,
                         remote_multicore_cb_cfg,
@@ -511,19 +527,19 @@ void kernel_main() {
                         remote_multicore_cb_cfg
                     );
 
-                    DPRINT << "READ FROM SRC BUFFER AND WRITE CB" << ENDL();
+                    //DPRINT << "READ FROM SRC BUFFER AND WRITE CB" << ENDL();
 
                     relay_command<command_start_addr, completion_cmd_eth_src_base, consumer_data_buffer_size>(false, push_noc_encoding); // src router has one cmd slot
                     update_producer_consumer_sync_semaphores(my_noc_encoding, push_noc_encoding, push_semaphore_addr, eth_get_semaphore(0));
                     pull_and_relay<PullAndRelayType::BUFFER, PullAndRelayType::CIRCULAR_BUFFER, write_to_completion_queue>(src_pr_cfg, dst_pr_cfg, num_pages_in_transfer);
 
-                    DPRINT << "DONE SEND READ CMD BACK TO MMIO" << ENDL();
+                    //DPRINT << "DONE SEND READ CMD BACK TO MMIO" << ENDL();
                 }
             } else {    // commands with no buffer transfer (a completion wrap)
                 // Send command to src router
                 relay_command<command_start_addr, completion_cmd_eth_src_base, consumer_data_buffer_size>(false, push_noc_encoding); // src router has one cmd slot
                 update_producer_consumer_sync_semaphores(my_noc_encoding, push_noc_encoding, push_semaphore_addr, eth_get_semaphore(0));
-                DPRINT << "DONE SEND CMD BACK TO COMPLETION Q" << ENDL();
+                //DPRINT << "DONE SEND CMD BACK TO COMPLETION Q" << ENDL();
             }
 
         } else if constexpr (pull_and_push_config == tt::PullAndPushConfig::PULL_FROM_REMOTE) {

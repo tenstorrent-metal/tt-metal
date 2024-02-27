@@ -195,7 +195,7 @@ bool test_dummy_EnqueueProgram_with_sems(Device* device, CommandQueue& cq, const
     return pass;
 }
 
-bool test_dummy_EnqueueProgram_with_runtime_args(Device* device, CommandQueue& cq, const DummyProgramConfig& program_config) {
+bool test_dummy_EnqueueProgram_with_runtime_args(Device* device, CommandQueue& cq, const DummyProgramConfig& program_config, uint32_t num_runtime_args_for_kernel0, uint32_t num_runtime_args_for_kernel1, uint32_t num_iterations) {
     Program program;
     bool pass = true;
 
@@ -209,8 +209,17 @@ bool test_dummy_EnqueueProgram_with_runtime_args(Device* device, CommandQueue& c
 
     auto dummy_compute_kernel = CreateKernel(program, "tt_metal/kernels/compute/blank.cpp", cr_set, ComputeConfig{});
 
-    vector<uint32_t> dummy_kernel0_args = {0, 1, 2, 3, 4, 5, 6, 7, 8};
-    vector<uint32_t> dummy_kernel1_args = {9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    vector<uint32_t> dummy_kernel0_args;
+    vector<uint32_t> dummy_kernel1_args;
+
+    uint32_t idx;
+    for (idx = 0; idx < num_runtime_args_for_kernel0; idx++) {
+        dummy_kernel0_args.push_back(idx);
+    }
+
+    for (; idx < num_runtime_args_for_kernel0 + num_runtime_args_for_kernel1; idx++) {
+        dummy_kernel1_args.push_back(idx);
+    }
 
     for (const CoreRange& core_range : program_config.cr_set.ranges()) {
         CoresInCoreRangeGenerator core_range_generator(core_range, device->compute_with_storage_grid_size());
@@ -227,7 +236,9 @@ bool test_dummy_EnqueueProgram_with_runtime_args(Device* device, CommandQueue& c
     }
 
     tt::tt_metal::detail::CompileProgram(device, program);
-    EnqueueProgram(cq, program, false);
+    for (uint32_t i = 0; i < num_iterations; i++) {
+        EnqueueProgram(cq, program, false);
+    }
     Finish(cq);
 
     for (const CoreRange& core_range : program_config.cr_set.ranges()) {
@@ -518,7 +529,7 @@ TEST_F(CommandQueueSingleCardFixture, TestRuntimeArgsCorrectlySentSingleCore) {
 
     DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
     for (Device *device : devices_) {
-        local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(device, device->command_queue(), dummy_program_config);
+        local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(device, device->command_queue(), dummy_program_config, 9, 12, 1);
     }
 }
 
@@ -608,23 +619,30 @@ TEST_F(CommandQueueSingleCardFixture, TestAllRuntimeArgsCorrectlySentMultiCore) 
         CoreRangeSet cr_set({cr});
 
         DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
-        EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(device, device->command_queue(), dummy_program_config));
+        EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(device, device->command_queue(), dummy_program_config, 9, 12, 1));
     }
 }
 
 }  // end namespace multicore_tests
-
-namespace dram_cache_tests {
-TEST_F(CommandQueueFixture, DISABLED_TestDramCacheHit) {}
-
-TEST_F(CommandQueueFixture, DISABLED_TestDramCacheMatch) {}
-
-TEST_F(CommandQueueFixture, DISABLED_TestProgramVectorSizeMatch) {}
-
-}  // end namespace dram_cache_tests
-}  // end namespace basic_tests
+}
 
 namespace stress_tests {
-TEST_F(CommandQueueFixture, DISABLED_TestSendMaxNumberOfRuntimeArgs) {}
+
+
+TEST_F(CommandQueueSingleCardFixture, TestFillDispatchCoreBuffer) {
+    for (Device *device : devices_) {
+        // if (not device->is_mmio_capable()) continue;
+        if (not device->is_mmio_capable()) continue;
+        CoreCoord worker_grid_size = device->compute_with_storage_grid_size();
+
+        CoreRange cr({0, 0}, {worker_grid_size.x - 1, worker_grid_size.y - 1});
+        CoreRangeSet cr_set({cr});
+
+        DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
+
+        EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(device, device->command_queue(), dummy_program_config, 256, 256, 7500));
+        // EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(device, device->command_queue(), dummy_program_config, 256, 256, 1));
+    }
+}
 
 }  // namespace stress_tests
