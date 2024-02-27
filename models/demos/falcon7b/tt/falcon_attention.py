@@ -22,13 +22,10 @@ class TtFalconAttention(nn.Module):
     def __init__(
         self,
         device,
-        base_url,
-        layer_num,
         hidden_size: int,
         num_heads: int,
         max_position_embeddings: int = 2048,
         model_config=None,
-        tt_cache_path=None,
         parameters=None,
     ):
         super().__init__()
@@ -50,8 +47,7 @@ class TtFalconAttention(nn.Module):
         self.dense_weights = self.parameters.dense.weight
 
         self.rotary_embedding = TtFalconRotaryEmbedding(
-            # parameters=parameters.rotary_emb or parameters.maybe_rotary,
-            parameters=parameters.maybe_rotary,
+            parameters=parameters.rotary_emb,
             model_config=model_config,
             max_position_embeddings=self.max_position_embeddings,
         )
@@ -187,7 +183,6 @@ class TtFalconAttention(nn.Module):
         )
 
         if attention_mask is not None:
-            # TODO(cfjchu): change 71 to 1 on attention_mas
             attn_weights = ttnn.add(
                 attn_weights,
                 attention_mask,

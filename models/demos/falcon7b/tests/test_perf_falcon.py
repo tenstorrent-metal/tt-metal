@@ -346,7 +346,7 @@ def run_test_FalconCausalLM_end_to_end(
     second_iter_time = profiler.get("model_run_for_inference")
     expected_compile_time = 30
     prep_perf_report(
-        model_name=f"Falcon_{llm_mode}_{comment}",
+        model_name=f"ttnn_Falcon_{llm_mode}_{comment}",
         batch_size=batch,
         inference_and_compile_time=first_iter_time,
         inference_time=second_iter_time,

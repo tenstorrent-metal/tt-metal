@@ -8,11 +8,7 @@ from loguru import logger
 
 import tt_lib
 import ttnn
-from models.demos.falcon7b.reference.hf_modeling_falcon import (
-    FalconForCausalLM,
-)
 from models.demos.falcon7b.tt.falcon_causallm import TtFalconCausalLM
-
 from models.demos.falcon7b.tt.model_config import (
     get_model_config,
     get_tt_cache_path,
@@ -22,27 +18,13 @@ from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_allclose,
     comp_pcc,
 )
+import transformers
 from ttnn.model_preprocessing import preprocess_model_parameters
+from tests.ttnn.utils_for_testing import assert_with_pcc
 
+from .common import create_custom_preprocessor
 
-class PytorchFalconCausalLM(torch.nn.Module):
-    def __init__(self, hf_reference_model, num_layers):
-        super().__init__()
-        self.model = hf_reference_model
-        self.model.transformer.h = self.model.transformer.h[:num_layers]
-
-        # Disable dropout
-        self.model.eval()
-
-    def forward(self, input_ids, past_key_values, use_cache):
-        result = self.model(
-            input_ids=input_ids,
-            past_key_values=past_key_values,
-            use_cache=use_cache,
-            return_dict=False,
-        )
-
-        return result
+torch.manual_seed(0)
 
 
 def run_test_FalconCausalLM_inference(
@@ -55,31 +37,15 @@ def run_test_FalconCausalLM_inference(
     num_layers,
     pcc,
     model_config,
-    tt_cache_path,
     model_location_generator,
 ):
-    model_name = model_location_generator(model_version, model_subdir="Falcon")
+    configuration = transformers.FalconConfig.from_pretrained(model_version)
+    model = transformers.models.falcon.modeling_falcon.FalconCausalLM(configuration).eval()
 
-    hugging_face_reference_model = FalconForCausalLM.from_pretrained(model_name)
-
-    hugging_face_reference_model.eval()
-    configuration = hugging_face_reference_model.config
-    state_dict = hugging_face_reference_model.state_dict()
-
-    # Prepare input ------------------------------------------------------------------------
-    torch.manual_seed(0)
-    base_url = ""
     max_position_embeddings = 2048
     head_dim = configuration.hidden_size // configuration.num_attention_heads
-    use_cache = True
+    model_input = torch.arange(seq_len * batch).reshape(batch, seq_len)
 
-    if 1:
-        model_input = torch.arange(seq_len * batch).reshape(batch, seq_len)
-    else:
-        # batch identical sequences for debugging
-        model_input = torch.stack([torch.arange(seq_len)] * batch).reshape(batch, seq_len)
-
-    # Generate dummy kv_cache --------------------------------------------------------------
     if llm_mode == "prefill":
         q_len, kv_len = seq_len, seq_len
         assert q_len % 32 == 0, "For prefill, seq_len must be multiple of 32!"
@@ -87,8 +53,8 @@ def run_test_FalconCausalLM_inference(
 
         past_key_values = None
         tt_layer_past = ()
-        k_cache = torch.zeros(batch, max_position_embeddings, head_dim).unsqueeze(1)
-        v_cache = torch.zeros(batch, max_position_embeddings, head_dim).unsqueeze(1)
+        k_cache = torch.zeros(batch, configuration.max_position_embeddings, head_dim)
+        v_cache = torch.zeros(batch, configuration.max_position_embeddings, head_dim)
         for i in range(num_layers):
             tt_k_cache = ttnn.from_torch(
                 k_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
@@ -97,6 +63,7 @@ def run_test_FalconCausalLM_inference(
                 v_cache, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
             )
             tt_layer_past += ((tt_k_cache, tt_v_cache),)
+        position_ids = None
 
     elif llm_mode == "decode":
         q_len, kv_len = seq_len, kv_cache_len + 1
@@ -140,13 +107,10 @@ def run_test_FalconCausalLM_inference(
     )
     tt_FalconCausalLM = TtFalconCausalLM(
         device,
-        state_dict,
-        base_url,
         num_layers,
         configuration,
         max_position_embeddings,
         model_config,
-        tt_cache_path,
         parameters=parameters,
     )
 
@@ -168,7 +132,7 @@ def run_test_FalconCausalLM_inference(
                 user_id=user_id,
                 layer_past=tt_layer_past,
                 layer_past_len=kv_cache_len,
-                use_cache=use_cache,
+                use_cache=True,
             )
             tt_outs.append(ttnn.to_torch(tt_out).squeeze(1))
         tt_out = torch.vstack(tt_outs)
@@ -183,7 +147,7 @@ def run_test_FalconCausalLM_inference(
             attention_mask=tt_attention_mask,
             layer_past=tt_layer_past,
             layer_past_len=kv_cache_len,
-            use_cache=use_cache,
+            use_cache=True,
         )
         tt_out = ttnn.to_torch(tt_out).squeeze(1)
         tt_out = tt_out.transpose(0, 1)
@@ -263,7 +227,6 @@ def test_FalconCausalLM_inference(
     device,
 ):
     model_config = get_model_config(model_config_str)
-    tt_cache_path = get_tt_cache_path(model_version)
 
     tt_lib.profiler.set_profiler_location(f"falcon-7b_{request.node.callspec.id}")
 
@@ -277,6 +240,5 @@ def test_FalconCausalLM_inference(
         num_layers,
         pcc,
         model_config,
-        tt_cache_path,
         model_location_generator,
     )

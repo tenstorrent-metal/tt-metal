@@ -20,8 +20,6 @@ class TtFalconModelShared(torch.nn.Module):
     def __init__(
         self,
         device,
-        state_dict,
-        base_url,
         num_layers,
         config,
         max_position_embeddings,
@@ -34,9 +32,7 @@ class TtFalconModelShared(torch.nn.Module):
         # NOTE: Once we make embeddings run on device, pass in state dict
         # instead of model itself
         self.device = device
-        self.state_dict = state_dict
         self.parameters = parameters
-        self.base_url = base_url
         self.config = config
         self.max_position_embeddings = max_position_embeddings
         self.model_config = model_config
@@ -58,9 +54,6 @@ class TtFalconModelShared(torch.nn.Module):
             [
                 TtFalconDecoderLayer(
                     device=device,
-                    state_dict=state_dict,
-                    base_url=f"{base_url}.h",
-                    layer_num=layer_num,
                     config=config,
                     max_position_embeddings=max_position_embeddings,
                     model_config=model_config,
@@ -249,8 +242,6 @@ class TtFalconModel(TtFalconModelShared):
     def __init__(
         self,
         device,
-        state_dict,
-        base_url,
         num_layers,
         config,
         max_position_embeddings,
@@ -259,8 +250,6 @@ class TtFalconModel(TtFalconModelShared):
     ):
         super().__init__(
             device=device,
-            state_dict=state_dict,
-            base_url=base_url,
             num_layers=num_layers,
             config=config,
             max_position_embeddings=max_position_embeddings,

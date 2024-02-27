@@ -6,9 +6,7 @@ import models
 def create_custom_preprocessor(model_config):
     def rotary_embedding_custom_processor(torch_model, name):
         parameters = {}
-        if isinstance(torch_model, transformers.models.falcon.modeling_falcon.FalconRotaryEmbedding) or isinstance(
-            torch_model, models.demos.falcon7b.reference.hf_modeling_falcon.FalconRotaryEmbedding
-        ):
+        if isinstance(torch_model, transformers.models.falcon.modeling_falcon.FalconRotaryEmbedding):
             parameters["cos_cached"] = ttnn.unsqueeze_to_4D(
                 ttnn.from_torch(
                     torch_model.cos_cached,

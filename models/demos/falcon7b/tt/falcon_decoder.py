@@ -19,22 +19,15 @@ class TtFalconDecoderLayer(nn.Module):
     def __init__(
         self,
         device,
-        state_dict,
-        base_url,
-        layer_num,
         config,
         max_position_embeddings,
         model_config,
-        tt_cache_path,
         parameters,
     ):
         super().__init__()
         self.parameters = parameters
         self.hidden_size = config.hidden_size
-        self.state_dict = state_dict
-        self.base_url = base_url
         self.device = device
-        self.layer_num = layer_num
         self.max_position_embeddings = max_position_embeddings
         self.model_config = model_config
 
@@ -42,35 +35,21 @@ class TtFalconDecoderLayer(nn.Module):
 
         self.self_attn = TtFalconAttention(
             device=device,
-            state_dict=state_dict,
-            base_url=base_url,
-            layer_num=layer_num,
             hidden_size=config.hidden_size,
             num_heads=config.num_attention_heads,
             max_position_embeddings=max_position_embeddings,
             model_config=model_config,
-            tt_cache_path=tt_cache_path,
-            parameters=parameters,
+            parameters=parameters.self_attention,
         )
 
         self.mlp = TtFalconMLP(
             device=device,
-            state_dict=state_dict,
-            base_url=base_url,
-            layer_num=layer_num,
-            hidden_size=config.hidden_size,
             model_config=model_config,
-            tt_cache_path=tt_cache_path,
-            parameters=parameters,
+            parameters=parameters.mlp,
         )
 
-        layer_name = f"{base_url}.{layer_num}"
-
-        layernorm_weights_str = f"{layer_name}.input_layernorm.weight"
-        layernorm_bias_str = f"{layer_name}.input_layernorm.bias"
-
-        self.layernorm_gamma = parameters.h[layer_num].input_layernorm.weight
-        self.layernorm_beta = parameters.h[layer_num].input_layernorm.weight
+        self.input_layernorm_weight = parameters.input_layernorm.weight
+        self.input_layernorm_bias = parameters.input_layernorm.bias
 
         self.layernorm_eps = config.layer_norm_epsilon
 
@@ -90,6 +69,7 @@ class TtFalconDecoderLayer(nn.Module):
 
         assert not output_attentions
 
+        residual = hidden_states
         layernorm_output = ttnn.layer_norm(
             hidden_states,
             epsilon=self.layernorm_eps,
@@ -97,33 +77,14 @@ class TtFalconDecoderLayer(nn.Module):
         )
         layernorm_output = ttnn.mul(
             layernorm_output,
-            self.layernorm_gamma,
+            self.input_layernorm_weight,
             memory_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
         )
         layernorm_output = ttnn.add(
             layernorm_output,
-            self.layernorm_beta,
+            self.input_layernorm_bias,
             memory_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
         )
-        """
-        layernorm_output = ttnn.experimental.tensor.bcast(
-            layernorm_output,
-            self.layernorm_gamma,
-            tt_lib.tensor.BcastOpMath.MUL,
-            tt_lib.tensor.BcastOpDim.H,
-            output_mem_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
-        )
-        layernorm_output = ttnn.experimental.tensor.bcast(
-            layernorm_output,
-            self.layernorm_beta,
-            tt_lib.tensor.BcastOpMath.ADD,
-            tt_lib.tensor.BcastOpDim.H,
-            output_mem_config=self.model_config["INPUT_LAYERNORM_OUTPUT_MEMCFG"],
-        )
-
-        """
-
-        residual = hidden_states
 
         # Self Attention
         attn_outputs = self.self_attn(
