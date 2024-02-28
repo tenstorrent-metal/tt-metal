@@ -112,7 +112,6 @@ if is_wormhole_b0():
                 "polygamma",
                 "nextafter",
                 "scatter",
-                "prod",
             ),
             shapes,
         )
@@ -129,7 +128,6 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
     options["hypot"] = (1, 100)
     options["atan2"] = (-100, 100)
     options["cbrt"] = (-1000, 1000)
-    options["prod"] = (1, 1.5)
     options["hardsigmoid"] = (-100, 100)
     options["hardswish"] = (-100, 100)
     options["hardshrink"] = (-100, 100)
@@ -162,13 +160,6 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
             generation_funcs.gen_func_with_cast(
                 partial(generator, low=options[fn][0], high=options[fn][1]),
                 torch.int32,
-            )
-        ]
-    elif fn in ["prod"]:  # "prod_cpu" not implemented for 'BFloat16'
-        datagen_func = [
-            generation_funcs.gen_func_with_cast(
-                partial(generator, low=options[fn][0], high=options[fn][1]),
-                torch.float32,
             )
         ]
     else:
@@ -230,13 +221,6 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
         test_args.update({"k": np.random.randint(1, 10)})
     elif fn in ["logical_ori", "logical_andi", "logical_xori", "logical_noti"]:
         test_args.update({"immediate": np.random.randint(0, 100)})
-    elif fn in ["prod"]:
-        test_args.update(
-            {
-                "all_dimensions": random.choice([True, False]),
-                "dim": random.choice([-4, -3, -2, -1, 0, 1, 2, 3]),
-            }
-        )
     elif fn in ["isclose"]:
         test_args.update(
             {

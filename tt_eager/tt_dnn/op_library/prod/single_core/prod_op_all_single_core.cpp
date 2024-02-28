@@ -20,7 +20,7 @@ namespace primary {
 
         CoreRange core = {.start={0, 0}, .end={0, 0}};
 
-        tt::DataFormat cb_data_format = tt_metal::datatype_to_dataformat_converter(a.dtype());
+        tt::DataFormat cb_data_format = tt_metal::datatype_to_dataformat_converter(a.get_dtype());
         uint32_t single_tile_size = tt_metal::detail::TileSize(cb_data_format);
 
         uint32_t num_tiles = a.volume() / TILE_HW;

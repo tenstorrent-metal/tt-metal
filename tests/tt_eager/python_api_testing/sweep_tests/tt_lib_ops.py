@@ -1302,7 +1302,7 @@ def arange(
 
 
 @setup_host_and_device
-def eltwise_prod(
+def prod(
     x,
     *args,
     all_dimensions,

@@ -356,7 +356,7 @@ template<typename T>
 static Tensor prod_result_computation_GS(const Tensor& input_tensor, DataType data_type,
 			  const Layout layout , Device * device = nullptr,
 			  const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
-    const Shape& s_a = input_tensor.shape();
+    const Shape& s_a = input_tensor.get_legacy_shape();
     auto owned_buffer = tt_metal::owned_buffer::create<T>(tt_metal::compute_volume(s_a)); //ouput
     auto device_buffer = input_tensor.device_buffer();
     uint32_t size_in_bytes = device_buffer->size();
@@ -398,7 +398,7 @@ template<typename T>
 static Tensor prod_result_computation_WH_B0(const Tensor& input_tensor, DataType data_type,
 			  const Layout layout , Device * device = nullptr,
 			  const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
-    const Shape& s_a = input_tensor.shape();
+    const Shape& s_a = input_tensor.get_legacy_shape();
     auto owned_buffer = tt_metal::owned_buffer::create<T>(tt_metal::compute_volume(s_a)); //ouput
     auto device_buffer = input_tensor.device_buffer();
     uint32_t size_in_bytes = device_buffer->size();

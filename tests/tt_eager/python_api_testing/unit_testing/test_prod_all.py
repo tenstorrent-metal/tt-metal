@@ -42,6 +42,8 @@ def get_tensors(input_shape, output_shape, device):
         ([1, 4, 32, 32]),
         ([2, 2, 32, 32]),
         ([6, 4, 32, 32]),
+        # [[1, 1, 320, 320]], #Fails for all_dimensions = True
+        # [[1, 3, 320, 64]], #Fails for all_dimensions = True
     ),
 )
 def test_prod(shapes, device):
@@ -57,7 +59,8 @@ def test_prod(shapes, device):
     )
     N, C, H, W = tt_output_cpu.shape
     torch.set_printoptions(threshold=10000, precision=5, sci_mode=False)
-    print("TT Output : ", tt_output_cpu)
+    print("Input shape", torch_input.shape)
+    print("TT Output : ", tt_output_cpu[0, 0, 0, 0])
     print("Torch Output : ", torch_output)
 
     # test for equivalance
