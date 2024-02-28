@@ -631,7 +631,6 @@ namespace stress_tests {
 
 TEST_F(CommandQueueSingleCardFixture, TestFillDispatchCoreBuffer) {
     for (Device *device : devices_) {
-        // if (not device->is_mmio_capable()) continue;
         CoreCoord worker_grid_size = device->compute_with_storage_grid_size();
 
         CoreRange cr({0, 0}, {worker_grid_size.x - 1, worker_grid_size.y - 1});

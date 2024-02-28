@@ -395,7 +395,7 @@ void pull_and_relay(
 
     dst_pr_cfg.cb_buff_cfg.global_page_idx = 0;
     while (num_writes_completed != num_pages) {
-        if (cb_producer_space_available(src_pr_cfg.num_pages_to_read) and num_reads_issued < num_pages) {
+        if (cb_producer_space_available(num_pages_to_read) and num_reads_issued < num_pages) {
             if constexpr (src_type == PullAndRelayType::CIRCULAR_BUFFER) {
                 /*
                     In this case, we are pulling from a circular buffer. We pull from
