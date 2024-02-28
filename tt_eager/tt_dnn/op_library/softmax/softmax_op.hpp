@@ -32,8 +32,6 @@ struct SoftmaxShardedMultiCoreProgramConfig {
             {"subblock_w", subblock_w},
             {"block_h", block_h},
             {"block_w", block_w},
-            {"math_fidelity", math_fidelity},
-            {"im_data_format", im_data_format},
         };
     };
 };

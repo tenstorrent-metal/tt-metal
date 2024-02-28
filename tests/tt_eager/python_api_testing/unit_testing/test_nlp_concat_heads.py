@@ -8,7 +8,7 @@ from loguru import logger
 import tt_lib as ttl
 from models.utility_functions import comp_pcc, tt2torch_tensor
 import torch
-from models.utility_functions import is_wormhole_b0
+from models.utility_functions import is_wormhole_b0, is_grayskull
 
 
 def run_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_config, device):
@@ -78,6 +78,8 @@ def run_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_con
     ],
 )
 def test_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_config, request, device):
+    if is_grayskull() and dtype == ttl.tensor.DataType.FLOAT32:
+        pytest.skip("Skipping float32 tests on Grayskull")
     ttl.profiler.set_profiler_location(f"nlp_concat_heads_tm_{request.node.callspec.id}")
     run_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_config, device)
 

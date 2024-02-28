@@ -39,20 +39,23 @@ def test_softmax(device, inplace, dtype):
 
         tt_input_tensor = ttl.tensor.Tensor(input_tensor, dtype).to(ttl.tensor.Layout.TILE).to(device)
 
-        if dtype == ttl.tensor.DataType.FLOAT32:
-            compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
-                math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-                math_approx_mode=False,
-                fp32_dest_acc_en=True,
-            )
-            tt_output_tensor_on_device = sm_op(tt_input_tensor, compute_kernel_config=compute_kernel_config)
-        else:
-            compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
-                math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-                math_approx_mode=False,
-                fp32_dest_acc_en=False,
-            )
-            tt_output_tensor_on_device = sm_op(tt_input_tensor)
+        if not is_grayskull():
+            if dtype == ttl.tensor.DataType.FLOAT32:
+                compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
+                    math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+                    math_approx_mode=False,
+                    fp32_dest_acc_en=True,
+                )
+            else:
+                compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
+                    math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+                    math_approx_mode=False,
+                    fp32_dest_acc_en=False,
+                )
+
+        tt_output_tensor_on_device = sm_op(
+            tt_input_tensor, compute_kernel_config=compute_kernel_config if not is_grayskull() else None
+        )
         tt_output_tensor = tt_output_tensor_on_device.cpu().to(ttl.tensor.Layout.ROW_MAJOR).to_torch()
 
         golden_output_tensor = torch.softmax(input_tensor, dim=-1)
@@ -195,24 +198,27 @@ def test_scale_mask_softmax_inplace(device, in_dtype, in0_mem_config, casual_mas
     input_tensor = torch.randn(input_shape).bfloat16().float()
     in1_t = torch2tt_tensor(input_tensor, device, tt_memory_config=in0_mem_config, tt_dtype=in_dtype)
 
-    if in_dtype == ttl.tensor.DataType.FLOAT32:
-        compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
-            math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-            math_approx_mode=False,
-            fp32_dest_acc_en=True,
-        )
-        tt_output = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
-            in1_t, scale, attention_mask_t, is_causal_mask=casual_mask, compute_kernel_config=compute_kernel_config
-        )
-    else:
-        compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
-            math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-            math_approx_mode=False,
-            fp32_dest_acc_en=False,
-        )
-        tt_output = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
-            in1_t, scale, attention_mask_t, is_causal_mask=casual_mask, compute_kernel_config=compute_kernel_config
-        )
+    if not is_grayskull():
+        if in_dtype == ttl.tensor.DataType.FLOAT32:
+            compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
+                math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+                math_approx_mode=False,
+                fp32_dest_acc_en=True,
+            )
+        else:
+            compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
+                math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+                math_approx_mode=False,
+                fp32_dest_acc_en=False,
+            )
+
+    tt_output = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+        in1_t,
+        scale,
+        attention_mask_t,
+        is_causal_mask=casual_mask,
+        compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
+    )
 
     tt_output_tensor = tt_output.cpu().to_torch().float()
     tt_output_tensor = torch.Tensor(tt_output_tensor).reshape(input_shape)

@@ -9,6 +9,7 @@ import tt_lib as ttl
 from loguru import logger
 from models.utility_functions import nearest_32
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc, comp_equal
+from models.utility_functions import skip_for_grayskull
 
 
 @pytest.mark.parametrize("head_dim", [64])
@@ -124,6 +125,7 @@ class TestUpdateCache:
         assert eq
 
 
+@skip_for_grayskull
 @pytest.mark.parametrize("head_dim", [64])
 @pytest.mark.parametrize("max_seq_len", [2048])
 @pytest.mark.parametrize("num_users", [32, 64])

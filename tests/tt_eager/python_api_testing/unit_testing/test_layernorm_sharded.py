@@ -153,7 +153,7 @@ def test_layernorm_sharded_mix_precision_rm(
             epsf,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 1:
         ttz = ttl.operations.primary.add_layernorm(
@@ -163,7 +163,7 @@ def test_layernorm_sharded_mix_precision_rm(
             gamma_t,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 2:
         ttz = ttl.operations.primary.add_layernorm(
@@ -174,7 +174,7 @@ def test_layernorm_sharded_mix_precision_rm(
             beta_t,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 3:
         ttz = ttl.operations.primary.add_rmsnorm(
@@ -183,7 +183,7 @@ def test_layernorm_sharded_mix_precision_rm(
             epsf,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 4:
         ttz = ttl.operations.primary.add_rmsnorm(
@@ -193,7 +193,7 @@ def test_layernorm_sharded_mix_precision_rm(
             gamma_t,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 5:
         ttz = ttl.operations.primary.add_rmsnorm(
@@ -204,7 +204,7 @@ def test_layernorm_sharded_mix_precision_rm(
             beta_t,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 6:
         ttz = ttl.operations.primary.layernorm(
@@ -212,7 +212,7 @@ def test_layernorm_sharded_mix_precision_rm(
             epsf,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 7:
         ttz = ttl.operations.primary.layernorm(
@@ -221,7 +221,7 @@ def test_layernorm_sharded_mix_precision_rm(
             gamma_t,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 8:
         ttz = ttl.operations.primary.layernorm(
@@ -231,7 +231,7 @@ def test_layernorm_sharded_mix_precision_rm(
             beta_t,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 9:
         ttz = ttl.operations.primary.rmsnorm(
@@ -239,7 +239,7 @@ def test_layernorm_sharded_mix_precision_rm(
             epsf,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 10:
         ttz = ttl.operations.primary.rmsnorm(
@@ -248,7 +248,7 @@ def test_layernorm_sharded_mix_precision_rm(
             gamma_t,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
     if test_id == 11:
         ttz = ttl.operations.primary.rmsnorm(
@@ -258,7 +258,7 @@ def test_layernorm_sharded_mix_precision_rm(
             beta_t,
             output_mem_config=out_mem_config,
             program_config=program_config,
-            compute_kernel_config=compute_kernel_config,
+            compute_kernel_config=compute_kernel_config if not is_grayskull() else None,
         )
 
     ttz = ttl.tensor.sharded_to_interleaved(ttz, in0_mem_config)
