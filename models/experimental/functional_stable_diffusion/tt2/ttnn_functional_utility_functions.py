@@ -9,6 +9,10 @@ import torch
 from typing import Optional, Dict
 
 
+def is_tile_dim_alligned(dim):
+    return dim % 32 == 0
+
+
 def pre_process_input_new(device, tensor):
     tensor = ttnn.to_layout(tensor, ttnn.ROW_MAJOR_LAYOUT)
     batch_size = tensor.shape[0]
@@ -40,6 +44,39 @@ def pre_process_input_new(device, tensor):
         output_on_device=False,
     )
     tensor = ttnn.Tensor(tensor)
+    tensor = ttnn.to_device(tensor, device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+    tensor = ttnn.to_layout(tensor, ttnn.TILE_LAYOUT)
+    return tensor
+
+
+def fold_encoder_hidden_states(device, tensor, required_sequence_length):
+    tensor = ttnn.to_layout(tensor, ttnn.ROW_MAJOR_LAYOUT)
+    assert tensor.shape[0] == 1
+    batch_size = tensor.shape[1]
+    sequence_length = tensor.shape[2]
+    hidden_dim = tensor.shape[3]
+    if (sequence_length * batch_size) < required_sequence_length:
+        assert (required_sequence_length % batch_size) == 0
+        sequence_length = required_sequence_length // batch_size
+        tensor = ttnn.Tensor(
+            fallback_ops.pad(
+                tensor.value,
+                (0, 0, 0, sequence_length - tensor.shape[2]),
+                output_layout=ttnn.ROW_MAJOR_LAYOUT,
+                output_on_device=False,
+            )
+        )
+    tensor = ttnn.Tensor(
+        fallback_ops.reshape(
+            tensor.value,
+            1,
+            1,
+            batch_size * sequence_length,
+            hidden_dim,
+            output_layout=ttnn.ROW_MAJOR_LAYOUT,
+            output_on_device=False,
+        )
+    )
     tensor = ttnn.to_device(tensor, device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
     tensor = ttnn.to_layout(tensor, ttnn.TILE_LAYOUT)
     return tensor
@@ -82,7 +119,9 @@ def pre_process_input(device, tensor):
 
 
 def post_process_output(device, tensor, batch_size, output_height, output_width, output_channels):
-    tensor = ttnn.to_layout(tensor, ttnn.ROW_MAJOR_LAYOUT)
+    tensor = ttnn.to_layout(
+        tensor, ttnn.ROW_MAJOR_LAYOUT, use_multicore=ttnn.get_memory_config(tensor).shard_spec is not None
+    )
     tensor = ttnn.from_device(tensor)
     assert output_channels == tensor.shape[3]
     tensor = fallback_ops.reshape(

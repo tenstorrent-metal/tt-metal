@@ -326,6 +326,7 @@ def from_torch(
             [-0.761719, 0.53125, -0.652344]], dtype=bfloat16 )
     """
 
+    shape_with_padding = None
     if dtype == ttnn.bfloat8_b:
         if len(tensor.shape) < 2:
             raise RuntimeError("ttnn.from_torch: bfloat8_b requires at least 2 dimensions!")
@@ -333,6 +334,7 @@ def from_torch(
             raise RuntimeError("ttnn.from_torch: bfloat8_b requires TILE_LAYOUT!")
         # Tilize tensor
         tensor = ttnn.from_torch(tensor, layout=ttnn.TILE_LAYOUT)
+        shape_with_padding = tensor.shape
         tensor = ttnn.Tensor(tensor.value.reshape(tensor.shape.with_tile_padding()))
         tensor = ttnn.to_torch(tensor)
 
@@ -352,6 +354,9 @@ def from_torch(
         if memory_config is None:
             memory_config = ttnn.DRAM_MEMORY_CONFIG
         tensor = ttnn.to_device(tensor, device, memory_config=memory_config)
+
+    if shape_with_padding is not None:
+        tensor = ttnn.reshape(tensor, shape_with_padding)
 
     return tensor
 
