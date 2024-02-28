@@ -67,15 +67,13 @@ namespace primary {
             core,
             tt_metal::WriterDataMovementConfig{.compile_args = writer_compile_time_args});
 
-        // std::cout << "Number of tiles " << num_tiles << "\nnum_input_tiles ::" << num_input_tiles << "\nnum_output_tiles :: " << num_output_tiles << "\nsingle_tile_size :: " <<single_tile_size <<std::endl;
         vector<uint32_t> compute_kernel_args = {
             num_tiles, // per_core_block_cnt
             1 // per_core_block_size
         };
 
         bool fp32_dest_acc_en = false;
-        bool math_approx_mode = true;//std::all_of(op_chain.begin(), op_chain.end(), [](const auto& u) {return eltwise_unary_op_utils::get_op_approx_mode(u.op_type);});
-        // std::map<string, string> unary_defines = eltwise_unary_op_utils::get_block_defines(op_chain);
+        bool math_approx_mode = true;
         auto eltwise_unary_kernel_id = tt_metal::CreateKernel(
             program,
             "tt_eager/tt_dnn/op_library/prod/kernels/prod_all.cpp",
@@ -85,7 +83,6 @@ namespace primary {
                 .fp32_dest_acc_en = fp32_dest_acc_en,
                 .math_approx_mode = math_approx_mode,
                 .compile_args = compute_kernel_args
-                // .defines = eltwise_unary_op_utils::get_block_defines(op_chain)
             }
     );
 

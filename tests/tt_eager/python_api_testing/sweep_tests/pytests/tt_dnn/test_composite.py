@@ -155,7 +155,7 @@ def test_run_eltwise_composite_test(fn, input_shapes, device, function_level_def
     generator = generation_funcs.gen_rand
 
     if is_wormhole_b0():
-        if fn in ["logit", "prod"]:
+        if fn in ["logit"]:
             pytest.skip("does not work for Wormhole -skipping")
     if fn in ["logical_xor", "logical_xori", "logical_ori", "logical_andi"]:
         datagen_func = [

@@ -9,16 +9,11 @@
 #include "tt_metal/include/compute_kernel_api/eltwise_binary.h"
 #include "compute_kernel_api/eltwise_unary/sfpu_split_includes.h"
 #include "compute_kernel_api/eltwise_unary/negative.h"
-// #include "tt_eager/tt_dnn/kernels/dataflow/generate_reduce_scaler.hpp"
 
 ALWI void ACQ() { acquire_dst(tt::DstMode::Half); }
 ALWI void REL() { release_dst(tt::DstMode::Half); }
 namespace NAMESPACE {
 void MAIN {
-
-    // uint32_t Ht = get_compile_time_arg_val(0);
-    // uint32_t Wt = get_compile_time_arg_val(1);
-    // uint32_t NC = get_compile_time_arg_val(2);
 
     uint32_t num_tiles = get_compile_time_arg_val(0);
     uint32_t per_core_block_dim = get_compile_time_arg_val(1);
