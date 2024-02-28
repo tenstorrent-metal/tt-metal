@@ -66,17 +66,17 @@ def fold_encoder_hidden_states(device, tensor, required_sequence_length):
                 output_on_device=False,
             )
         )
-    tensor = ttnn.Tensor(
-        fallback_ops.reshape(
-            tensor.value,
-            1,
-            1,
-            batch_size * sequence_length,
-            hidden_dim,
-            output_layout=ttnn.ROW_MAJOR_LAYOUT,
-            output_on_device=False,
-        )
-    )
+    # tensor = ttnn.Tensor(
+    #     fallback_ops.reshape(
+    #         tensor.value,
+    #         1,
+    #         1,
+    #         batch_size * sequence_length,
+    #         hidden_dim,
+    #         output_layout=ttnn.ROW_MAJOR_LAYOUT,
+    #         output_on_device=False,
+    #     )
+    # )
     tensor = ttnn.to_device(tensor, device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
     tensor = ttnn.to_layout(tensor, ttnn.TILE_LAYOUT)
     return tensor

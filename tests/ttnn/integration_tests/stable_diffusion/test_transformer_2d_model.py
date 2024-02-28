@@ -203,6 +203,8 @@ def test_transformer_2d_model_512x512(
         elif block == "mid":
             parameters = parameters.mid_block.attentions[0]
             transformer = pipe.unet.mid_block.attentions[0]
+        torch.save(transformer, "transformer.pt")
+        torch.save(config, "config.pt")
     else:
         transformer = torch.load("transformer.pt")
         config = torch.load("config.pt")

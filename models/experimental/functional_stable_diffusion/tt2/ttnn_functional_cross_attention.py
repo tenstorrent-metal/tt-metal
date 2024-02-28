@@ -146,11 +146,12 @@ class cross_attention:
             q_proj = ttnn.matmul(hidden_states, self.parameters.to_q.weight, memory_config=ttnn.L1_MEMORY_CONFIG)
             kv_proj = ttnn.matmul(encoder_hidden_states, self.parameters.kv.weight, memory_config=ttnn.L1_MEMORY_CONFIG)
             query, key, value = ttnn.transformer.split_query_key_value_and_split_heads(q_proj, kv_proj, num_heads=heads)
+            breakpoint()
             del kv_proj
             del q_proj
-            attention_mask = torch.zeros((1, 1, 1, key.shape[-1]))
-            attention_mask[:, :, :, :77] = -1e9
-            attention_mask[:, :, :, 256 : 256 + 77] = -1e9
+            attention_mask = torch.ones((1, 1, 1, key.shape[-1])) * 1e-9
+            attention_mask[:, :, :77, :] = 0
+            attention_mask[:, :, 256 : 256 + 77, :] = 0
             attention_mask = ttnn.from_torch(
                 attention_mask, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=self.device
             )
