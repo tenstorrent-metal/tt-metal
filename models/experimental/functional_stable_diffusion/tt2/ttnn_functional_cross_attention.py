@@ -32,9 +32,9 @@ def concatenate_qkv(q, k, v):
     assert is_tile_dim_alligned(v.shape[dim])
 
     if q is not None:
-        qkv = torch.cat([q, k, v], dim=-1)
+        qkv = torch.cat([q, k, v], dim=dim)
     else:
-        qkv = torch.cat([k, v], dim=-1)
+        qkv = torch.cat([k, v], dim=dim)
     qkv = ttnn.from_torch(qkv, ttnn.bfloat16)
     qkv = ttnn.to_layout(qkv, layout=ttnn.TILE_LAYOUT)
     qkv = ttnn.to_device(qkv, device, memory_config=memory_config)
@@ -52,7 +52,7 @@ class cross_attention:
 
             for key in ["to_q", "to_k", "to_v"]:
                 assert "bias" not in parameters[key]
-                del parameters[key]
+                # del parameters[key]
         else:
             parameters["kv"] = ttnn.model_preprocessing.ParameterDict()
             parameters.kv["weight"] = concatenate_qkv(None, parameters.to_k.weight, parameters.to_v.weight)
@@ -143,15 +143,16 @@ class cross_attention:
             )
             del qkv_out
         else:
-            q_proj = ttnn.matmul(hidden_states, self.parameters.to_q.weight, memory_config=ttnn.L1_MEMORY_CONFIG)
-            kv_proj = ttnn.matmul(encoder_hidden_states, self.parameters.kv.weight, memory_config=ttnn.L1_MEMORY_CONFIG)
+            q_proj = ttnn.linear(hidden_states, self.parameters.to_q.weight, memory_config=ttnn.L1_MEMORY_CONFIG)
+            kv_proj = ttnn.linear(encoder_hidden_states, self.parameters.kv.weight, memory_config=ttnn.L1_MEMORY_CONFIG)
             query, key, value = ttnn.transformer.split_query_key_value_and_split_heads(q_proj, kv_proj, num_heads=heads)
-            breakpoint()
             del kv_proj
             del q_proj
-            attention_mask = torch.ones((1, 1, 1, key.shape[-1])) * 1e-9
-            attention_mask[:, :, :77, :] = 0
-            attention_mask[:, :, 256 : 256 + 77, :] = 0
+            breakpoint()
+            attention_mask = torch.ones((1, 1, 1, key.shape[-1])) * -1e9
+            attention_mask[:, :, :, :77] = 0
+            if key.shape[-1] == 512:
+                attention_mask[:, :, :, 256 : 256 + 77] = 0
             attention_mask = ttnn.from_torch(
                 attention_mask, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=self.device
             )
