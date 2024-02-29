@@ -151,7 +151,6 @@ const DeviceCommand EnqueueReadBufferCommand::assemble_device_command(uint32_t d
     TT_ASSERT(padded_page_size <= push_and_pull_cb_size, "Page is too large to fit in push and pull buffer");
 
     if (this->stall) {
-        std::cout << "set stall!" << std::endl;
         command.set_stall();
     }
     command.set_page_size(padded_page_size);
