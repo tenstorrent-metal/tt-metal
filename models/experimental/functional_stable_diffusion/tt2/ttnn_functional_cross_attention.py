@@ -60,40 +60,6 @@ class cross_attention:
         self.device = device
         self.parameters = parameters
 
-    def prepare_attention_mask(self, attention_mask, target_length, heads=8):
-        head_size = heads
-        if attention_mask is None:
-            return attention_mask
-
-        if attention_mask.shape[-1] != target_length:
-            assert False, "Attention Mask has always been None, This is not implemented!"
-
-        return attention_mask
-
-    def batch_to_head_dim(self, tensor, heads=8):
-        head_size = heads
-        _, batch_size, seq_len, dim = tensor.shape
-        tensor = ttnn.to_layout(
-            tensor, layout=ttnn.ROW_MAJOR_LAYOUT
-        )  # TILE_LAYOUT is not compatible with tensor shape, hence we used ROW_MAJOR_LAYOUT.
-        tensor = ttnn.reshape(tensor, (batch_size // head_size, head_size, seq_len, dim))
-        tensor = ttnn.permute(tensor, (0, 2, 1, 3))
-        tensor = ttnn.reshape(tensor, (1, batch_size // head_size, seq_len, dim * head_size))
-        tensor = ttnn.to_layout(tensor, ttnn.TILE_LAYOUT)
-        return tensor
-
-    def head_to_batch_dim(self, tensor, heads=8):
-        head_size = heads
-        _, batch_size, seq_len, dim = tensor.shape
-        tensor = ttnn.to_layout(
-            tensor, layout=ttnn.ROW_MAJOR_LAYOUT
-        )  # TILE_LAYOUT is not compatible with tensor shape, hence we used ROW_MAJOR_LAYOUT.
-        tensor = ttnn.reshape(tensor, (batch_size, seq_len, head_size, dim // head_size))
-        tensor = ttnn.permute(tensor, (0, 2, 1, 3))
-        tensor = ttnn.reshape(tensor, (1, batch_size * head_size, seq_len, dim // head_size))
-        tensor = ttnn.to_layout(tensor, ttnn.TILE_LAYOUT)
-        return tensor
-
     def get_attention_scores(self, query, t_key, attention_mask=None, scale=None, device=None):
         # t_key = ttnn.permute(key, (0, 1, 3, 2))
         attention_scores = ttnn.matmul(query, t_key)
@@ -120,9 +86,6 @@ class cross_attention:
         upcast_softmax: bool = False,
         cross_attention_kwargs={},
     ):
-        # sequence_length = hidden_states.shape[-2]
-        # attention_mask = self.prepare_attention_mask(attention_mask, sequence_length)
-
         if len(hidden_states.shape) == 4:
             hidden_states = squeeze(hidden_states, 0)
         if encoder_hidden_states and len(encoder_hidden_states.shape) == 4:
@@ -148,7 +111,6 @@ class cross_attention:
             query, key, value = ttnn.transformer.split_query_key_value_and_split_heads(q_proj, kv_proj, num_heads=heads)
             del kv_proj
             del q_proj
-            breakpoint()
             attention_mask = torch.ones((1, 1, 1, key.shape[-1])) * -1e9
             attention_mask[:, :, :, :77] = 0
             if key.shape[-1] == 512:
