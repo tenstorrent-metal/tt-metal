@@ -97,6 +97,9 @@ void dump_tensor(const std::string& file_name, const Tensor& tensor) {
             else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
             }
+            else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            }
             else {
                 raise_unsupported_storage<StorageType>();
             }

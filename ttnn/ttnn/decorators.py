@@ -209,7 +209,7 @@ def register_operation(*, name, validate_input_tensors=None, torch_function=None
 
             return call_wrapper
 
-        if ttnn.TTNN_ENABLE_FAST_RUNTIME_MODE:
+        if True:
             return function
 
         @wraps(function)

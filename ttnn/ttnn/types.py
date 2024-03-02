@@ -40,6 +40,60 @@ Shape = ttnn._ttnn.types.Shape
 Tensor = ttnn._ttnn.types.Tensor
 
 
+import torch
+
+
+class MultiDeviceTensor:
+    def __init__(self, device_id_to_tensor):
+        self.device_id_to_tensor = device_id_to_tensor
+
+    def to_device(self, multi_device):
+        for device_id, tensor in self.device_id_to_tensor.items():
+            self.device_id_to_tensor[device_id] = ttnn.to_device(tensor, device=multi_device.get_device(device_id))
+        return self
+
+    def get_device_tensor(self, device_id):
+        return self.device_id_to_tensor[device_id]
+
+    def get_tensors(self):
+        return [x for x in self.device_id_to_tensor.values()]
+
+
+class DeviceMeshTensor:
+    def __init__(self, tensor, multidevice, config, device=False):
+        self.config = config
+
+        if device == False:
+            self.multidevice = multidevice
+
+            sliced_tensors = torch.chunk(tensor, multidevice.get_num_devices(), dim=config.shard_dim)
+            self.device_to_tensor = {
+                i: ttnn.from_torch(input_tensor, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT)
+                for i, input_tensor in enumerate(sliced_tensors)
+            }
+        else:
+            self.multidevice = multidevice
+            self.device_to_tensor = {i: tensor[i] for i, t in enumerate(tensor)}
+
+    def to_torch(self):
+        x = [ttnn.to_torch(tt_input_tensor) for tt_input_tensor in self.device_to_tensor.values()]
+        return torch.cat(x, dim=self.config.shard_dim)
+
+    def to_device(self, multi_device):
+        tensors = []
+        for i in range(self.multidevice.get_device_ids()):
+            device_tensor = ttnn.to_device(self.device_to_tensor[i], device=multi_device.get_device(i))
+            self.device_to_tensor[i] = device_tensor
+            tensors.append(device_tensor)
+        return tensors
+
+    def get_device_tensor(self, device_id):
+        return self.device_to_tensor[device_id]
+
+    def get_tensors(self):
+        return [x for x in self.device_to_tensor.values()]
+
+
 @dataclasses.dataclass
 class CoreGrid:
     y: int
@@ -54,6 +108,25 @@ class CoreGrid:
 class CoreRange:
     start: CoreGrid
     end: CoreGrid
+
+
+@dataclasses.dataclass
+class DeviceGrid:
+    y: int
+    x: int
+
+    @property
+    def num_devices(self):
+        return self.y * self.x
+
+    def as_tuple(self):
+        return (self.y, self.x)
+
+
+@dataclasses.dataclass
+class DeviceIds:
+    start: DeviceGrid
+    end: DeviceGrid
 
 
 class ShardStrategy(Enum):

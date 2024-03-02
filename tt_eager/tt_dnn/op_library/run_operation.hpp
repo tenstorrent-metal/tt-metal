@@ -155,6 +155,11 @@ static operation_history::TensorRecord create_tensor_record(const Tensor& tensor
                 return operation_history::TensorRecord{
                     tensor.storage_type(), tensor.shape(), tensor.dtype(), tensor.layout()
                 };
+            }
+            else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                return operation_history::TensorRecord{
+                    tensor.storage_type(), tensor.shape(), tensor.dtype(), tensor.layout()
+                };
             } else {
                 raise_unsupported_storage<T>();
             }

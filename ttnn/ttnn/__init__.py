@@ -33,6 +33,8 @@ if TTNN_ENABLE_FAST_RUNTIME_MODE:
 import tt_lib as _tt_lib
 import ttnn._ttnn
 
+from ttnn._ttnn.multi_device import to_device_mesh
+
 from ttnn.types import (
     TILE_SIZE,
     DataType,
@@ -59,9 +61,22 @@ from ttnn.types import (
     CoreRange,
     Shape,
     Tensor,
+    DeviceGrid,
+    DeviceMeshTensor,
 )
 
 from ttnn.device import Device, open_device, close_device, manage_device, synchronize_device, dump_device_memory_state
+from ttnn.multi_device import (
+    DeviceMesh,
+    open_device_mesh,
+    close_device_mesh,
+    get_num_pcie_devices,
+    get_pcie_device_ids,
+    get_device_ids,
+    create_device_mesh,
+    ShardedMeshMapper,
+    ConcatMeshComposer,
+)
 
 from ttnn.core import (
     has_storage_type_of,

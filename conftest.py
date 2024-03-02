@@ -295,6 +295,22 @@ def pcie_devices(request):
     ttl.device.CloseDevices(devices)
 
 
+@pytest.fixture(scope="function")
+def device_mesh(request):
+    import ttnn
+
+    device_ids = ttnn.get_device_ids()  # this only returns PCIE devices until tt-metal full device range
+    if len(device_ids) <= 1:
+        pytest.skip("Requires multiple devices to run")
+    device_grid = ttnn.DeviceGrid(1, len(device_ids))
+    device_mesh = ttnn.open_device_mesh(device_ids)
+
+    logger.info(f"multidevice with {device_mesh.get_num_devices()} devices is created")
+    yield device_mesh
+
+    ttnn.close_device_mesh(device_mesh)
+
+
 @pytest.fixture(autouse=True)
 def clear_program_cache():
     yield

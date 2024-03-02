@@ -524,6 +524,8 @@ inline DeviceBuffer to_device_buffer(
                 } else {
                     TT_THROW("Borrowed storage doesn't support this data type");
                 }
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage doesn't support to_device_buffer");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
@@ -644,6 +646,8 @@ inline Tensor to_layout(const Tensor& tensor, Layout target_layout) {
                 return convert(input_data);
             } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
@@ -743,6 +747,8 @@ inline Tensor pad(
                 return pad(input_data);
             } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
@@ -812,6 +818,8 @@ inline Tensor unpad(const Tensor& tensor, const Shape& output_tensor_start, cons
                 const auto input_data = borrowed_buffer::get_as<T>(storage.buffer);
                 return unpad(input_data);
             } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();
@@ -890,6 +898,8 @@ inline std::string to_string(const Tensor& tensor, Layout print_layout, bool pre
             }
             else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Cannot print a device tensor!");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
@@ -933,6 +943,8 @@ void* get_raw_host_data_ptr(const Tensor& tensor) {
                     TT_THROW("Borrowed storage doesn't support this data type");
                 }
             } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();

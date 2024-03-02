@@ -9,6 +9,7 @@ from ttnn.types import (
     Layout,
     DEVICE_STORAGE_TYPE,
     Tensor,
+    DeviceMeshTensor,
 )
 from ttnn.core import has_storage_type_of
 
@@ -25,6 +26,8 @@ def validate_input_tensor(
     can_be_a_scalar: bool = False,
     is_optional: bool = False,
 ):
+    # if isinstance(tensor, DeviceMeshTensor):
+    #    return
     if is_optional and tensor is None:
         return
 

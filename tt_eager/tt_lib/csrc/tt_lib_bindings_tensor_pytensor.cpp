@@ -14,7 +14,7 @@
 namespace tt::tt_metal::detail {
 
 Tensor convert_torch_tensor_to_tt_tensor(
-    const py::handle &torch_tensor, std::optional<DataType> optional_data_type = std::nullopt) {
+    const py::handle &torch_tensor, std::optional<DataType> optional_data_type = std::nullopt, std::optional<std::vector<TensorRange>> slices = std::nullopt) {
     py::object torch = py::module_::import("torch");
     if (not py::isinstance(torch_tensor, torch.attr("Tensor"))) {
         TT_THROW("The argument must be of type torch.Tensor!");
@@ -247,17 +247,45 @@ Tensor convert_numpy_tensor_to_tt_tensor(
 }
 
 Tensor convert_python_tensor_to_tt_tensor(
-    const py::handle &tensor, std::optional<DataType> optional_data_type = std::nullopt) {
+    const py::handle &tensor, std::optional<DataType> optional_data_type = std::nullopt, std::optional<std::vector<TensorRange>> slices = std::nullopt) {
     py::object torch = py::module_::import("torch");
     py::object np = py::module_::import("numpy");
     if (py::isinstance(tensor, torch.attr("Tensor"))) {
-        return convert_torch_tensor_to_tt_tensor(tensor, optional_data_type);
+        return convert_torch_tensor_to_tt_tensor(tensor, optional_data_type, slices);
     } else if (py::isinstance(tensor, np.attr("ndarray"))) {
         return convert_numpy_tensor_to_tt_tensor(tensor, optional_data_type);
     } else {
         TT_THROW("The argument must be of type torch.Tensor or numpy.ndarray!");
     }
 }
+
+/*
+Tensor convert_torch_tensors_to_tt_tensor(
+    const py::handle &torch_tensor,
+    const std::vector<py::handle> &sharded_tensors,
+    std::optional<DataType> optional_data_type = std::nullopt) {
+{
+    py::object torch = py::module_::import("torch");
+    if (not py::isinstance(torch_tensor, torch.attr("Tensor"))) {
+        TT_THROW("The argument must be of type torch.Tensor!");
+    }
+
+    std::vector<Shape> tt_sharded_shapes;
+    std::vector<BorrowedBuffer> tt_buffers;
+    for (const auto &sharded_tensor : sharded_tensors) {
+        auto shape = py::cast<std::vector<uint32_t>>(sharded_tensor.attr("shape"));
+        auto tt_sharded_tensor = convert_torch_tensor_to_tt_tensor(sharded_tensor, optional_data_type);
+        tt_buffers.push_back(tt_sharded_tensor.storage().buffer);
+        tt_sharded_shapes.push_back(shape);
+    }
+    MultiDeviceStorage storage(std::move(tt_buffers), std::move(tt_sharded_shapes));
+
+    DataType data_type = convert_data_type(optional_data_type);
+    auto tensor_shape = py::cast<std::vector<uint32_t>>(tensor.attr("shape"));
+
+    return Tensor(std::move(storage), tensor_shape, data_type, Layout::ROW_MAJOR);
+}
+*/
 
     OwnedBuffer create_owned_buffer_from_vector_of_floats(std::vector<float>&& data, DataType data_type) {
         switch (data_type) {
@@ -300,6 +328,8 @@ Tensor convert_python_tensor_to_tt_tensor(
                     TT_THROW("Device tensor cannot be converted to torch");
                 } else if constexpr (std::is_same_v<T, BorrowedStorage>) {
                     return storage.buffer;
+                } else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                    TT_THROW("Device tensor cannot be converted to torch");
                 } else {
                     raise_unsupported_storage<T>();
                 }
@@ -350,6 +380,8 @@ Tensor convert_python_tensor_to_tt_tensor(
                     TT_THROW("Device tensor cannot be converted to numpy");
                 } else if constexpr (std::is_same_v<T, BorrowedStorage>) {
                     return storage.buffer;
+                } else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                    TT_THROW("Device tensor cannot be converted to numpy");
                 } else {
                     raise_unsupported_storage<T>();
                 }
@@ -656,6 +688,34 @@ Tensor convert_python_tensor_to_tt_tensor(
                     return detail::convert_python_tensor_to_tt_tensor(tensor, data_type);
                 }),
                 py::arg("tensor"),
+                py::arg("data_type") = std::nullopt,
+                py::return_value_policy::move,
+                R"doc(
+                    +---------------+------------------------+
+                    | Argument      | Description            |
+                    +==============-+========================+
+                    | tensors       | Pytorch Tensors        |
+                    +---------------+------------------------+
+                    | data_type     | TT Tensor data type    |
+                    +---------------+------------------------+
+
+                    Example of creating a TT Tensor that uses torch.Tensor's storage as its own storage:
+
+                    .. code-block:: python
+
+                        py_tensor = torch.randn((1, 1, 32, 32))
+                        tt_lib.tensor.Tensor(py_tensor)
+                )doc")
+            .def(
+                py::init<>([](py::object &tensor, const std::vector<std::vector<std::vector<int>>> &slice_ranges, std::optional<DataType> data_type) {
+                    std::vector<TensorRange> ranges;
+                    for (const auto &range : slice_ranges) {
+                        ranges.push_back(TensorRange(range.at(0), range.at(1)));
+                    }
+                    return detail::convert_python_tensor_to_tt_tensor(tensor, data_type, ranges);
+                }),
+                py::arg("tensor"),
+                py::arg("shards") = std::vector<std::vector<std::vector<int>>>{},
                 py::arg("data_type") = std::nullopt,
                 py::return_value_policy::move,
                 R"doc(
@@ -1198,6 +1258,8 @@ Tensor convert_python_tensor_to_tt_tensor(
                                 TT_THROW("Device storage doesn't support buffer method");
                             } else if constexpr (std::is_same_v<T, BorrowedStorage>) {
                                 return storage.buffer;
+                            } else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                                TT_THROW("Device storage doesn't support buffer method");
                             } else {
                                 raise_unsupported_storage<T>();
                             }

@@ -4,7 +4,7 @@
 
 import math
 import pathlib
-from typing import Union, Tuple, Optional, Any
+from typing import Union, Tuple, Optional, Any, Callable
 
 from loguru import logger
 import torch
@@ -305,6 +305,7 @@ def from_torch(
     layout: Optional[ttnn.Layout] = ttnn.ROW_MAJOR_LAYOUT,
     device: Optional[ttnn.Device] = None,
     memory_config: Optional[ttnn.MemoryConfig] = None,
+    mesh_mapper: Optional[Callable] = None,
 ) -> ttnn.Tensor:
     """
     from_torch(tensor: torch.Tensor, dtype: Optional[DataType] = None, layout: Optional[Layout] = ROW_MAJOR_LAYOUT, device: Optional[Device] = None, memory_config: Optional[MemoryConfig] = None) -> ttnn.Tensor
@@ -342,10 +343,13 @@ def from_torch(
         if device is None:
             raise RuntimeError("device must be specified when memory_config is specified")
 
-    def impl(tensor, dtype):
+    def impl(tensor, dtype, mesh_mapper):
+        if mesh_mapper:
+            device_id_to_shard_ranges = mesh_mapper.map(tensor)
+            return ttnn.Tensor(ttl.tensor.Tensor(tensor, list(device_id_to_shard_ranges.values()), dtype))
         return ttnn.Tensor(ttl.tensor.Tensor(tensor, dtype))
 
-    tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.from_torch")(tensor, dtype)
+    tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.from_torch")(tensor, dtype, mesh_mapper)
 
     if layout is not None:
         tensor = ttnn.to_layout(tensor, layout)
@@ -384,7 +388,9 @@ class TorchTensor(torch.Tensor):
 
 
 @ttnn.register_operation(name="ttnn.to_torch", validate_input_tensors=_to_torch_validate_input_tensors)
-def to_torch(tensor: ttnn.Tensor, *, torch_rank: Optional[int] = None) -> "torch.Tensor":
+def to_torch(
+    tensor: ttnn.Tensor, *, torch_rank: Optional[int] = None, mesh_composer: Optional[Callable] = None
+) -> "torch.Tensor":
     """
     to_torch(tensor: ttnn.Tensor, torch_rank: Optional[int] = None) -> torch.Tensor
 
@@ -401,6 +407,8 @@ def to_torch(tensor: ttnn.Tensor, *, torch_rank: Optional[int] = None) -> "torch
         tensor([[-0.3008, -0.8438,  0.3242],
                 [ 0.9023, -0.5820,  0.5312]], dtype=torch.bfloat16)
     """
+    if isinstance(tensor, ttnn.DeviceMeshTensor):
+        return tensor.to_torch(tensor)
 
     if ttnn.has_storage_type_of(tensor, ttnn.DEVICE_STORAGE_TYPE):
         tensor = ttnn.from_device(tensor)
@@ -444,7 +452,12 @@ def _to_device_validate_input_tensors(operation_name, tensor, *args, **kwargs):
 
 
 @ttnn.register_operation(name="ttnn.to_device", validate_input_tensors=_to_device_validate_input_tensors)
-def to_device(tensor, device, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG):
+def to_device(
+    tensor,
+    device,
+    *,
+    memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG,
+):
     """
     to_device(tensor: ttnn.Tensor, device: ttnn.Device, memory_config: MemoryConfig = DRAM_MEMORY_CONFIG) -> ttnn.Tensor
 
@@ -469,8 +482,11 @@ def to_device(tensor, device, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_ME
     """
 
     def impl(tensor, device, *, memory_config):
-        ttl_tensor = tensor.value
-        return ttnn.Tensor(ttl_tensor.to(device, memory_config))
+        if isinstance(device, ttnn.DeviceMesh):
+            return ttnn.to_device_mesh(tensor.value, device, memory_config=memory_config)
+        else:
+            ttl_tensor = tensor.value
+            return ttnn.Tensor(ttl_tensor.to(device, memory_config))
 
     return ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_device")(
         tensor, device, memory_config=memory_config

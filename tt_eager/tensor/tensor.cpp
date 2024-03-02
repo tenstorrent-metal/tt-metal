@@ -39,8 +39,9 @@ Tensor::Tensor(const Storage& storage, const Shape& shape, DataType dtype, Layou
             }
             else if constexpr (std::is_same_v<StorageType, BorrowedStorage>) {
                 // do nothing
-            }
-            else {
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            }else {
                 raise_unsupported_storage<StorageType>();
             }
         },
@@ -66,6 +67,10 @@ void Tensor::deallocate(bool force) {
                 }
                 storage.buffer.reset();
             } else if constexpr (std::is_same_v<T, BorrowedStorage>) {
+                if (force) {
+                    TT_THROW("Cannot deallocate tensor with borrowed storage!");
+                }
+            } else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
                 if (force) {
                     TT_THROW("Cannot deallocate tensor with borrowed storage!");
                 }
@@ -230,6 +235,9 @@ bool Tensor::is_allocated() const {
             else if constexpr (std::is_same_v<T, BorrowedStorage>) {
                 return true;
             }
+            else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                return true;
+            }
             else {
                 raise_unsupported_storage<T>();
             }
@@ -264,6 +272,9 @@ StorageType Tensor::storage_type() const {
             }
             else if constexpr (std::is_same_v<T, BorrowedStorage>) {
                 return StorageType::BORROWED;
+            }
+            else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                return StorageType::MULTI_DEVICE;
             }
             else {
                 raise_unsupported_storage<T>();

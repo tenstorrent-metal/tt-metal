@@ -35,6 +35,7 @@ enum class StorageType {
     OWNED,
     DEVICE,
     BORROWED,  // for storing torch/numpy/etc tensors
+    MULTI_DEVICE,  // for storing torch/numpy/etc tensors
 };
 
 tt::DataFormat datatype_to_dataformat_converter(DataType datatype);
@@ -294,7 +295,45 @@ struct BorrowedStorage {
     const auto attribute_values() const { return std::make_tuple(); }
 };
 
-using Storage = std::variant<OwnedStorage, DeviceStorage, BorrowedStorage>;
+struct TensorRange {
+    std::vector<int> start;
+    std::vector<int> end;
+    TensorRange(const std::vector<int> &start, const std::vector<int> &end) : start(start), end(end) {}
+
+    static constexpr auto attribute_names = std::make_tuple("start", "end");
+    const auto attribute_values() const { return std::make_tuple(std::cref(this->start), std::cref(this->end)); }
+};
+struct MultiDeviceStorage {
+    std::vector<TensorRange> per_device_slices;
+    DeviceBuffer buffer;
+
+    MultiDeviceStorage(
+        const std::vector<TensorRange> &per_device_slices,
+        const DeviceBuffer &buffer) :
+        per_device_slices(per_device_slices), buffer(buffer) {}
+
+    MultiDeviceStorage(const MultiDeviceStorage &other) :
+        buffer(other.buffer) {}
+
+    MultiDeviceStorage operator=(const MultiDeviceStorage &other) {
+        this->buffer = other.buffer;
+        return *this;
+    }
+
+    MultiDeviceStorage(MultiDeviceStorage &&other) : buffer(other.buffer) {}
+
+    MultiDeviceStorage operator=(MultiDeviceStorage &&other) {
+        this->buffer = other.buffer;
+        return *this;
+    }
+
+    ~MultiDeviceStorage() { }
+
+    static constexpr auto attribute_names = std::make_tuple();
+    const auto attribute_values() const { return std::make_tuple(); }
+};
+
+using Storage = std::variant<OwnedStorage, DeviceStorage, BorrowedStorage, MultiDeviceStorage>;
 
 template <typename T>
 constexpr void raise_unsupported_storage() {
