@@ -286,6 +286,7 @@ from ttnn.operations.normalization import (
     rms_norm,
     group_norm,
 )
+from ttnn.operations.ccl import all_gather
 
 from ttnn.operations import transformer
 from ttnn.operations import kv_cache
