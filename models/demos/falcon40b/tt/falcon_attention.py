@@ -375,15 +375,20 @@ class TtFalconAttention:
             raise NotImplementedError(f"Llm mode {llm_mode} is not supported! Must be one of prefill or decode.")
 
         # Reshard
-        if self.model_config["LN_ATTN_OUTPUT_MEMCFG"] != self.model_config["FUSED_QKV_MM_INPUT_MEMCFG"]:
-            for i in range(len(hidden_states)):
-                hidden_states[i] = tt_lib.tensor.sharded_to_interleaved(
-                    hidden_states[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
-                )
-            for i in range(len(hidden_states)):
-                hidden_states[i] = tt_lib.tensor.interleaved_to_sharded(
-                    hidden_states[i], sharded_mem_config=self.model_config["FUSED_QKV_MM_INPUT_MEMCFG"]
-                )
+        # if self.model_config["LN_ATTN_OUTPUT_MEMCFG"] != self.model_config["FUSED_QKV_MM_INPUT_MEMCFG"]:
+        #     for i in range(len(hidden_states)):
+        #         hidden_states[i] = tt_lib.tensor.sharded_to_interleaved(
+        #             hidden_states[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
+        #         )
+        #     for i in range(len(hidden_states)):
+        #         hidden_states[i] = tt_lib.tensor.interleaved_to_sharded(
+        #             hidden_states[i], sharded_mem_config=self.model_config["FUSED_QKV_MM_INPUT_MEMCFG"]
+        #         )
+
+        for i in range(len(hidden_states)):
+            hidden_states[i] = tt_lib.tensor.sharded_to_interleaved(
+                hidden_states[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
+            )
 
         #################
         ### FUSED QKV ###
@@ -395,10 +400,15 @@ class TtFalconAttention:
                     hidden_states[i],
                     self.query_key_value_weights[i],
                     program_config=self.model_config["QKV_MM_PROGCFG"],
-                    output_mem_config=self.model_config["FUSED_QKV_MM_OUTPUT_MEMCFG"],
+                    output_mem_config=self.model_config["DEFAULT_MEMCFG"],
                     output_dtype=self.model_config["FUSED_QKV_MM_OUTPUT_DTYPE"],
                     compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
                 )
+            )
+
+        for i in range(len(fused_query_key_value)):
+            fused_query_key_value[i] = tt_lib.tensor.interleaved_to_sharded(
+                fused_query_key_value[i], sharded_mem_config=self.model_config["FUSED_QKV_MM_OUTPUT_MEMCFG"]
             )
 
         ###########
@@ -406,15 +416,19 @@ class TtFalconAttention:
         ###########
         # TODO: Need to uplift nlp_create_qkv_heads to support HEIGHT > 32 for sharded; otherwise, need to spill to interleaved for prefill
         if llm_mode == "prefill":
-            if self.model_config["FUSED_QKV_MM_OUTPUT_MEMCFG"] != self.model_config["CREATE_QKV_HEADS_INPUT_MEMCFG"]:
-                for i in range(len(fused_query_key_value)):
-                    fused_query_key_value[i] = tt_lib.tensor.sharded_to_interleaved(
-                        fused_query_key_value[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
-                    )
-                for i in range(len(fused_query_key_value)):
-                    fused_query_key_value[i] = tt_lib.tensor.interleaved_to_sharded(
-                        fused_query_key_value[i], sharded_mem_config=self.model_config["CREATE_QKV_HEADS_INPUT_MEMCFG"]
-                    )
+            # if self.model_config["FUSED_QKV_MM_OUTPUT_MEMCFG"] != self.model_config["CREATE_QKV_HEADS_INPUT_MEMCFG"]:
+            # for i in range(len(fused_query_key_value)):
+            #     fused_query_key_value[i] = tt_lib.tensor.sharded_to_interleaved(
+            #         fused_query_key_value[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
+            #     )
+            # for i in range(len(fused_query_key_value)):
+            #     fused_query_key_value[i] = tt_lib.tensor.interleaved_to_sharded(
+            #         fused_query_key_value[i], sharded_mem_config=self.model_config["CREATE_QKV_HEADS_INPUT_MEMCFG"]
+            #     )
+            for i in range(len(fused_query_key_value)):
+                fused_query_key_value[i] = tt_lib.tensor.sharded_to_interleaved(
+                    fused_query_key_value[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
+                )
 
         elif llm_mode == "decode":
             if self.model_config["FUSED_QKV_MM_OUTPUT_MEMCFG"] != self.model_config["CREATE_QKV_HEADS_INPUT_MEMCFG"]:
@@ -437,7 +451,7 @@ class TtFalconAttention:
                     num_heads=self.num_heads // len(self.devices),
                     num_kv_heads=self.num_kv_heads // len(self.devices),
                     transpose_k_heads=False,
-                    output_mem_config=self.model_config["CREATE_QKV_HEADS_OUTPUT_MEMCFG"],
+                    output_mem_config=self.model_config["DEFAULT_MEM_CONFIG"],
                 )
                 fused_query_key_value[i].deallocate(True)
                 query_layer.append(q_layer)
@@ -445,16 +459,16 @@ class TtFalconAttention:
                 value_layer.append(v_layer)
 
             # TODO: Remove this; only need this if we spill to interleaved for nlp_create_qkv_heads
-            # for i in range(len(query_layer)):
-            #     query_layer[i] = tt_lib.tensor.interleaved_to_sharded(
-            #         query_layer[i], sharded_mem_config=self.model_config["CREATE_Q_HEADS_OUTPUT_MEMCFG"]
-            #     )
-            #     key_layer[i] = tt_lib.tensor.interleaved_to_sharded(
-            #         key_layer[i], sharded_mem_config=self.model_config["CREATE_KV_HEADS_OUTPUT_MEMCFG"]
-            #     )
-            #     value_layer[i] = tt_lib.tensor.interleaved_to_sharded(
-            #         value_layer[i], sharded_mem_config=self.model_config["CREATE_KV_HEADS_OUTPUT_MEMCFG"]
-            #     )
+            for i in range(len(query_layer)):
+                query_layer[i] = tt_lib.tensor.interleaved_to_sharded(
+                    query_layer[i], sharded_mem_config=self.model_config["CREATE_Q_HEADS_OUTPUT_MEMCFG"]
+                )
+                key_layer[i] = tt_lib.tensor.interleaved_to_sharded(
+                    key_layer[i], sharded_mem_config=self.model_config["CREATE_KV_HEADS_OUTPUT_MEMCFG"]
+                )
+                value_layer[i] = tt_lib.tensor.interleaved_to_sharded(
+                    value_layer[i], sharded_mem_config=self.model_config["CREATE_KV_HEADS_OUTPUT_MEMCFG"]
+                )
         elif llm_mode == "decode":
             for i in range(len(fused_query_key_value)):
                 q_layer, k_layer, v_layer = tt_lib.tensor.nlp_create_qkv_heads(
