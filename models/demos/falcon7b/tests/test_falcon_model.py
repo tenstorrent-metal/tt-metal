@@ -200,6 +200,8 @@ def run_test_FalconModel_inference(
 
         does_pass = does_pass and does_pass2
 
+    breakpoint()
+
     if does_pass:
         logger.info("Falcon Model Passed!")
     else:
@@ -212,13 +214,14 @@ def run_test_FalconModel_inference(
     (
         ("prefill", 2, 128, 0),
         ("decode", 32, 1, 128),
+        ("decode", 32, 1, 2047),
     ),
-    ids=["prefill_seq128_batch32", "decode_batch32"],
+    ids=["prefill_seq128_batch32", "decode_batch32", "decode_batch32_2047"],
 )
 @pytest.mark.parametrize(
     "num_layers, pcc",
-    ((1, 0.98), (2, 0.98), (32, 0.98)),
-    ids=["layers_1", "layers_2", "layers_32"],
+    ((1, 0.98), (2, 0.98), (5, 0.98), (32, 0.98)),
+    ids=["layers_1", "layers_2", "layers_5", "layers_32"],
 )
 @pytest.mark.parametrize(
     "model_version",

@@ -237,12 +237,14 @@ class TtFalconAttention(nn.Module):
         #################
         ### FUSED QKV ###
         #################
+        self.out_b4qkv = tt_lib.tensor.clone(hidden_states)
         fused_query_key_value = tt_lib.tensor.falcon_fused_qkv_matmul(
             hidden_states,
             self.query_key_value_weights,
             output_mem_config=self.model_config["FUSED_QKV_MM_OUTPUT_MEMCFG"],
             output_dtype=self.model_config["FUSED_QKV_MM_OUTPUT_DTYPE"],
         )
+        self.out_afqkv = tt_lib.tensor.clone(fused_query_key_value)
 
         ###########
         ### TMs ###
@@ -261,7 +263,9 @@ class TtFalconAttention(nn.Module):
             key_layer = self.rotary_embedding(key_layer)
         elif llm_mode == "decode":
             query_layer = self.rotary_embedding(query_layer, layer_past_len)
+            self.out_k_b4rotary = tt_lib.tensor.clone(key_layer)
             key_layer = self.rotary_embedding(key_layer, layer_past_len)
+            self.out_k_afrotary = tt_lib.tensor.clone(key_layer)
 
         ######################
         ### K CACHE UPDATE ###

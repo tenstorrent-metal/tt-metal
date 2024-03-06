@@ -6,7 +6,7 @@ import torch
 from torch import nn
 import tt_lib
 
-from models.utility_functions import torch2tt_tensor
+from models.utility_functions import torch2tt_tensor, tt2torch_tensor
 
 
 class TtFalconMLP(nn.Module):
@@ -92,11 +92,24 @@ class TtFalconMLP(nn.Module):
         hidden_states = tt_lib.tensor.falcon_dense_h_to_4h_matmul(
             x,
             self.dense_h_to_4h_weights,
-            fused_activation=[tt_lib.tensor.FusibleActivation.GELU, True],
+            # fused_activation=[tt_lib.tensor.FusibleActivation.GELU, True],
             output_mem_config=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_MEMCFG"],
             output_dtype=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
         )
         x.deallocate()
+
+        hidden_states = tt2torch_tensor(hidden_states).float()
+        # breakpoint()
+        self.act = nn.GELU()
+        hidden_states = self.act(hidden_states)
+        hidden_states = torch2tt_tensor(
+            hidden_states,
+            self.device,
+            tt_memory_config=self.model_config["DENSE_H_TO_4H_MM_WEIGHTS_MEMCFG"],
+            tt_dtype=self.model_config["DENSE_H_TO_4H_MM_WEIGHTS_DTYPE"],
+        )
+
+        self.out_afgelu = tt_lib.tensor.clone(hidden_states)
 
         hidden_states = tt_lib.tensor.falcon_dense_4h_to_h_matmul(
             hidden_states,
