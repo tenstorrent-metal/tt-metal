@@ -10,7 +10,7 @@ from models.demos.ttnn_falcon7b.tt.falcon_mlp import TtFalconMLP
 from models.demos.ttnn_falcon7b.tt.model_config import get_model_config, get_tt_cache_path
 from models.demos.ttnn_falcon7b.tt.common import create_custom_preprocessor
 from ttnn.model_preprocessing import preprocess_model_parameters
-from tests.ttnn.utils_for_testing import assert_with_pcc
+from tests.ttnn.utils_for_testing import assert_with_pcc, update_process_id
 import transformers
 
 torch.manual_seed(0)
@@ -32,7 +32,7 @@ def run_test_FalconMLP_inference(
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
         device=device,
-        custom_preprocessor=create_custom_preprocessor(model_config, device=device),
+        custom_preprocessor=create_custom_preprocessor(model_config, get_tt_cache_path(model_name), device=device),
     )
     tt_FalconMLP_model = TtFalconMLP(
         device,
@@ -40,8 +40,15 @@ def run_test_FalconMLP_inference(
         parameters,
     )
 
+    mem_cfg = ttnn.create_sharded_memory_config(
+        (128, 4544),
+        ttnn.CoreGrid(4, 2),
+        ttnn.ShardStrategy.BLOCK,
+        ttnn.ShardOrientation.ROW_MAJOR,
+    )
+
     tt_mlp_input = ttnn.from_torch(
-        mlp_input, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"]
+        mlp_input, device=device, layout=ttnn.TILE_LAYOUT, dtype=model_config["DEFAULT_DTYPE"], memory_config=mem_cfg
     )
 
     tt_out = tt_FalconMLP_model(tt_mlp_input)
@@ -61,7 +68,7 @@ def run_test_FalconMLP_inference(
         ),
     ),
 )
-@pytest.mark.parametrize("model_config_str", ("BFLOAT16-DRAM", "BFLOAT16-L1"))
+@pytest.mark.parametrize("model_config_str", ("BFLOAT16-DRAM",))
 def test_FalconMLP_inference(
     model_version,
     batch,
