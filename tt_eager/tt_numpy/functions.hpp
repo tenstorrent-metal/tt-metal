@@ -353,6 +353,34 @@ static Tensor index_all(
 }
 
 template<typename T>
+static Tensor fill_first_val_into_tensor(const Tensor& input_tensor, DataType data_type,
+			  const Layout layout , Device * device = nullptr,
+			  const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
+    const Shape& s_a = input_tensor.get_legacy_shape();
+    auto owned_buffer = tt_metal::owned_buffer::create<T>(tt_metal::compute_volume(s_a)); //ouput
+    auto device_buffer = input_tensor.device_buffer();
+    uint32_t size_in_bytes = device_buffer->size();
+    vector<T> data_vec;
+    const char *TT_METAL_SLOW_DISPATCH_MODE = std::getenv("TT_METAL_SLOW_DISPATCH_MODE");
+    if (TT_METAL_SLOW_DISPATCH_MODE == nullptr) {
+        data_vec.resize(size_in_bytes / sizeof(T));
+        tt::tt_metal::tensor_impl::read_data_from_device_buffer<T>(input_tensor.device()->command_queue(), device_buffer, data_vec.data(), true);
+    } else {
+        tt::tt_metal::tensor_impl::read_data_from_device_buffer<T>(device_buffer, data_vec);
+    }
+    auto input_buffer = owned_buffer::create<T>(std::move(data_vec));
+    const Shape input_tensor_strides = input_tensor.strides();
+    for(uint32_t i = 0; i < tt_metal::compute_volume(s_a); i++) {
+        owned_buffer[i] = input_buffer[0];
+    }
+    auto output = Tensor(OwnedStorage{owned_buffer}, s_a, data_type, layout).to(layout);
+    if (device != nullptr) {
+        output = output.to(device, output_mem_config);
+    }
+    return output;
+}
+
+template<typename T>
 static Tensor prod_result_computation_GS(const Tensor& input_tensor, DataType data_type,
 			  const Layout layout , Device * device = nullptr,
 			  const MemoryConfig& output_mem_config = MemoryConfig{.memory_layout=tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {

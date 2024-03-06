@@ -15,8 +15,8 @@ ALWI void REL() { release_dst(tt::DstMode::Half); }
 namespace NAMESPACE {
 void MAIN {
 
-    uint32_t num_tiles = get_compile_time_arg_val(0);
-    uint32_t per_core_block_dim = get_compile_time_arg_val(1);
+    constexpr uint32_t num_tiles = get_compile_time_arg_val(0);
+    constexpr uint32_t per_core_block_dim = get_compile_time_arg_val(1);
 
     binary_op_init_common(tt::CB::c_in0, tt::CB::c_intermed0, tt::CB::c_out0);
     bool last_tile = false;
@@ -43,11 +43,11 @@ void MAIN {
                     cb_push_back(tt::CB::c_intermed0, 1);
                 }
             }
-            REL();
-            ACQ();
-            mul_tiles_init();
             if (!once)
             {
+                REL();
+                ACQ();
+                mul_tiles_init();
                 mul_tiles(tt::CB::c_in0, tt::CB::c_intermed0, 0, 0, 0);
                 if (last_tile)
                 {

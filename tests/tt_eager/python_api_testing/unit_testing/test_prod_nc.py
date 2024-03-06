@@ -57,7 +57,7 @@ def get_tensors(input_shape, output_shape, device):
     ids=["0", "1"],
 )
 # Support for dim 2,3 in composite_ops
-def test_moreh_prod_dims(input_shape, dims, device):
+def test_prod_dims(input_shape, dims, device):
     output_shape = input_shape.copy()
 
     for dim in dims:

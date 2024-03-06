@@ -60,7 +60,6 @@ inline void llk_math_calculate_sfpu(
     } else if constexpr (operation == SfpuType::max) {
         _calculate_max_<APPROXIMATION_MODE, ITERATIONS>();
     }
-    
     //erf, erfc are dispatched directly.
 
 }

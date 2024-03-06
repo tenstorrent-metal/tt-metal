@@ -27,7 +27,6 @@ def get_tensors(input_shape, output_shape, device):
 
     torch_input = torch.randint(1, 5, input_shape, dtype=cpu_dtype)
     torch_output = torch.randint(1, 5, output_shape, dtype=cpu_dtype)
-
     torch.set_printoptions(threshold=10000, precision=5, sci_mode=False)
     tt_input = ttl.tensor.Tensor(torch_input, npu_dtype).pad_to_tile(float("nan")).to(npu_layout).to(device)
     tt_output = ttl.tensor.Tensor(torch_output, npu_dtype).pad_to_tile(float("nan")).to(npu_layout).to(device)
@@ -59,9 +58,12 @@ def test_prod(shapes, device):
     )
     N, C, H, W = tt_output_cpu.shape
     torch.set_printoptions(threshold=10000, precision=5, sci_mode=False)
-    print("Input shape", torch_input.shape)
-    print("TT Output : ", tt_output_cpu[0, 0, 0, 0])
-    print("Torch Output : ", torch_output)
+    logger.info("Input shape")
+    logger.info(torch_input.shape)
+    logger.info("TT Output")
+    logger.info(tt_output_cpu[0, 0, 0, 0])
+    logger.info("Torch Output")
+    logger.info(torch_output)
 
     # test for equivalance
     # TODO(Dongjin) : check while changing rtol after enabling fp32_dest_acc_en
@@ -74,4 +76,4 @@ def test_prod(shapes, device):
     logger.info(f"Out passing={passing}")
     logger.info(f"Output pcc={output_pcc}")
 
-    assert True
+    assert passing
