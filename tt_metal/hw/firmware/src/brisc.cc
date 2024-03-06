@@ -64,6 +64,17 @@ uint32_t device_function_sums[GLOBAL_SUM_COUNT] __attribute__((used)) = {0};
 uint64_t device_function_starts[GLOBAL_SUM_COUNT] __attribute__((used)) = {0};
 }
 
+void set_tensix_prng_seed() {
+    //#ifdef RISC_B0_HW
+    const uint32_t NOC_ID_MASK = (1 << NOC_ADDR_NODE_ID_BITS) - 1;
+    uint32_t noc_id = noc_local_node_id() & 0xFFF;
+    uint32_t noc_id_x = noc_id & NOC_ID_MASK;
+    uint32_t noc_id_y = (noc_id >> NOC_ADDR_NODE_ID_BITS) & NOC_ID_MASK;
+    volatile uint32_t* cfg_regs = core.cfg_regs_base(0);
+    cfg_regs[PRNG_SEED_Seed_Val_ADDR32] = (noc_id_y << 16) | noc_id_x;
+    //#endif
+}
+
 void enable_power_management() {
     // Mask and Hyst taken from tb_tensix math_tests
     uint32_t pm_mask = 0xFFFF;
@@ -205,6 +216,8 @@ void device_setup() {
     // Initialize sempahores - check if we need to do this still
     // math->packer semaphore - max set to 1, as double-buffering is disabled by default
     core.ex_sem_init(ckernel::semaphore::MATH_PACK, 1, 0, instrn_buf[0]);
+
+    set_tensix_prng_seed();
 
     // // unpacker semaphore
     // core.ex_sem_init(semaphore::UNPACK_MISC, 1, 1, instrn_buf[0]);
