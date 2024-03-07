@@ -11,8 +11,7 @@ if [[ ! -z "$TT_METAL_SLOW_DISPATCH_MODE" ]]; then
     ./tests/scripts/run_python_unit_test_backward_ops.sh
     ./tests/scripts/run_python_unit_test_fallback_ops.sh
     ./tests/scripts/run_python_unit_test_loss_ops.sh
-    # This doesn't exist?
-    # ./tests/scripts/run_python_unit_test_misc_ops.sh
+    ./tests/scripts/run_python_unit_test_misc.sh
     ./tests/scripts/run_python_unit_test_moreh.sh
 
     if [ "$ARCH_NAME" != "wormhole_b0" ]; then
