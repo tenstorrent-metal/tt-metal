@@ -305,12 +305,19 @@ class TtFalconAttention(nn.Module):
         elif llm_mode == "decode":
             # TODO: switch to group_attn_matmul once multiple q heads is supported (issue #5318)
             if is_wormhole_b0():
+                # compute_kernel_config = tt_lib.tensor.WormholeComputeKernelConfig(
+                #     math_fidelity=tt_lib.tensor.MathFidelity.LoFi,
+                #     math_approx_mode=True,
+                #     fp32_dest_acc_en=True,
+                #     packer_l1_acc=True,
+                # )
                 attn_weights = tt_lib.operations.primary.transformers.attn_matmul(
                     query_layer,
                     key_layer_transposed,
                     compute_with_storage_grid_size=device.compute_with_storage_grid_size(),
                     output_mem_config=self.model_config["PRE_SOFTMAX_MM_OUTPUT_MEMCFG"],
                     output_dtype=self.model_config["PRE_SOFTMAX_MM_OUTPUT_DTYPE"],  # Must be BFLOAT16
+                    # compute_kernel_config=compute_kernel_config
                 )
             else:
                 attn_weights = tt_lib.operations.primary.transformers.group_attn_matmul(
@@ -377,12 +384,19 @@ class TtFalconAttention(nn.Module):
         elif llm_mode == "decode":
             # TODO: switch to group_attn_matmul once multiple q heads is supported (issue #5318)
             if is_wormhole_b0():
+                # compute_kernel_config = tt_lib.tensor.WormholeComputeKernelConfig(
+                #     math_fidelity=tt_lib.tensor.MathFidelity.LoFi,
+                #     math_approx_mode=True,
+                #     fp32_dest_acc_en=True,
+                #     packer_l1_acc=True,
+                # )
                 attn_output = tt_lib.operations.primary.transformers.attn_matmul(
                     attn_weights,
                     value_layer,
                     compute_with_storage_grid_size=device.compute_with_storage_grid_size(),
                     output_mem_config=self.model_config["POST_SOFTMAX_MM_OUTPUT_MEMCFG"],
                     output_dtype=self.model_config["POST_SOFTMAX_MM_OUTPUT_DTYPE"],  # Must be BFLOAT16
+                    # compute_kernel_config=compute_kernel_config
                 )
             else:
                 attn_output = tt_lib.operations.primary.transformers.group_attn_matmul(
