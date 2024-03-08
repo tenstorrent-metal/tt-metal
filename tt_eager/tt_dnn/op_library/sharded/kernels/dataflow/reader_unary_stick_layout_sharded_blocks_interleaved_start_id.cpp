@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include "dataflow_api.h"
+#include "debug/dprint.h"
 
 void kernel_main() {
 
@@ -13,6 +14,12 @@ void kernel_main() {
     const uint32_t block_width_bytes        = get_arg_val<uint32_t>(3);
     const uint32_t input_width_offset_bytes = get_arg_val<uint32_t>(4);
     const uint32_t start_id                 = get_arg_val<uint32_t>(5);
+
+    DPRINT << "stick_size " <<stick_size << ENDL();
+    DPRINT << "block_height " <<block_height << ENDL();
+    DPRINT << "block_width_bytes " <<block_width_bytes << ENDL();
+    DPRINT << "input_width_offset_bytes " <<input_width_offset_bytes << ENDL();
+    DPRINT << "start_id " <<start_id << ENDL();
 
     constexpr uint32_t cb_id_in0 = get_compile_time_arg_val(0);
 

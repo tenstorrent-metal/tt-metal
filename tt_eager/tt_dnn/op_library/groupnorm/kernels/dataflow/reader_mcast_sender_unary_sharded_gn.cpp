@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include "dataflow_api.h"
 #include "hostdevcommon/common_values.hpp"
-// #include "debug/dprint.h"
+#include "debug/dprint.h"
 
 
 // split REDUCE across cores
@@ -178,6 +178,12 @@ void kernel_main() {
     volatile tt_l1_ptr uint16_t* rptr = reinterpret_cast<volatile tt_l1_ptr uint16_t*>(get_read_ptr(cb_in0));
     uint32_t in0_l1_read_addr = get_read_ptr(cb_in0);
 
+    // for (uint32_t i=0; i<per_core_N * num_nz_rows_per_tile;++i) {
+    //     DPRINT << rptr[i] << ENDL();
+    // }
+
+    // DPRINT  << TSLICE(cb_in0, 1, SliceRange::h7_w0_32(), true, false) << ENDL();
+
     uint32_t batch_index = 0;
     for (uint32_t i=0; i < num_batch; ++i) {
         uint32_t group_index = 0;
@@ -199,6 +205,7 @@ void kernel_main() {
                         for (uint32_t t=0; t < num_nz_rows_per_tile; ++t) {
                             for (uint32_t c=0; c < num_cols_per_group; ++c) {
                                 wptr[c + write_l1_index] = rptr[c + read_l1_index];
+
                             }
                             read_l1_index += per_core_N;
                             write_l1_index += 32;

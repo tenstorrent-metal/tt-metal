@@ -19,7 +19,7 @@
 #include "compute_kernel_api/untilize.h"
 #include "compute_kernel_api/matmul.h"
 
-// #include "debug/dprint.h"
+#include "debug/dprint.h"
 // #include "debug/status.h"
 
 
@@ -150,6 +150,9 @@ void MAIN {
                 for (uint32_t w = 0; w < block_w; ++w) {
                     tilize_init_short(cb_in, 1);
                     cb_wait_front(cb_in, 1);
+
+                    // UNPACK(( DPRINT  << TSLICE(cb_in, 0, SliceRange::h31_w0_32(), true, false) << ENDL() ));
+
                     cb_reserve_back(cb_x, 1);
                     tilize_block(cb_in, 1, cb_x);
                     cb_push_back(cb_x, 1);
