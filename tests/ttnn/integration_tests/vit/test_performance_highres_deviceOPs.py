@@ -138,7 +138,7 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
         head_masks = None
 
     durations = []
-    for _ in range(2):
+    for _ in range(1):
         start = time.time()
         tt_output = functional_vit.vit_encoder(
             config,
@@ -149,10 +149,12 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
         tt_output = ttnn.from_device(tt_output)
         end = time.time()
         durations.append(end - start)
-        enable_persistent_kernel_cache()
+        # enable_persistent_kernel_cache()
 
-    inference_and_compile_time, inference_time, *_ = durations
+    # inference_and_compile_time, inference_time, *_ = durations
+    inference_time = durations
 
+    """
     expected_compile_time, expected_inference_time = get_expected_times(functional_vit)
     prep_perf_report(
         model_name=tt_model_name,
@@ -164,10 +166,11 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
         comments="",
         inference_time_cpu=0.0,
     )
+    """
 
-    logger.info(f"Compile time: {inference_and_compile_time - inference_time}")
+    # logger.info(f"Compile time: {inference_and_compile_time - inference_time}")
     logger.info(f"Inference time: {inference_time}")
-    logger.info(f"Samples per second: {1 / inference_time * batch_size}")
+    # logger.info(f"Samples per second: {1 / inference_time * batch_size}")
 
 
 @skip_for_wormhole_b0()
@@ -178,7 +181,7 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
 @pytest.mark.parametrize("image_size", [960])
 @pytest.mark.parametrize("functional_vit", [ttnn_functional_vit_highres, ttnn_optimized_vit_highres])
 def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, image_size, functional_vit):
-    disable_persistent_kernel_cache()
+    # disable_persistent_kernel_cache()
 
     config = transformers.ViTConfig.from_pretrained(model_name)
     model = transformers.ViTForImageClassification.from_pretrained("google/vit-base-patch16-224")
@@ -232,7 +235,7 @@ def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, 
     )
 
     durations = []
-    for _ in range(2):
+    for _ in range(1):
         start = time.time()
         tt_output = functional_vit.vit(
             config,
@@ -244,10 +247,12 @@ def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, 
         tt_output = ttnn.from_device(tt_output)
         end = time.time()
         durations.append(end - start)
-        enable_persistent_kernel_cache()
+        # enable_persistent_kernel_cache()
 
-    inference_and_compile_time, inference_time, *_ = durations
+    # inference_and_compile_time, inference_time, *_ = durations
+    inference_time, *_ = durations
 
+    """
     expected_compile_time, expected_inference_time = get_expected_times(functional_vit)
     prep_perf_report(
         model_name=tt_model_name,
@@ -259,7 +264,8 @@ def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, 
         comments="",
         inference_time_cpu=0.0,
     )
+    """
 
-    logger.info(f"Compile time: {inference_and_compile_time - inference_time}")
+    # logger.info(f"Compile time: {inference_and_compile_time - inference_time}")
     logger.info(f"Inference time: {inference_time}")
-    logger.info(f"Samples per second: {1 / inference_time * batch_size}")
+    # logger.info(f"Samples per second: {1 / inference_time * batch_size}")

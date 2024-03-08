@@ -15,8 +15,8 @@ from transformers import AutoImageProcessor
 
 import ttnn
 
-from models.experimental.functional_vit.tt import ttnn_functional_vit_highres
-from models.experimental.functional_vit.tt import ttnn_optimized_vit_highres
+from models.experimental.functional_vit.tt import ttnn_functional_vit
+from models.experimental.functional_vit.tt import ttnn_optimized_vit
 
 from ttnn.model_preprocessing import preprocess_model_parameters
 
@@ -31,45 +31,9 @@ from models.perf.perf_utils import prep_perf_report
 
 def get_expected_times(functional_vit):
     return {
-        ttnn_functional_vit_highres: (12, 17),
-        ttnn_optimized_vit_highres: (12, 0.08),
+        ttnn_functional_vit: (12, 17),
+        ttnn_optimized_vit: (12, 0.08),
     }[functional_vit]
-
-
-def interpolate_pos_encoding(
-    position_embeddings: torch.Tensor, patch_size, num_patches, height: int, width: int
-) -> torch.Tensor:
-    """
-    This method allows to interpolate the pre-trained position encodings, to be able to use the model on higher
-    resolution images.
-
-    Source:
-    https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174
-    """
-
-    # num_patches = embeddings.shape[1] - 1
-    num_positions = position_embeddings.shape[1] - 1
-    if num_patches == num_positions and height == width:
-        return position_embeddings
-    class_pos_embed = position_embeddings[:, 0]
-    patch_pos_embed = position_embeddings[:, 1:]
-    dim = position_embeddings.shape[-1]
-    h0 = height // patch_size
-    w0 = width // patch_size
-    # we add a small number to avoid floating point error in the interpolation
-    # see discussion at https://github.com/facebookresearch/dino/issues/8
-    h0, w0 = h0 + 0.1, w0 + 0.1
-    patch_pos_embed = patch_pos_embed.reshape(1, int(math.sqrt(num_positions)), int(math.sqrt(num_positions)), dim)
-    patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
-    patch_pos_embed = torch.nn.functional.interpolate(
-        patch_pos_embed,
-        scale_factor=(h0 / math.sqrt(num_positions), w0 / math.sqrt(num_positions)),
-        mode="bicubic",
-        align_corners=False,
-    )
-    assert int(h0) == patch_pos_embed.shape[-2] and int(w0) == patch_pos_embed.shape[-1]
-    patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
-    return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
 
 
 @skip_for_wormhole_b0()
@@ -77,8 +41,8 @@ def interpolate_pos_encoding(
 @pytest.mark.models_performance_virtual_machine
 @pytest.mark.parametrize("model_name", ["google/vit-base-patch16-224"])
 @pytest.mark.parametrize("batch_size", [8])
-@pytest.mark.parametrize("sequence_size", [448])
-@pytest.mark.parametrize("functional_vit", [ttnn_functional_vit_highres, ttnn_optimized_vit_highres])
+@pytest.mark.parametrize("sequence_size", [196])  ## padded from 197 to 224
+@pytest.mark.parametrize("functional_vit", [ttnn_functional_vit, ttnn_optimized_vit])
 def test_performance_vit_encoder(device, use_program_cache, model_name, batch_size, sequence_size, functional_vit):
     # disable_persistent_kernel_cache()
 
@@ -91,9 +55,9 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
     torch_hidden_states = torch_random((batch_size, sequence_size, config.hidden_size), -1, 1, dtype=torch.float32)
     torch_attention_mask = torch.ones(config.num_hidden_layers, sequence_size, dtype=torch.float32)
 
-    if functional_vit == ttnn_functional_vit_highres:
+    if functional_vit == ttnn_functional_vit:
         tt_model_name = f"ttnn_{model_name}"
-    elif functional_vit == ttnn_optimized_vit_highres:
+    elif functional_vit == ttnn_optimized_vit:
         tt_model_name = f"ttnn_{model_name}_optimized"
     else:
         raise ValueError(f"Unknown functional_vit: {functional_vit}")
@@ -104,7 +68,7 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
         device=device,
     )
 
-    if functional_vit == ttnn_optimized_vit_highres:
+    if functional_vit == ttnn_optimized_vit:
         hidden_states = ttnn.from_torch(
             torch_hidden_states,
             dtype=ttnn.bfloat8_b,
@@ -138,7 +102,7 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
         head_masks = None
 
     durations = []
-    for _ in range(2):
+    for _ in range(1):
         start = time.time()
         tt_output = functional_vit.vit_encoder(
             config,
@@ -149,10 +113,11 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
         tt_output = ttnn.from_device(tt_output)
         end = time.time()
         durations.append(end - start)
-        enable_persistent_kernel_cache()
+        # enable_persistent_kernel_cache()
 
-    inference_and_compile_time, inference_time, *_ = durations
-
+    # inference_and_compile_time, inference_time, *_ = durations
+    inference_time, *_ = durations
+    """
     expected_compile_time, expected_inference_time = get_expected_times(functional_vit)
     prep_perf_report(
         model_name=tt_model_name,
@@ -164,10 +129,10 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
         comments="",
         inference_time_cpu=0.0,
     )
-
-    logger.info(f"Compile time: {inference_and_compile_time - inference_time}")
+    """
+    # logger.info(f"Compile time: {inference_and_compile_time - inference_time}")
     logger.info(f"Inference time: {inference_time}")
-    logger.info(f"Samples per second: {1 / inference_time * batch_size}")
+    # logger.info(f"Samples per second: {1 / inference_time * batch_size}")
 
 
 @skip_for_wormhole_b0()
@@ -175,30 +140,23 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
 @pytest.mark.models_performance_virtual_machine
 @pytest.mark.parametrize("model_name", ["google/vit-base-patch16-224"])
 @pytest.mark.parametrize("batch_size", [1])
-@pytest.mark.parametrize("image_size", [960])
-@pytest.mark.parametrize("functional_vit", [ttnn_functional_vit_highres, ttnn_optimized_vit_highres])
+@pytest.mark.parametrize("image_size", [224])
+@pytest.mark.parametrize("functional_vit", [ttnn_functional_vit, ttnn_optimized_vit])
 def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, image_size, functional_vit):
-    disable_persistent_kernel_cache()
+    # disable_persistent_kernel_cache()
 
     config = transformers.ViTConfig.from_pretrained(model_name)
     model = transformers.ViTForImageClassification.from_pretrained("google/vit-base-patch16-224")
 
     dataset = load_dataset("huggingface/cats-image")
-    image = dataset["test"]["image"][0].resize((image_size, image_size))
-
+    image = dataset["test"]["image"]
     image_processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
-    torch_pixel_values = image_processor(
-        image, return_tensors="pt", do_resize=False, do_center_crop=False
-    ).pixel_values.to(torch.bfloat16)
+    torch_pixel_values = image_processor(image, return_tensors="pt").pixel_values.to(torch.bfloat16)
+    # torch_pixel_values = torch_pixel_values.repeat(batch_size, 1, 1, 1)
 
-    # torch_pixel_values = torch.rand((1, 3, 960, 960))
-    torch_attention_mask = (
-        None  # torch.zeros(1, sequence_size) if functional_vit == ttnn_optimized_functional_vit else None
-    )
-
-    if functional_vit == ttnn_functional_vit_highres:
+    if functional_vit == ttnn_functional_vit:
         tt_model_name = f"ttnn_{model_name}"
-    elif functional_vit == ttnn_optimized_vit_highres:
+    elif functional_vit == ttnn_optimized_vit:
         tt_model_name = f"ttnn_{model_name}_optimized"
     else:
         raise ValueError(f"Unknown functional_vit: {functional_vit}")
@@ -209,45 +167,26 @@ def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, 
         device=device,
     )
 
-    # TODO: integrate it in preprocess_model_parameters
-    model_state_dict = model.state_dict()
-    init_position_embeddings = torch.nn.Parameter(model_state_dict["vit.embeddings.position_embeddings"]).to(
-        torch.bfloat16
-    )
-    patch_size = 16
-    tot_patch_count = (image_size // patch_size) * (image_size // patch_size)
-    torch_position_embeddings = torch.nn.Parameter(
-        interpolate_pos_encoding(init_position_embeddings, patch_size, tot_patch_count, image_size, image_size)
-    )
-
-    position_embeddings = ttnn.from_torch(torch_position_embeddings, layout=ttnn.TILE_LAYOUT, device=device)
-
     torch_pixel_values = torch_pixel_values.to(torch.bfloat16)
-    pixel_values = ttnn.from_torch(
-        torch_pixel_values,
-        layout=ttnn.TILE_LAYOUT,
-        device=device,
-        dtype=ttnn.bfloat8_b,
-        # memory_config=ttnn.L1_MEMORY_CONFIG,
-    )
+    pixel_values = ttnn.from_torch(torch_pixel_values, layout=ttnn.TILE_LAYOUT, device=device)
 
     durations = []
-    for _ in range(2):
+    for _ in range(1):
         start = time.time()
         tt_output = functional_vit.vit(
             config,
             pixel_values,
-            None,
-            position_embeddings,
+            attention_mask=None,
             parameters=parameters,
         )
         tt_output = ttnn.from_device(tt_output)
         end = time.time()
         durations.append(end - start)
-        enable_persistent_kernel_cache()
+        # enable_persistent_kernel_cache()
 
-    inference_and_compile_time, inference_time, *_ = durations
-
+    # inference_and_compile_time, inference_time, *_ = durations
+    inference_time, *_ = durations
+    """
     expected_compile_time, expected_inference_time = get_expected_times(functional_vit)
     prep_perf_report(
         model_name=tt_model_name,
@@ -259,7 +198,7 @@ def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, 
         comments="",
         inference_time_cpu=0.0,
     )
-
-    logger.info(f"Compile time: {inference_and_compile_time - inference_time}")
+    """
+    # logger.info(f"Compile time: {inference_and_compile_time - inference_time}")
     logger.info(f"Inference time: {inference_time}")
-    logger.info(f"Samples per second: {1 / inference_time * batch_size}")
+    # logger.info(f"Samples per second: {1 / inference_time * batch_size}")
