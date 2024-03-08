@@ -162,12 +162,8 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
     uint32_t per_core_M = a.shard_spec().value().shape[0];
     uint32_t per_core_N = a.shard_spec().value().shape[1];
     uint32_t per_core_Mt = per_core_M / TILE_HEIGHT;
-    uint32_t per_core_Nt = per_core_N / TILE_WIDTH;
-    uint32_t per_core_N_padded = per_core_N;
-    auto shard_spec = a.shard_spec().value();
-
-    // uint32_t per_core_N_padded = per_core_N % TILE_WIDTH != 0 ? int(ceil(double(per_core_N) / double(TILE_WIDTH)) * TILE_WIDTH) : per_core_N;
-    uint32_t per_core_Nt_padded = per_core_N_padded / TILE_WIDTH;
+    uint32_t per_core_Nt = (per_core_N + TILE_WIDTH - 1) / TILE_WIDTH;
+    // uint32_t per_core_N = per_core_N % TILE_WIDTH != 0 ? int(ceil(double(per_core_N) / double(TILE_WIDTH)) * TILE_WIDTH) : per_core_N;
     // tensor shape
     const auto shape = a.shape();
     uint32_t H = shape[2] * num_batches;
@@ -179,7 +175,7 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
     uint32_t num_cores_c = grid_size.x;
     uint32_t num_cores_r = grid_size.y;
     // uint32_t num_cores = num_cores_c * num_cores_r;
-    auto all_cores = shard_spec.grid;
+    auto all_cores = a.shard_spec().value().grid;
     uint32_t num_cores = all_cores.num_cores();
     auto shard_orientation = a.shard_spec().value().orientation;
     // split each batch into multiple cores
@@ -203,6 +199,21 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
         }
     }
 
+    TT_ASSERT(per_core_M % TILE_HEIGHT == 0 && "per_core_M must be divisble by TILE_HEIGHT");
+
+    TT_ASSERT(W % num_groups == 0 && "Tensor W must be divisble by num_groups");
+    TT_ASSERT(H % per_core_M == 0 && "H dim must be divisible by per_core_M");
+    TT_ASSERT(W % per_core_N == 0 && "W dim must be divisible by per_core_N");
+    if (num_batches >= num_shards_r) {
+        TT_ASSERT(num_batches % num_shards_r == 0 && "num_batches must be divisible by number of cores in a full column");
+    } else {
+        TT_ASSERT(num_shards_r % num_batches == 0 && "number of cores in a full column must be divisible by num_batches");
+    }
+    if (num_groups >= num_shards_c) {
+        TT_ASSERT(num_groups % num_shards_c == 0 && "num_groups must be divisible by number of cores in a full row");
+    } else {
+        TT_ASSERT(num_shards_c % num_groups == 0 && "number of cores in a full row must be divisible by num_groups");
+    }
 
     // subblock
     bool is_channel_divisible_by_tile = true;
@@ -231,8 +242,6 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
     log_debug(tt::LogOp, "num_nz_rows_per_tile: {}", num_nz_rows_per_tile);
     log_debug(tt::LogOp, "per_core_M: {}", per_core_M);
     log_debug(tt::LogOp, "per_core_N: {}", per_core_N);
-    log_debug(tt::LogOp, "per_core_N_padded: {}", per_core_N_padded);
-    log_debug(tt::LogOp, "per_core_Nt_padded: {}", per_core_Nt_padded);
     log_debug(tt::LogOp, "W: {}", W);
     log_debug(tt::LogOp, "H: {}", H);
     log_debug(tt::LogOp, "num_datum_row_per_group: {}", num_datum_row_per_group);
@@ -290,7 +299,7 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
     //                         Parameters Setup
     ////////////////////////////////////////////////////////////////////////////
     // block size for in0 (tensor a)
-    uint32_t in0_block_tiles = per_core_Nt_padded * per_core_Mt;
+    uint32_t in0_block_tiles = per_core_Nt * per_core_Mt;
     uint32_t interm_block_tiles = block_ht * block_wt;
     uint32_t in0_CB_tiles = in0_block_tiles;
     uint32_t in0_CB_size = in0_CB_tiles * in_single_tile_size;
@@ -318,7 +327,7 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
     // output buffer size
     uint32_t out_CB_size = in0_block_tiles * out_single_tile_size;
 
-    log_debug(tt::LogOp, "per_core_Nt_padded: {}", per_core_Nt_padded);
+    log_debug(tt::LogOp, "per_core_Nt: {}", per_core_Nt);
     log_debug(tt::LogOp, "per_core_Mt: {}", per_core_Mt);
     log_debug(tt::LogOp, "in0_CB_tiles: {}", in0_CB_tiles);
     log_debug(tt::LogOp, "in0_CB_size: {}", in0_CB_size);
@@ -455,15 +464,15 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
         (std::uint32_t) num_cores_per_mcast_group,
         (std::uint32_t) num_groups_per_core,
         (std::uint32_t) num_batches_per_core,
-        (std::uint32_t) per_core_N_padded,
+        (std::uint32_t) per_core_N,
         (std::uint32_t) is_channel_divisible_by_tile,
         (std::uint32_t) num_datum_row_per_group % TILE_WIDTH,    // num_cols_last_group
         (std::uint32_t) num_datum_row_per_group,    // group_offset
         (std::uint32_t) num_nz_rows_per_tile, // num_rows_per_batch
-        (std::uint32_t) (per_core_M / num_batches_per_core) * per_core_N_padded,
+        (std::uint32_t) (per_core_M / num_batches_per_core) * per_core_N,
         (std::uint32_t) block_ht,
         (std::uint32_t) block_wt,
-        (std::uint32_t) per_core_N_padded * num_nz_rows_per_tile,
+        (std::uint32_t) per_core_N * num_nz_rows_per_tile,
         (std::uint32_t) TILE_WIDTH
     };
     std::vector<uint32_t> reader_mcast_receiver_compile_time_args = {
@@ -471,15 +480,15 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
         (std::uint32_t) reduce_sender_semaphore,
         (std::uint32_t) num_groups_per_core,
         (std::uint32_t) num_batches_per_core,
-        (std::uint32_t) per_core_N_padded,
+        (std::uint32_t) per_core_N,
         (std::uint32_t) is_channel_divisible_by_tile,
         (std::uint32_t) num_datum_row_per_group % TILE_WIDTH,    // num_cols_per_group
         (std::uint32_t) num_datum_row_per_group,    // group_offset
         (std::uint32_t) num_nz_rows_per_tile, // num_rows_per_batch
-        (std::uint32_t) (per_core_M / num_batches_per_core) * per_core_N_padded,
+        (std::uint32_t) (per_core_M / num_batches_per_core) * per_core_N,
         (std::uint32_t) block_ht,
         (std::uint32_t) block_wt,
-        (std::uint32_t) per_core_N_padded * num_nz_rows_per_tile,
+        (std::uint32_t) per_core_N * num_nz_rows_per_tile,
         (std::uint32_t) TILE_WIDTH
     };
     tt_metal::NOC reader_noc = detail::GetPreferredNOCForDRAMRead(device->arch());
@@ -511,17 +520,17 @@ operation::ProgramWithCallbacks groupnorm_sharded_(
         (std::uint32_t) is_dram(gamma),
         (std::uint32_t) is_dram(beta),
         (std::uint32_t) gamma_beta_num_cols_tile_per_core,
-        (std::uint32_t) per_core_N_padded,
+        (std::uint32_t) per_core_N,
         (std::uint32_t) is_channel_divisible_by_tile,
         (std::uint32_t) num_datum_row_per_group % TILE_WIDTH,    // num_cols_per_group
         (std::uint32_t) num_datum_row_per_group,    // group_offset
         (std::uint32_t) num_nz_rows_per_tile, // num_rows_per_batch
-        (std::uint32_t) (per_core_M / num_batches_per_core) * per_core_N_padded,
+        (std::uint32_t) (per_core_M / num_batches_per_core) * per_core_N,
         (std::uint32_t) num_groups_per_core,
         (std::uint32_t) num_batches_per_core,
         (std::uint32_t) block_ht,
         (std::uint32_t) block_wt,
-        (std::uint32_t) per_core_N_padded * num_nz_rows_per_tile,
+        (std::uint32_t) per_core_N * num_nz_rows_per_tile,
         (std::uint32_t) TILE_WIDTH
     };
 
