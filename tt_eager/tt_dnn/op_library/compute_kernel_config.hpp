@@ -49,7 +49,7 @@ inline DeviceComputeKernelConfig init_device_compute_kernel_config(
     MathFidelity default_fidelity=MathFidelity::LoFi,
     bool default_approx_mode=true,
     bool default_fp32_acc=false,
-    bool default_l1_acc=false)
+    bool default_l1_acc=true)
 {
     DeviceComputeKernelConfig defaultConfig;
 
