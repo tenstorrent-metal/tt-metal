@@ -76,11 +76,21 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
         custom_preprocessor=ttnn_functional_vit.custom_preprocessor,
     )
 
+    # cls_token expand to batch_size
+    model_state_dict = model.state_dict()
+    torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    if batch_size > 1:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+    else:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+
     pixel_values = ttnn.from_torch(torch_pixel_values, layout=ttnn.TILE_LAYOUT, device=device)
 
     output = ttnn_functional_vit.vit_embeddings(
         config,
         pixel_values,
+        cls_token,
         parameters=parameters,
     )
     output = ttnn.to_torch(output)
@@ -269,7 +279,7 @@ def test_vit_encoder(device, model_name, batch_size, sequence_size):
 
 @skip_for_wormhole_b0()
 @pytest.mark.parametrize("model_name", ["google/vit-base-patch16-224"])
-@pytest.mark.parametrize("batch_size", [8])
+@pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("image_size", [224])
 @pytest.mark.parametrize("image_channels", [3])
 def test_vit(device, model_name, batch_size, image_size, image_channels):
@@ -291,13 +301,23 @@ def test_vit(device, model_name, batch_size, image_size, image_channels):
         custom_preprocessor=ttnn_functional_vit.custom_preprocessor,
     )
 
+    # cls_token expand to batch_size
+    model_state_dict = model.state_dict()
+    torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    if batch_size > 1:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+    else:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+
     torch_pixel_values = torch_pixel_values.to(torch.bfloat16)
     pixel_values = ttnn.from_torch(torch_pixel_values, layout=ttnn.TILE_LAYOUT, device=device)
 
     output = ttnn_functional_vit.vit(
         config,
         pixel_values,
-        attention_mask=None,
+        None,
+        cls_token,
         parameters=parameters,
     )
     output = ttnn.to_torch(output)

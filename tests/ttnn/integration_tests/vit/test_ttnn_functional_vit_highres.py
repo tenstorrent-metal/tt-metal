@@ -117,6 +117,15 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
     )
     position_embeddings = ttnn.from_torch(torch_position_embeddings, layout=ttnn.TILE_LAYOUT, device=device)
 
+    # cls_token expand to batch_size
+    model_state_dict = model.state_dict()
+    torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    if batch_size > 1:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+    else:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
         device=device,
@@ -129,6 +138,7 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
         config,
         pixel_values,
         position_embeddings,
+        cls_token,
         parameters=parameters,
     )
     output = ttnn.to_torch(output)
@@ -346,6 +356,15 @@ def test_vit(device, model_name, batch_size, image_size, image_channels):
     )
     position_embeddings = ttnn.from_torch(torch_position_embeddings, layout=ttnn.TILE_LAYOUT, device=device)
 
+    # cls_token expand to batch_size
+    model_state_dict = model.state_dict()
+    torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    if batch_size > 1:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+    else:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model.to(torch.bfloat16),
         device=device,
@@ -360,6 +379,7 @@ def test_vit(device, model_name, batch_size, image_size, image_channels):
         pixel_values,
         None,
         position_embeddings,
+        cls_token,
         parameters=parameters,
     )
     output = ttnn.to_torch(output)

@@ -16,7 +16,7 @@ from transformers import AutoImageProcessor
 import ttnn
 
 from models.experimental.functional_vit.tt import ttnn_functional_vit
-from models.experimental.functional_vit.tt import ttnn_optimized_functional_vit
+from models.experimental.functional_vit.tt import ttnn_optimized_vit
 from models.experimental.vit.vit_helper_funcs import get_data_loader, get_batch
 
 from ttnn.model_preprocessing import preprocess_model_parameters
@@ -34,7 +34,7 @@ from pathlib import Path
 def get_expected_times(functional_vit):
     return {
         ttnn_functional_vit: (12, 17),
-        ttnn_optimized_functional_vit: (12, 0.08),
+        ttnn_optimized_vit: (12, 0.08),
     }[functional_vit]
 
 
@@ -70,7 +70,7 @@ def test_performance(
 
     if functional_vit == ttnn_functional_vit:
         tt_model_name = f"ttnn_{model_name}"
-    elif functional_vit == ttnn_optimized_functional_vit:
+    elif functional_vit == ttnn_optimized_vit:
         tt_model_name = f"ttnn_{model_name}_optimized"
     else:
         raise ValueError(f"Unknown functional_vit: {functional_vit}")
@@ -80,6 +80,15 @@ def test_performance(
         custom_preprocessor=functional_vit.custom_preprocessor,
         device=device,
     )
+
+    # cls_token expand to batch_size
+    model_state_dict = model.state_dict()
+    torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    if batch_size > 1:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+    else:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device)
 
     torch_pixel_values = torch_pixel_values.to(torch.bfloat16)
     pixel_values = ttnn.from_torch(torch_pixel_values, layout=ttnn.TILE_LAYOUT, device=device)
@@ -99,7 +108,8 @@ def test_performance(
         tt_output = functional_vit.vit(
             config,
             tt_inputs,
-            attention_mask=None,
+            None,
+            cls_token,
             parameters=parameters,
         )
         tt_output = ttnn.from_device(tt_output)

@@ -58,6 +58,7 @@ def vit_embeddings(
     # cls_token = parameters.cls_token
 
     patch_embeddings = vit_patch_embeddings(config, pixel_values, parameters=parameters.patch_embeddings)
+    patch_embeddings = ttnn.to_layout(patch_embeddings, layout=ttnn.TILE_LAYOUT)
     embedding_output = ttnn.concat((cls_token, patch_embeddings), dim=1)
     embedding_output = embedding_output + parameters.position_embeddings
     # embedding_output = ttnn.pad(embedding_output, ((0, 0), (0, 27), (0, 0)), 0)

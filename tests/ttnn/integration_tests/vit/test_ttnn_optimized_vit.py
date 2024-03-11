@@ -62,6 +62,7 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
 
     config = transformers.ViTConfig.from_pretrained(model_name)
     model = transformers.ViTForImageClassification.from_pretrained("google/vit-base-patch16-224")
+    # model = model.to(torch.bfloat16)
 
     dataset = load_dataset("huggingface/cats-image")
     image = dataset["test"]["image"][0]
@@ -76,7 +77,7 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
         torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
     else:
         torch_cls_token = torch.nn.Parameter(torch_cls_token)
-    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
 
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,

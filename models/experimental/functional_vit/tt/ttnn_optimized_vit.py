@@ -138,10 +138,10 @@ def vit_patch_embeddings(
         parameters.projection.weight,
         bias=parameters.projection.bias,
         memory_config=ttnn.L1_MEMORY_CONFIG,
-        dtype=ttnn.bfloat8_b,
+        dtype=ttnn.bfloat16,
         core_grid=ttnn.CoreGrid(y=8, x=8),
     )
-    ttnn.deallocate(pixel_values)
+    # ttnn.deallocate(pixel_values)
 
     return patch_embedding_output
 
@@ -157,6 +157,7 @@ def vit_embeddings(
     # cls_token = parameters.cls_token
 
     patch_embeddings = vit_patch_embeddings(config, pixel_values, parameters=parameters.patch_embeddings)
+    patch_embeddings = ttnn.to_layout(patch_embeddings, layout=ttnn.TILE_LAYOUT)
     embedding_output = ttnn.concat((cls_token, patch_embeddings), dim=1)
 
     embedding_output = ttnn.add(
