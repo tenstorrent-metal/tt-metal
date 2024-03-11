@@ -129,7 +129,8 @@ def vit_patch_embeddings(
 
     pixel_values = ttnn.to_layout(pixel_values, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT)
 
-    ## Needed only when running the standalone module test
+    ## Needed only when running the standalone module pytest test_vit_patch_embeddings
+    ## Please comment out when running the pytest on parent module like test_vit_embeddings or test_vit
     # parameters = parameters.vit.embeddings.patch_embeddings
 
     patch_embedding_output = pixel_values @ parameters.projection.weight
