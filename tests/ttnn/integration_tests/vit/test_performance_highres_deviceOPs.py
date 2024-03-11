@@ -179,8 +179,11 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
 @pytest.mark.parametrize("model_name", ["google/vit-base-patch16-224"])
 @pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("image_size", [960])
+@pytest.mark.parametrize("sequence_size", [448])
 @pytest.mark.parametrize("functional_vit", [ttnn_functional_vit_highres, ttnn_optimized_vit_highres])
-def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, image_size, functional_vit):
+def test_performance_vit_e2e(
+    device, use_program_cache, model_name, batch_size, image_size, sequence_size, functional_vit
+):
     # disable_persistent_kernel_cache()
 
     config = transformers.ViTConfig.from_pretrained(model_name)
@@ -212,18 +215,21 @@ def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, 
         device=device,
     )
 
-    # TODO: integrate it in preprocess_model_parameters
+    # High resolution patch_parameters interpolation
     model_state_dict = model.state_dict()
-    init_position_embeddings = torch.nn.Parameter(model_state_dict["vit.embeddings.position_embeddings"]).to(
-        torch.bfloat16
-    )
+    init_position_embeddings = torch.nn.Parameter(model_state_dict["vit.embeddings.position_embeddings"])
     patch_size = 16
     tot_patch_count = (image_size // patch_size) * (image_size // patch_size)
     torch_position_embeddings = torch.nn.Parameter(
         interpolate_pos_encoding(init_position_embeddings, patch_size, tot_patch_count, image_size, image_size)
     )
-
     position_embeddings = ttnn.from_torch(torch_position_embeddings, layout=ttnn.TILE_LAYOUT, device=device)
+    torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    if batch_size > 1:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+    else:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device)
 
     torch_pixel_values = torch_pixel_values.to(torch.bfloat16)
     pixel_values = ttnn.from_torch(
@@ -234,14 +240,29 @@ def test_performance_vit_e2e(device, use_program_cache, model_name, batch_size, 
         # memory_config=ttnn.L1_MEMORY_CONFIG,
     )
 
+    if torch_attention_mask is not None:
+        head_masks = [
+            ttnn.from_torch(
+                torch_attention_mask[index].reshape(1, 1, 1, sequence_size).expand(batch_size, -1, -1, -1),
+                dtype=ttnn.bfloat8_b,
+                layout=ttnn.TILE_LAYOUT,
+                device=device,
+                memory_config=ttnn.L1_MEMORY_CONFIG,
+            )
+            for index in range(config.num_hidden_layers)
+        ]
+    else:
+        head_masks = [None for _ in range(config.num_hidden_layers)]
+
     durations = []
     for _ in range(1):
         start = time.time()
         tt_output = functional_vit.vit(
             config,
             pixel_values,
-            None,
+            head_masks,
             position_embeddings,
+            cls_token,
             parameters=parameters,
         )
         tt_output = ttnn.from_device(tt_output)

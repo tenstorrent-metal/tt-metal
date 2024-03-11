@@ -50,12 +50,15 @@ def vit_embeddings(
     config,
     pixel_values,
     position_embeddings_interpolated,
+    cls_token,
     *,
     parameters,
 ):
     parameters = parameters.vit.embeddings
+    # cls_token = parameters.cls_token
+
     patch_embeddings = vit_patch_embeddings(config, pixel_values, parameters=parameters.patch_embeddings)
-    embedding_output = ttnn.concat((parameters.cls_token, patch_embeddings), dim=1)
+    embedding_output = ttnn.concat((cls_token, patch_embeddings), dim=1)
     embedding_output = embedding_output + position_embeddings_interpolated
     # embedding_output = ttnn.pad(embedding_output, ((0, 0), (0, 31), (0, 0)), 0)
 
@@ -240,10 +243,13 @@ def vit(
     pixel_values,
     attention_mask,
     position_embeddings_interpolated,
+    cls_token,
     *,
     parameters,
 ):
-    embeddings_output = vit_embeddings(config, pixel_values, position_embeddings_interpolated, parameters=parameters)
+    embeddings_output = vit_embeddings(
+        config, pixel_values, position_embeddings_interpolated, cls_token, parameters=parameters
+    )
 
     hidden_states = vit_encoder(
         config,

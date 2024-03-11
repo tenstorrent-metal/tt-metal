@@ -69,6 +69,15 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
     torch_pixel_values = image_processor(image, return_tensors="pt").pixel_values
     # torch_pixel_values = torch_pixel_values.repeat(batch_size, 1, 1, 1)
 
+    # cls_token expand to batch_size
+    model_state_dict = model.state_dict()
+    torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    if batch_size > 1:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+    else:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device)
+
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
         device=device,
@@ -80,6 +89,7 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
     output = ttnn_optimized_vit.vit_embeddings(
         config,
         pixel_values,
+        cls_token,
         parameters=parameters,
     )
     output = ttnn.to_torch(output)
@@ -309,6 +319,15 @@ def test_vit(device, model_name, batch_size, image_size, image_channels, sequenc
     torch_attention_mask = torch.ones(config.num_hidden_layers, sequence_size, dtype=torch.float32)
     torch_output, *_ = model(torch_pixel_values).logits
 
+    # cls_token expand to batch_size
+    model_state_dict = model.state_dict()
+    torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    if batch_size > 1:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+    else:
+        torch_cls_token = torch.nn.Parameter(torch_cls_token)
+    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device)
+
     parameters = preprocess_model_parameters(
         initialize_model=lambda: model,
         device=device,
@@ -336,6 +355,7 @@ def test_vit(device, model_name, batch_size, image_size, image_channels, sequenc
         config,
         pixel_values,
         head_masks,
+        cls_token,
         parameters=parameters,
     )
     output = ttnn.to_torch(output)
