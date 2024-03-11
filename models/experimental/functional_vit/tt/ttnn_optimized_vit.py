@@ -133,10 +133,6 @@ def vit_patch_embeddings(
     ## Please comment out when running the pytest on parent module like test_vit_embeddings or test_vit
     # parameters = parameters.vit.embeddings.patch_embeddings
 
-    patch_embedding_output = pixel_values @ parameters.projection.weight
-    patch_embedding_output = patch_embedding_output + parameters.projection.bias
-
-    """
     patch_embedding_output = ttnn.linear(
         pixel_values,
         parameters.projection.weight,
@@ -146,7 +142,6 @@ def vit_patch_embeddings(
         core_grid=ttnn.CoreGrid(y=8, x=8),
     )
     ttnn.deallocate(pixel_values)
-    """
 
     return patch_embedding_output
 
