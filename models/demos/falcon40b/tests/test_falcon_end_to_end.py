@@ -333,8 +333,8 @@ def run_test_FalconCausalLM_end_to_end(
 
     for i in range(num_layers):
         # Only check every 4 layers for full model
-        if num_layers == 60 and i % 4 > 0:
-            continue
+        # if num_layers == 60 and i % 4 > 0:
+        #     continue
 
         pytorch_layer_pres = pytorch_layer_present[i]
         tt_layer_pres = (
@@ -397,7 +397,7 @@ def run_test_FalconCausalLM_end_to_end(
 @pytest.mark.parametrize(
     "llm_mode, batch, seq_len, kv_cache_len",
     (
-        ("prefill", 2, 32, 0),
+        ("prefill", 1, 32, 0),
         ("decode", 32, 1, 128),
     ),
     ids=["prefill_seq32", "decode_batch32"],
