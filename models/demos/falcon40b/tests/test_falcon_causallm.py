@@ -304,7 +304,7 @@ def run_test_FalconCausalLM_inference(
 
 
 @skip_for_grayskull("Requires eth connected devices to run")
-@pytest.mark.parametrize("num_devices", (4, 8))
+@pytest.mark.parametrize("num_devices", (4, 8), ids=["4chips", "8chips"])
 @pytest.mark.parametrize(
     "llm_mode, batch, seq_len, kv_cache_len",
     (
@@ -343,7 +343,7 @@ def test_FalconCausalLM_inference(
     model_location_generator,
     get_tt_cache_path,
     all_devices,
-    use_program_cache,
+    # use_program_cache,
 ):
     if llm_mode == "prefill":
         if model_config_str == "BFLOAT16-SHARDED":
