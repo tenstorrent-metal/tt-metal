@@ -374,6 +374,20 @@ def test_matmul_single_core(
     run_moreh_single_test("matmul single core sharded", command)
 
 
+def test_dram_read_write(input_size, read_write):
+    command = (
+        "TT_METAL_DEVICE_PROFILER=1 ./build/test/tt_metal/perf_microbenchmark/6_dram_offchip/test_dram_offchip "
+        + "--input-size "
+        + str(input_size)
+        + " --access-type "
+        + str(read_write)
+        + " --num-tests "
+        + str(1)
+        + " --bypass-check "
+    )
+    run_moreh_single_test("DRAM BW test multi-core", command)
+
+
 @pytest.mark.parametrize(
     "iteration, test_vector_small, test_vector_large",
     [(2, np.array([8192, 32768, 131072, 524288, 2097152, 8388608]), np.array([33554432, 134217728, 536870912]))],
@@ -725,6 +739,31 @@ def test_matmul_single_core_sharded(
         time = cycle / freq / 1000.0
         throughput = num_op / time / 1000.0 / 1000.0 / 1000.0
         data.append([cycle])
+    write_header = not os.path.exists(file_name)
+    append_to_csv(file_name, header, data, write_header)
+    return
+
+
+@pytest.mark.parametrize(
+    "arch, freq, test_vector",
+    [
+        ("wormhole_b0", 1000, np.array([[1024, 1024, 1024]])),
+    ],
+)
+def test_dram_read(arch, freq, test_vector):
+    file_name = PROFILER_LOGS_DIR / "moreh_multi_core_DRAM_BW.csv"
+    header = ["Kernel Duration (Cycles)"]
+    data = []
+    for vec in test_vector:
+        input_size = int(vec[0]) * int(vec[1]) * int(vec[2])
+        test_dram_read_write(input_size, 0)
+        cycle = profile_results_kernel_duration()
+        time = cycle / freq / 1000.0 / 1000.0
+        throughput = (input_size / 1024.0 / 1024.0 / 1024.0) / time
+        logger.info("cycle: " + str(cycle))
+        logger.info("time: " + str(time))
+        logger.info("throughput: " + str(throughput))
+        data.append([throughput])
     write_header = not os.path.exists(file_name)
     append_to_csv(file_name, header, data, write_header)
     return
