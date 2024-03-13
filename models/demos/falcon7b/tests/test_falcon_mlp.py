@@ -56,6 +56,7 @@ def run_test_FalconMLP_inference(
     # Prepare input
     torch.manual_seed(0)
     mlp_input = (torch.rand(batch * num_devices, 1, seq_len, configuration.hidden_size) * 2) - 1
+    logger.info(f"MLP input shape: {mlp_input.shape}")
     layer_num = 0
     base_url = "transformer.h"
 
@@ -78,11 +79,10 @@ def run_test_FalconMLP_inference(
     for i in range(num_devices):
         tt_mlp_input.append(torch2tt_tensor(mlp_input[batch * i : batch * (i + 1)], devices[i]))
 
-    if num_devices == 1:
-        tt_mlp_input = tt_mlp_input[0]
-
     tt_out = tt_FalconMLP_model(tt_mlp_input)
-    tt_out = tt2torch_tensor(tt_out)
+    for i in range(num_devices):
+        tt_out[i] = tt2torch_tensor(tt_out[i])
+    tt_out = torch.concat(tt_out)
 
     # check outputs ----------------------------------------------------------------------
     logger.info(comp_allclose(pytorch_out, tt_out))
@@ -97,7 +97,7 @@ def run_test_FalconMLP_inference(
         assert does_pass, f"PCC value is lower than {pcc}"
 
 
-@pytest.mark.parametrize("num_devices", (1, 2, 4))
+@pytest.mark.parametrize("num_devices", (1, 2, 4, 8))
 @pytest.mark.parametrize(
     "model_version, batch, seq_len, pcc",
     (
@@ -121,10 +121,6 @@ def test_FalconMLP_inference(
     all_devices,
 ):
     devices = get_devices_for_t3000(all_devices, num_devices)
-    if num_devices > 1:
-        pytest.skip(f"num_devices={num_devices} is not supported yet")
-    else:
-        device = devices[0]
 
     model_config = get_model_config(model_config_str)
     tt_cache_path = get_tt_cache_path(model_version)

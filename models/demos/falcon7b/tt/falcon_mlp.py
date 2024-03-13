@@ -39,9 +39,6 @@ class TtFalconMLP(nn.Module):
             weight_cache_str=f"{layer_name}.mlp.dense_4h_to_h.weight",
             weight_config_str="DENSE_4H_TO_H_MM_WEIGHTS",
         )
-        if len(devices) == 1:
-            self.dense_4h_to_h_weights = self.dense_4h_to_h_weights[0]
-            self.dense_h_to_4h_weights = self.dense_h_to_4h_weights[0]
 
     def get_weights_cached(self, tt_cache_path, weight_cache_str, weight_config_str):
         """Load cached weights and duplicate per device. Store if not cached."""
@@ -78,22 +75,26 @@ class TtFalconMLP(nn.Module):
         return weights
 
     def forward(self, x: tt_lib.tensor.Tensor) -> tt_lib.tensor.Tensor:
-        hidden_states = tt_lib.tensor.falcon_dense_h_to_4h_matmul(
-            x,
-            self.dense_h_to_4h_weights,
-            fused_activation=[tt_lib.tensor.FusibleActivation.GELU, True],
-            output_mem_config=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_MEMCFG"],
-            output_dtype=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
-        )
-        x.deallocate()
-
-        hidden_states = tt_lib.tensor.falcon_dense_4h_to_h_matmul(
-            hidden_states,
-            self.dense_4h_to_h_weights,
-            output_mem_config=self.model_config["DENSE_4H_TO_H_MM_OUTPUT_MEMCFG"],
-            output_dtype=self.model_config["DENSE_4H_TO_H_MM_OUTPUT_DTYPE"],
-            packer_l1_acc=True,
-        )
+        hidden_states = []
+        for device_id in range(len(x)):
+            hidden_states.append(
+                tt_lib.tensor.falcon_dense_h_to_4h_matmul(
+                    x[device_id],
+                    self.dense_h_to_4h_weights[device_id],
+                    fused_activation=[tt_lib.tensor.FusibleActivation.GELU, True],
+                    output_mem_config=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_MEMCFG"],
+                    output_dtype=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
+                )
+            )
+            x[device_id].deallocate()
+        for device_id in range(len(x)):
+            hidden_states[device_id] = tt_lib.tensor.falcon_dense_4h_to_h_matmul(
+                hidden_states[device_id],
+                self.dense_4h_to_h_weights[device_id],
+                output_mem_config=self.model_config["DENSE_4H_TO_H_MM_OUTPUT_MEMCFG"],
+                output_dtype=self.model_config["DENSE_4H_TO_H_MM_OUTPUT_DTYPE"],
+                packer_l1_acc=True,
+            )
 
         # return TT Tensor
         return hidden_states
