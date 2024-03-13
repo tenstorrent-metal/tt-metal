@@ -57,7 +57,8 @@ std::tuple<tt_metal::Program, tt_metal::KernelHandle, uint32_t> create_program(
     const uint32_t &num_reqs_at_a_time,
     const uint32_t &single_tile_size,
     const tt::DataFormat &tile_format,
-    const uint32_t &access_type);
+    const uint32_t &access_type,
+    bool rr_vc);
 
 bool assign_runtime_args_to_program(
     tt_metal::Device *device,
@@ -73,7 +74,8 @@ bool assign_runtime_args_to_program(
     const uint32_t &input_buffer_addr,
     const uint32_t &num_reqs_at_a_time,
     const uint32_t &single_tile_size,
-    const tt::DataFormat &tile_format);
+    const tt::DataFormat &tile_format,
+    uint32_t transfer_bytes);
 
 bool validation(
     tt_metal::Device *device,
@@ -107,6 +109,12 @@ int main(int argc, char **argv) {
     uint32_t access_type;
     uint32_t dram_bandwidth_spec = 0;
 
+    bool full_grid = true;
+    uint32_t num_cores_r = 1;
+    uint32_t num_cores_c = 1;
+    uint32_t transfer_bytes = 2048;
+    bool rr_vc = false;
+
     try {
         ////////////////////////////////////////////////////////////////////////////
         //                      Initial Runtime Args Parse
@@ -127,6 +135,21 @@ int main(int argc, char **argv) {
 
             std::tie(bypass_check, input_args) =
                 test_args::has_command_option_and_remaining_args(input_args, "--bypass-check");
+
+            std::tie(full_grid, input_args) =
+                test_args::get_command_option_uint32_and_remaining_args(input_args, "--full-grid", true);
+
+            std::tie(num_cores_r, input_args) =
+                test_args::get_command_option_uint32_and_remaining_args(input_args, "--num-cores-r", 1);
+
+            std::tie(num_cores_c, input_args) =
+                test_args::get_command_option_uint32_and_remaining_args(input_args, "--num-cores-c", 1);
+
+            std::tie(transfer_bytes, input_args) =
+                test_args::get_command_option_uint32_and_remaining_args(input_args, "--transfer-bytes", 2048);
+
+            std::tie(rr_vc, input_args) =
+                test_args::get_command_option_uint32_and_remaining_args(input_args, "--rr-vc", false);
 
             test_args::validate_remaining_args(input_args);
         } catch (const std::exception &e) {
@@ -152,6 +175,7 @@ int main(int argc, char **argv) {
 
         tt::DataFormat tile_format = tt::DataFormat::Float16_b;
         uint32_t single_tile_size = tt_metal::detail::TileSize(tile_format);
+        TT_ASSERT(single_tile_size % transfer_bytes == 0, "transfer bytes must be divisible by single_tile_size");
         if (input_size % single_tile_size != 0) {
             auto align_to_single_tile = [=](uint64_t value) -> uint64_t {
                 return ((value + (single_tile_size - 1)) / single_tile_size) * single_tile_size;
@@ -171,12 +195,15 @@ int main(int argc, char **argv) {
         int clock_freq_mhz = get_tt_npu_clock(device);
 
         uint32_t num_tiles = static_cast<uint32_t>((input_size + single_tile_size - 1) / single_tile_size);
-        auto compute_with_storage_grid_size = device->compute_with_storage_grid_size();
+        auto compute_with_storage_grid_size = full_grid ? device->compute_with_storage_grid_size() : CoreCoord{num_cores_c, num_cores_r};
         uint32_t num_cores_x = compute_with_storage_grid_size.x;
         uint32_t num_cores_y = compute_with_storage_grid_size.y;
         auto
             [num_cores, all_cores, core_group_1, core_group_2, num_tiles_per_core_group_1, num_tiles_per_core_group_2] =
                 split_work_to_cores(compute_with_storage_grid_size, num_tiles);
+
+        log_info(LogTest, "num_cores_x {}", num_cores_x);
+        log_info(LogTest, "num_cores_y {}", num_cores_y);
 
         log_info(
             LogTest,
@@ -200,7 +227,7 @@ int main(int argc, char **argv) {
         ////////////////////////////////////////////////////////////////////////////
         uint32_t num_reqs_at_a_time = 1;
         auto [program, kernel, cb_addr] =
-            create_program(device, all_cores, num_reqs_at_a_time, single_tile_size, tile_format, access_type);
+            create_program(device, all_cores, num_reqs_at_a_time, single_tile_size, tile_format, access_type, rr_vc);
         pass &= assign_runtime_args_to_program(
             device,
             program,
@@ -215,7 +242,8 @@ int main(int argc, char **argv) {
             input_buffer.address(),
             num_reqs_at_a_time,
             single_tile_size,
-            tile_format);
+            tile_format,
+            transfer_bytes);
 
         ////////////////////////////////////////////////////////////////////////////
         //                      Copy Input To DRAM or L1
@@ -368,7 +396,8 @@ std::tuple<tt_metal::Program, tt_metal::KernelHandle, uint32_t> create_program(
     const uint32_t &num_reqs_at_a_time,
     const uint32_t &single_tile_size,
     const tt::DataFormat &tile_format,
-    const uint32_t &access_type) {
+    const uint32_t &access_type,
+    bool rr_vc) {
     tt_metal::Program program = tt_metal::Program();
 
     uint32_t cb_index = 0;
@@ -379,17 +408,36 @@ std::tuple<tt_metal::Program, tt_metal::KernelHandle, uint32_t> create_program(
             .set_page_size(cb_index, single_tile_size);
     auto cb = tt_metal::CreateCircularBuffer(program, all_cores, cb_config);
 
-    auto reader_kernel = tt_metal::CreateKernel(
-        program,
-        (access_type == 0) ? "tests/tt_metal/tt_metal/perf_microbenchmark/"
-                             "6_dram_offchip/kernels/reader_dram.cpp"
-                           : "tests/tt_metal/tt_metal/perf_microbenchmark/"
-                             "6_dram_offchip/kernels/writer_dram.cpp",
-        all_cores,
-        tt_metal::DataMovementConfig{
-            .processor = (access_type == 0) ? tt_metal::DataMovementProcessor::RISCV_1
-                                            : tt_metal::DataMovementProcessor::RISCV_0,
-            .noc = (access_type == 0) ? tt_metal::NOC::RISCV_1_default : tt_metal::NOC::RISCV_0_default});
+    vector<uint32_t> compute_args = {(std::uint32_t)rr_vc};
+
+    tt_metal::KernelHandle reader_kernel;
+    if (device->arch() == ARCH::GRAYSKULL) {
+        reader_kernel = tt_metal::CreateKernel(
+            program,
+            (access_type == 0) ? "tests/tt_metal/tt_metal/perf_microbenchmark/"
+                                "6_dram_offchip/kernels/reader_dram.cpp"
+                            : "tests/tt_metal/tt_metal/perf_microbenchmark/"
+                                "6_dram_offchip/kernels/writer_dram.cpp",
+            all_cores,
+            tt_metal::DataMovementConfig{
+                .processor = (access_type == 0) ? tt_metal::DataMovementProcessor::RISCV_1
+                                                : tt_metal::DataMovementProcessor::RISCV_0,
+                .noc = (access_type == 0) ? tt_metal::NOC::RISCV_1_default : tt_metal::NOC::RISCV_0_default, .compile_args = compute_args});
+    } else {
+        reader_kernel = tt_metal::CreateKernel(
+            program,
+            (access_type == 0) ? "tests/tt_metal/tt_metal/perf_microbenchmark/"
+                                "6_dram_offchip/kernels/reader_dram.cpp"
+                            : "tests/tt_metal/tt_metal/perf_microbenchmark/"
+                                "6_dram_offchip/kernels/writer_dram.cpp",
+            all_cores,
+            tt_metal::DataMovementConfig{
+                .processor = (access_type == 0) ? tt_metal::DataMovementProcessor::RISCV_0
+                                                : tt_metal::DataMovementProcessor::RISCV_1,
+                .noc = (access_type == 0) ? tt_metal::NOC::RISCV_0_default : tt_metal::NOC::RISCV_1_default, .compile_args = compute_args});
+    }
+
+
     return {std::move(program), reader_kernel, cb_addr};
 }
 
@@ -407,7 +455,8 @@ bool assign_runtime_args_to_program(
     const uint32_t &input_buffer_addr,
     const uint32_t &num_reqs_at_a_time,
     const uint32_t &single_tile_size,
-    const tt::DataFormat &tile_format) {
+    const tt::DataFormat &tile_format,
+    uint32_t transfer_bytes) {
     bool pass = true;
     for (uint32_t i = 0, num_tiles_used = 0; i < num_cores; ++i) {
         CoreCoord core = {i / num_cores_y, i % num_cores_y};
@@ -424,7 +473,9 @@ bool assign_runtime_args_to_program(
             (std::uint32_t)input_buffer_addr,
             (std::uint32_t)(num_tiles_used),
             (std::uint32_t)num_blocks,
-            (std::uint32_t)num_reqs_at_a_time};
+            (std::uint32_t)num_reqs_at_a_time,
+            (std::uint32_t)num_reqs_at_a_time * (single_tile_size / transfer_bytes),
+            (std::uint32_t)transfer_bytes};
 
         tt_metal::SetRuntimeArgs(program, kernel, core, kernel_args);
         num_tiles_used += num_tiles_per_core;

@@ -374,7 +374,7 @@ def test_matmul_single_core(
     run_moreh_single_test("matmul single core sharded", command)
 
 
-def test_dram_read_write(input_size, read_write):
+def test_dram_read_write_test(input_size, num_bytes, rr_vc, read_write):
     command = (
         "TT_METAL_DEVICE_PROFILER=1 ./build/test/tt_metal/perf_microbenchmark/6_dram_offchip/test_dram_offchip "
         + "--input-size "
@@ -383,6 +383,12 @@ def test_dram_read_write(input_size, read_write):
         + str(read_write)
         + " --num-tests "
         + str(1)
+        + " --full-grid "
+        + str(1)
+        + " --transfer-bytes "
+        + str(num_bytes)
+        + " --rr-vc "
+        + str(rr_vc)
         + " --bypass-check "
     )
     run_moreh_single_test("DRAM BW test multi-core", command)
@@ -745,25 +751,38 @@ def test_matmul_single_core_sharded(
 
 
 @pytest.mark.parametrize(
-    "arch, freq, test_vector",
+    "num_bytes",
+    [256, 512, 1024, 2048],
+)
+@pytest.mark.parametrize(
+    "arch, freq, test_vector, num_tests, rr_vc",
     [
-        ("wormhole_b0", 1000, np.array([[1024, 1024, 1024]])),
+        ("wormhole_b0", 1000, np.array([8192, 8192]), 10, 0),
     ],
 )
-def test_dram_read(arch, freq, test_vector):
-    file_name = PROFILER_LOGS_DIR / "moreh_multi_core_DRAM_BW.csv"
+def test_dram_read(arch, freq, test_vector, num_tests, num_bytes, rr_vc):
+    file_name = PROFILER_LOGS_DIR / "moreh_multi_core_DRAM_read_BW.csv"
     header = ["Kernel Duration (Cycles)"]
     data = []
-    for vec in test_vector:
-        input_size = int(vec[0]) * int(vec[1]) * int(vec[2])
-        test_dram_read_write(input_size, 0)
+    cycle_list = []
+    time_list = []
+    throughput_list = []
+    for _ in range(num_tests):
+        input_size = int(test_vector[0]) * int(test_vector[1])
+        test_dram_read_write_test(input_size, num_bytes, rr_vc, 0)
         cycle = profile_results_kernel_duration()
         time = cycle / freq / 1000.0 / 1000.0
         throughput = (input_size / 1024.0 / 1024.0 / 1024.0) / time
-        logger.info("cycle: " + str(cycle))
-        logger.info("time: " + str(time))
-        logger.info("throughput: " + str(throughput))
-        data.append([throughput])
+        cycle_list.append(cycle)
+        time_list.append(time)
+        throughput_list.append(throughput)
+    cycle = sum(cycle_list) / len(cycle_list)
+    time = sum(time_list) / len(time_list)
+    throughput = sum(throughput_list) / len(throughput_list)
+    logger.info("DRAM read cycle: " + str(cycle))
+    logger.info("DRAM read time: " + str(time))
+    logger.info("DRAM read throughput: " + str(throughput))
+    data.append([throughput])
     write_header = not os.path.exists(file_name)
     append_to_csv(file_name, header, data, write_header)
     return
