@@ -196,7 +196,7 @@ def run_falcon_demo_kv(
 ):
     torch.manual_seed(0)
 
-    tt_lib.program_cache.enable()
+    # tt_lib.program_cache.enable()
 
     configuration = FalconConfig(**model_config_entries)
 
@@ -424,7 +424,7 @@ def run_falcon_demo_kv(
 
     print_output_prompts(generated_ids, tokenizer)
 
-    tt_lib.program_cache.disable_and_clear()
+    # tt_lib.program_cache.disable_and_clear()
 
     del user_output_ids
     del output_ids
@@ -589,9 +589,8 @@ def test_demo(
     model_location_generator,
     get_tt_cache_path,
     all_devices,
-    use_program_cache,
 ):
-    num_devices = 4
+    num_devices = 8
     devices = get_devices_for_t3000(all_devices, num_devices)
 
     # disable_persistent_kernel_cache()

@@ -176,6 +176,7 @@ def run_test_FalconCausalLM_inference(
 
     # Prepare output -----------------------------------------------------------------------
     pytorch_FalconCausalLM = PytorchFalconCausalLM(hugging_face_reference_model, num_layers)
+    logger.info("Running pytorch")
     pytorch_out, pytorch_layer_present = pytorch_FalconCausalLM(
         input_ids=model_input, past_key_values=past_key_values, use_cache=use_cache
     )
@@ -183,6 +184,7 @@ def run_test_FalconCausalLM_inference(
     # NOTE: Passing in pytorch tensor here instead of ll buda tensor
     # since we don't yet have embedding support on device
     # device, state_dict, base_url, max_position_embeddings, config, num_decoders
+    logger.info("Setting up model")
     tt_FalconCausalLM = TtFalconCausalLM(
         devices,
         state_dict,
@@ -233,6 +235,7 @@ def run_test_FalconCausalLM_inference(
             tt_embeddings[i].to(devices[i], model_config["WORD_EMBEDDING_OUTPUT_MEMCFG"]) for i in range(len(devices))
         ]
         tt_attention_mask = [tt_attention_mask[i].to(devices[i], attention_mask_memconfig) for i in range(len(devices))]
+        logger.info("Running decode")
         tt_out, tt_layer_present = tt_FalconCausalLM(
             input_embeddings=tt_embeddings,
             llm_mode=llm_mode,
@@ -248,7 +251,7 @@ def run_test_FalconCausalLM_inference(
     does_pass, output_pcc = comp_pcc(pytorch_out, tt_out, out_pcc)
     logger.info(f"Output: {output_pcc}")
 
-    for i in range(num_layers):
+    for i in range(0, num_layers, 10):
         pytorch_layer_pres = pytorch_layer_present[i]
         tt_layer_pres = (
             torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in tt_layer_present[i][0]], 1),
@@ -315,7 +318,7 @@ def run_test_FalconCausalLM_inference(
 )
 @pytest.mark.parametrize(
     "num_layers",
-    (1,),
+    (60,),
     ids=["layers_1"],
 )
 @pytest.mark.parametrize(
@@ -343,7 +346,6 @@ def test_FalconCausalLM_inference(
     model_location_generator,
     get_tt_cache_path,
     all_devices,
-    use_program_cache,
 ):
     if llm_mode == "prefill":
         if model_config_str == "BFLOAT16-SHARDED":

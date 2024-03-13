@@ -67,20 +67,22 @@ class TtFalconModelShared:
             global_cos_sin_cache = None
 
         # stack all decoders
-        self.layers = [
-            TtFalconDecoderLayer(
-                devices=devices,
-                state_dict=state_dict,
-                base_url=f"{base_url}.h",
-                layer_num=layer_num,
-                config=config,
-                max_position_embeddings=max_position_embeddings,
-                model_config=model_config,
-                tt_cache_path=tt_cache_path,
-                global_cos_sin_cache=global_cos_sin_cache,
+        self.layers = []
+        for layer_num in range(num_layers):
+            print(f"setting up layer: {layer_num+1}")
+            self.layers.append(
+                TtFalconDecoderLayer(
+                    devices=devices,
+                    state_dict=state_dict,
+                    base_url=f"{base_url}.h",
+                    layer_num=layer_num,
+                    config=config,
+                    max_position_embeddings=max_position_embeddings,
+                    model_config=model_config,
+                    tt_cache_path=tt_cache_path,
+                    global_cos_sin_cache=global_cos_sin_cache,
+                )
             )
-            for layer_num in range(num_layers)
-        ]
 
         layer_name = f"{base_url}"
 
