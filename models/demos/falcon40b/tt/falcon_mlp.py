@@ -7,7 +7,7 @@ from torch import nn
 import tt_lib
 
 from typing import List
-from models.utility_functions import torch2tt_tensor
+from models.utility_functions import torch2tt_tensor, tt2torch_tensor
 
 
 class TtFalconMLP:
@@ -107,11 +107,25 @@ class TtFalconMLP:
                     compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
                 )
             )
-            x[i].deallocate(True)
-        for i in range(len(hidden_states)):
-            hidden_states[i] = tt_lib.tensor.sharded_to_interleaved(
-                hidden_states[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
+
+            torch_tensor = tt2torch_tensor(hidden_states[i]).float()
+            self.act = nn.GELU()
+
+            res = self.act(torch_tensor)
+
+            hidden_states[i] = torch2tt_tensor(
+                res,
+                self.dense_h_to_4h_weights[i].device(),
+                tt_lib.tensor.Layout.TILE,
+                self.model_config["DEFAULT_MEMCFG"],
+                self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
             )
+
+            x[i].deallocate(True)
+        # for i in range(len(hidden_states)):
+        #     hidden_states[i] = tt_lib.tensor.sharded_to_interleaved(
+        #         hidden_states[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
+        #     )
         hidden_states = tt_lib.tensor.all_gather(
             hidden_states,
             dim=3,

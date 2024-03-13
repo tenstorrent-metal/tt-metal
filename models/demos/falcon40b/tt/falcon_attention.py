@@ -301,24 +301,58 @@ class TtFalconAttention:
 
         first_attn_weights = []
         for i in range(len(query_layer)):
+            activations = tt2torch_tensor(first_query_layer[i]).float()
+            weights = tt2torch_tensor(first_kv_layer[i]).float()
+
+            print("before matmul")
+            res = activations @ weights
+            print("after matmul")
+
             first_attn_weights.append(
-                tt_lib.tensor.matmul(
-                    first_query_layer[i],
-                    first_kv_layer[i],
-                    output_mem_config=self.model_config["DEFAULT_MEMCFG"],
+                torch2tt_tensor(
+                    res,
+                    first_kv_layer[i].device(),
+                    tt_lib.tensor.Layout.TILE,
+                    self.model_config["DEFAULT_MEMCFG"],
+                    tt_lib.tensor.DataType.BFLOAT8_B,
                 )
             )
+
+            # first_attn_weights.append(
+            #     tt_lib.tensor.matmul(
+            #         first_query_layer[i],
+            #         first_kv_layer[i],
+            #         output_mem_config=self.model_config["DEFAULT_MEMCFG"],
+            #         # kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+            #     )
+            # )
             first_query_layer[i].deallocate(True)
             first_kv_layer[i].deallocate(True)
         second_attn_weights = []
         for i in range(len(query_layer)):
+            activations = tt2torch_tensor(second_query_layer[i]).float()
+            weights = tt2torch_tensor(second_kv_layer[i]).float()
+
+            res = activations @ weights
+
             second_attn_weights.append(
-                tt_lib.tensor.matmul(
-                    second_query_layer[i],
-                    second_kv_layer[i],
-                    output_mem_config=self.model_config["DEFAULT_MEMCFG"],
+                torch2tt_tensor(
+                    res,
+                    second_kv_layer[i].device(),
+                    tt_lib.tensor.Layout.TILE,
+                    self.model_config["DEFAULT_MEMCFG"],
+                    tt_lib.tensor.DataType.BFLOAT8_B,
                 )
             )
+
+            # second_attn_weights.append(
+            #     tt_lib.tensor.matmul(
+            #         second_query_layer[i],
+            #         second_kv_layer[i],
+            #         output_mem_config=self.model_config["DEFAULT_MEMCFG"],
+            #         # kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+            #     )
+            # )
             second_query_layer[i].deallocate(True)
             second_kv_layer[i].deallocate(True)
 

@@ -593,7 +593,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 per_core_M=shard_height // 32,
                 per_core_N=8,
                 fuse_batch=True,
-                fused_activation=[ttl.tensor.FusibleActivation.GELU, True],
+                fused_activation=None,  # [ttl.tensor.FusibleActivation.GELU, True],
                 mcast_in0=True,
             )
             model_config[
