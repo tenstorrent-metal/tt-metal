@@ -412,7 +412,7 @@ def run_test_FalconCausalLM_end_to_end(
     ("tiiuae/falcon-40b-instruct",),
     ids=["falcon_40b"],
 )
-@pytest.mark.parametrize("model_config_str", ("BFLOAT8_B-SHARDED",))
+@pytest.mark.parametrize("model_config_str", ("BFLOAT8_B-SHARDED", "BFLOAT16-SHARDED"))
 def test_FalconCausalLM_end_to_end_with_program_cache(
     num_devices,
     model_version,
@@ -432,18 +432,18 @@ def test_FalconCausalLM_end_to_end_with_program_cache(
     # use_program_cache,
 ):
     if llm_mode == "prefill":
-        if model_config_str == "BFLOAT16-SHARDED":
-            pytest.skip("Prefill is only tested for BFLOAT8_B!")
-        elif model_config_str == "BFLOAT8_B-SHARDED":
-            # TODO: Investigate why PCC is lower for prefill?
-            if num_layers == 1:
-                out_pcc = 0.92
-            elif num_layers == 2:
-                out_pcc = 0.88
-                cache_pcc = 0.91
-            elif num_layers == 60:
-                out_pcc = 0.75
-                cache_pcc = 0.32
+        # if model_config_str == "BFLOAT16-SHARDED":
+        #     pytest.skip("Prefill is only tested for BFLOAT8_B!")
+        # elif model_config_str == "BFLOAT8_B-SHARDED":
+        # TODO: Investigate why PCC is lower for prefill?
+        if num_layers == 1:
+            out_pcc = 0.92
+        elif num_layers == 2:
+            out_pcc = 0.88
+            cache_pcc = 0.91
+        elif num_layers == 60:
+            out_pcc = 0.75
+            cache_pcc = 0.32
 
     input_shape = [batch, seq_len]
     model_config = get_model_config(model_config_str, llm_mode, input_shape, num_devices)
