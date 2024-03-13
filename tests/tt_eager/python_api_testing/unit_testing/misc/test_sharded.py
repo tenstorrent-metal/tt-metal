@@ -7,6 +7,7 @@ import torch
 import math
 
 import tt_lib as ttl
+import ttnn
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_equal,
     comp_pcc,
@@ -14,6 +15,10 @@ from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
 from models.utility_functions import is_wormhole_b0, skip_for_wormhole_b0
 from loguru import logger
 from models.utility_functions import torch2tt_tensor, tt2torch_tensor, pad_by_zero, roundup32
+from ttnn.operations.matmul import (
+    MatmulMultiCoreReuseMultiCastProgramConfig,
+    MatmulMultiCoreReuseMultiCast1DProgramConfig,
+)
 
 
 @pytest.mark.parametrize(
@@ -684,6 +689,40 @@ def test_sharded_matmul_2d_transposed(
     assert passing
 
 
+@pytest.mark.parametrize("M", [128])
+@pytest.mark.parametrize("N", [128])
+@pytest.mark.parametrize("grid_size_fixture", [(4, 2), (2, 2)], ids=["4x2_fail", "2x2_pass"])
+def test_sharded_matmul_2d_sharded_ttnn_pcc_fail(device, M, N, grid_size_fixture, function_level_defaults):
+    dtype = ttnn.DataType.BFLOAT16
+    K = 4 * 32
+
+    in0_shape = [1, 1, M, K]
+    in1_shape = [1, 1, K, N]
+
+    grid_size = ttnn.CoreGrid(x=grid_size_fixture[0], y=grid_size_fixture[1])
+    compute_grid_size = device.compute_with_storage_grid_size()
+    if grid_size.x > compute_grid_size.x or grid_size.y > compute_grid_size.y:
+        pytest.skip(f"Need {grid_size} grid size to run this test but core grid is {compute_grid_size}")
+
+    sharded_mem_config = ttnn.create_sharded_memory_config(
+        (M, K), grid_size, ttnn.ShardStrategy.BLOCK, ttnn.ShardOrientation.ROW_MAJOR
+    )
+
+    in0 = torch.randn(in0_shape).bfloat16().float()
+    in1 = torch.randn(in1_shape).bfloat16().float()
+
+    in0_t = ttnn.from_torch(in0, device=device, layout=ttnn.TILE_LAYOUT, dtype=dtype, memory_config=sharded_mem_config)
+    in1_t = ttnn.from_torch(
+        in1, device=device, layout=ttnn.TILE_LAYOUT, dtype=dtype, memory_config=ttnn.DRAM_MEMORY_CONFIG
+    )
+    output_t = ttnn.linear(
+        in0_t, in1_t, dtype=dtype, memory_config=ttnn.DRAM_MEMORY_CONFIG, use_1d_systolic_array=False
+    )
+    passing, output = comp_pcc(in0 @ in1, ttnn.to_torch(output_t))
+    logger.info(output)
+    assert passing
+
+
 def test_resharded_binary_to_matmul(device, function_level_defaults):
     grid_size_binary = device.compute_with_storage_grid_size()
     num_cores_binary = 98
@@ -1340,11 +1379,64 @@ def test_sharded_matmul_1d_in0(
     assert passing
 
 
+@pytest.mark.parametrize("M", [32])
+@pytest.mark.parametrize("N", [1024])
+def test_sharded_matmul_1d_in0_ttnn(device, M, N, function_level_defaults):
+    # grid_size = (8, 4)
+    grid_size = ttnn.CoreGrid(x=8, y=4)
+    compute_grid_size = device.compute_with_storage_grid_size()
+    if grid_size.x > compute_grid_size.x or grid_size.y > compute_grid_size.y:
+        pytest.skip(f"Need {grid_size} grid size to run this test but core grid is {compute_grid_size}")
+    # num_cores = grid_size.x * grid_size.y
+    K = 2048
+    in0_shape = [1, 1, M, K]
+    in1_shape = [1, 1, K, N]
+
+    in0 = torch.randn(in0_shape).bfloat16().float()
+    in1 = torch.randn(in1_shape).bfloat16().float()
+
+    sharded_mem_config = ttnn.create_sharded_memory_config((M, K), grid_size, ttnn.ShardStrategy.WIDTH)
+    in0_t = ttnn.from_torch(
+        in0, device=device, layout=ttnn.TILE_LAYOUT, dtype=ttnn.DataType.BFLOAT16, memory_config=sharded_mem_config
+    )
+    in1_t = ttnn.from_torch(
+        in1, device=device, layout=ttnn.TILE_LAYOUT, dtype=ttnn.DataType.BFLOAT16, memory_config=ttnn.DRAM_MEMORY_CONFIG
+    )
+
+    config = MatmulMultiCoreReuseMultiCast1DProgramConfig(
+        compute_with_storage_grid_size=(grid_size.x, grid_size.y),
+        in0_block_w=2,
+        out_subblock_h=1,
+        out_subblock_w=1,
+        per_core_M=1,
+        per_core_N=1,
+        fused_activation=None,
+        mcast_in0=True,
+        fuse_batch=True,
+    )
+
+    # output_t = ttnn.linear(in0_t, in1_t, dtype=ttnn.DataType.BFLOAT16, memory_config=ttnn.DRAM_MEMORY_CONFIG, use_1d_systolic_array=True)
+
+    output_t = ttnn.linear(
+        in0_t, in1_t, dtype=ttnn.DataType.BFLOAT16, memory_config=ttnn.DRAM_MEMORY_CONFIG, program_config=config
+    )
+
+    pt_out = in0 @ in1
+
+    tt_out = ttnn.to_torch(output_t)
+
+    passing, output = comp_pcc(pt_out, tt_out)
+    logger.info(output)
+    assert passing
+
+
 @pytest.mark.parametrize("in0_sharded", [True, False], ids=["in0_sharded", "in0_unsharded"])
 @pytest.mark.parametrize("in1_sharded", [True, False], ids=["in1_sharded", "in1_unsharded"])
 @pytest.mark.parametrize("out_sharded", [True, False], ids=["out_sharded", "out_unsharded"])
 @pytest.mark.parametrize(
-    "B, H, M, K, N, out_subblock_h, out_subblock_w", [[12, 16, 384, 64, 384, 1, 6], [12, 16, 384, 384, 64, 4, 2]]
+    "B, H, M, K, N, out_subblock_h, out_subblock_w",
+    [[12, 16, 384, 64, 384, 1, 6], [12, 16, 384, 384, 64, 4, 2]],
+    ids=["case1", "case2"],
 )
 @pytest.mark.parametrize("activations_dtype", [ttl.tensor.DataType.BFLOAT8_B])
 def test_sharded_matmul_no_mcast(
