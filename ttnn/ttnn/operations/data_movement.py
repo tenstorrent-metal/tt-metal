@@ -158,7 +158,7 @@ def _permute_validate_input_tensors(operation_name, input_tensor, *args, **kwarg
     ttnn.validate_input_tensor(
         operation_name,
         input_tensor,
-        ranks=(1, 2, 3, 4),
+        ranks=(1, 2, 3, 4, 5, 6),
         dtypes=(ttnn.bfloat16, ttnn.bfloat8_b, ttnn.uint16, ttnn.uint32),
         layouts=(ttnn.ROW_MAJOR_LAYOUT, ttnn.TILE_LAYOUT),
         can_be_on_device=True,
