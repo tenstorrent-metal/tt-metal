@@ -7,6 +7,7 @@ from torch import nn
 import tt_lib
 
 from models.utility_functions import torch2tt_tensor
+from models.demos.falcon7b.tt.model_utils import get_weights_cached
 
 
 class TtFalconMLP(nn.Module):
@@ -29,50 +30,22 @@ class TtFalconMLP(nn.Module):
 
         layer_name = f"{base_url}.{layer_num}"
 
-        self.dense_h_to_4h_weights = self.get_weights_cached(
+        self.dense_h_to_4h_weights = get_weights_cached(
+            devices,
+            model_config,
+            state_dict,
             tt_cache_path,
             weight_cache_str=f"{layer_name}.mlp.dense_h_to_4h.weight",
             weight_config_str="DENSE_H_TO_4H_MM_WEIGHTS",
         )
-        self.dense_4h_to_h_weights = self.get_weights_cached(
+        self.dense_4h_to_h_weights = get_weights_cached(
+            devices,
+            model_config,
+            state_dict,
             tt_cache_path,
             weight_cache_str=f"{layer_name}.mlp.dense_4h_to_h.weight",
             weight_config_str="DENSE_4H_TO_H_MM_WEIGHTS",
         )
-
-    def get_weights_cached(self, tt_cache_path, weight_cache_str, weight_config_str):
-        """Load cached weights and duplicate per device. Store if not cached."""
-        if (tt_cache_path / f"{weight_cache_str}_{self.model_config[f'{weight_config_str}_DTYPE'].name}.bin").exists():
-            # Load cached weights
-            weights_host = tt_lib.tensor.load_tensor(
-                str(tt_cache_path / f"{weight_cache_str}_{self.model_config[f'{weight_config_str}_DTYPE'].name}.bin")
-            )
-            # Duplicate weights on all devices
-            weights = [
-                weights_host.to(device, self.model_config[f"{weight_config_str}_MEMCFG"]) for device in self.devices
-            ]
-        else:
-            weights_host = torch.transpose(
-                self.state_dict[weight_cache_str],
-                -2,
-                -1,
-            )
-            # Duplicate weights on all devices
-            weights = [
-                torch2tt_tensor(
-                    weights_host,
-                    device,
-                    tt_memory_config=self.model_config[f"{weight_config_str}_MEMCFG"],
-                    tt_dtype=self.model_config[f"{weight_config_str}_DTYPE"],
-                )
-                for device in self.devices
-            ]
-            # Store weights (from first device)
-            tt_lib.tensor.dump_tensor(
-                str(tt_cache_path / f"{weight_cache_str}_{self.model_config[f'{weight_config_str}_DTYPE'].name}.bin"),
-                weights[0].cpu(),
-            )
-        return weights
 
     def forward(self, x: tt_lib.tensor.Tensor) -> tt_lib.tensor.Tensor:
         hidden_states = []
