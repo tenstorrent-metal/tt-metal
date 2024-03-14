@@ -195,8 +195,8 @@ def run_falcon_demo_kv(
     prefill_on_host,
 ):
     torch.manual_seed(0)
-    for device in devices:
-        device.enable_program_cache()
+    # for device in devices:
+    #     device.enable_program_cache()
 
     configuration = FalconConfig(**model_config_entries)
 
@@ -424,8 +424,8 @@ def run_falcon_demo_kv(
 
     print_output_prompts(generated_ids, tokenizer)
 
-    for device in devices:
-        device.disable_and_clear_program_cache()
+    # for device in devices:
+    #     device.disable_and_clear_program_cache()
 
     del user_output_ids
     del output_ids
