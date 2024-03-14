@@ -250,6 +250,21 @@ constexpr bool implements_create_program_with_optional_input_tensors() {
 }
 
 template <class T, class... Args>
+using has_create_program_with_optional_input_tensors_t_and_output_tensors_t =
+    decltype(std::declval<T>().create_program(std::declval<Args>()...));
+
+template <class T>
+constexpr bool implements_create_program_with_optional_input_tensors_and_output_tensors() {
+    return std::experimental::is_detected_v<
+        has_create_program_with_optional_input_tensors_t_and_output_tensors_t,
+        T,
+        const std::vector<Tensor>&,
+        const std::vector<std::optional<const Tensor>>&,
+        std::vector<Tensor>&,
+        const std::vector<std::optional<Tensor>>&>;
+}
+
+template <class T, class... Args>
 using has_create_op_performance_model_t =
     decltype(std::declval<T>().create_op_performance_model(std::declval<Args>()...));
 
@@ -286,7 +301,7 @@ constexpr bool implements_compute_program_hash_with_optional_input_tensors() {
 
 template <class T>
 constexpr bool is_device_operation() {
-    return implements_create_program<T>() or implements_create_program_with_optional_input_tensors<T>();
+    return implements_create_program<T>() or implements_create_program_with_optional_input_tensors<T>() or implements_create_program_with_optional_input_tensors_and_output_tensors<T>();
 }
 
 template <class T>
@@ -388,9 +403,11 @@ struct DeviceOperation final {
     inline ProgramWithCallbacks create_program(
         const std::vector<Tensor>& input_tensors,
         const std::vector<std::optional<const Tensor>>& optional_input_tensors,
-        std::vector<Tensor>& output_tensors) const {
+        std::vector<Tensor>& output_tensors,
+        const std::vector<std::optional<Tensor>>& optional_output_tensors
+        ) const {
         return this->create_program_impl_(
-            this->type_erased_storage, input_tensors, optional_input_tensors, output_tensors);
+            this->type_erased_storage, input_tensors, optional_input_tensors, output_tensors, optional_output_tensors);
     }
 
     inline OpPerformanceModel create_op_performance_model(
@@ -510,7 +527,8 @@ struct DeviceOperation final {
             [](const storage_t& storage,
                const std::vector<Tensor>& input_tensors,
                const std::vector<std::optional<const Tensor>>& optional_input_tensors,
-               std::vector<Tensor>& output_tensors) -> ProgramWithCallbacks {
+               std::vector<Tensor>& output_tensors,
+               const std::vector<std::optional<Tensor>>& optional_output_tensors) -> ProgramWithCallbacks {
                 const auto& operation = *reinterpret_cast<const std::decay_t<T>*>(&storage);
                 if constexpr (detail::implements_create_program<T>()) {
                     TT_ASSERT(optional_input_tensors.empty());
@@ -518,6 +536,10 @@ struct DeviceOperation final {
                 } else if constexpr (detail::implements_create_program_with_optional_input_tensors<T>()) {
                     TT_ASSERT(not optional_input_tensors.empty());
                     return operation.create_program(input_tensors, optional_input_tensors, output_tensors);
+                } else if constexpr (detail::implements_create_program_with_optional_input_tensors_and_output_tensors<T>()) {
+                    TT_ASSERT(not optional_input_tensors.empty());
+                    TT_ASSERT(not optional_output_tensors.empty());
+                    return operation.create_program(input_tensors, optional_input_tensors, output_tensors, optional_output_tensors);
                 } else {
                     static_assert(tt::stl::concepts::always_false_v<T>, "Operation doesn't implement create_program");
                 }
@@ -559,6 +581,11 @@ struct DeviceOperation final {
                     static_assert(detail::implements_create_program_with_optional_input_tensors<T>());
                     TT_ASSERT(not optional_input_tensors.empty());
                     return operation.compute_program_hash(input_tensors, optional_input_tensors);
+                } else if constexpr (detail::implements_create_program_with_optional_input_tensors_and_output_tensors<T>()) {
+                    static_assert(detail::implements_create_program_with_optional_input_tensors_and_output_tensors<T>());
+                    // TODO
+                    TT_ASSERT(not optional_input_tensors.empty());
+                    return hash_operation<T>(operation, input_tensors, optional_input_tensors);
                 } else if constexpr (detail::implements_create_program<T>()) {
                     TT_ASSERT(optional_input_tensors.empty());
                     return hash_operation<T>(operation, input_tensors);
@@ -615,7 +642,8 @@ struct DeviceOperation final {
         const storage_t& value,
         const std::vector<Tensor>&,
         const std::vector<std::optional<const Tensor>>&,
-        std::vector<Tensor>&);
+        std::vector<Tensor>&,
+        const std::vector<std::optional<Tensor>>&);
     OpPerformanceModel (*create_op_performance_model_impl_)(
         const storage_t& value,
         const std::vector<Tensor>&,

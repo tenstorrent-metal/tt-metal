@@ -163,15 +163,19 @@ std::vector<Tensor> run_device_operation(
         const DeviceOperation&,
         const std::vector<Tensor>&,
         const std::vector<std::optional<const Tensor>>&,
-        std::vector<Tensor>&)>
+        std::vector<Tensor>&,
+        const std::vector<std::optional<Tensor>>&)
+        >
         get_or_create_program;
     if (program_cache::is_enabled()) {
         get_or_create_program = [](const DeviceOperation& operation,
                                    const std::vector<Tensor>& input_tensors,
                                    const std::vector<std::optional<const Tensor>>& optional_input_tensors,
-                                   std::vector<Tensor>& output_tensors) -> std::reference_wrapper<Program> {
+                                   std::vector<Tensor>& output_tensors,
+                                   const std::vector<std::optional<Tensor>>& optional_output_tensors
+                                   ) -> std::reference_wrapper<Program> {
             auto&& [program_with_callbacks, cache_hit] =
-                program_cache::get_or_create(operation, input_tensors, optional_input_tensors, output_tensors);
+                program_cache::get_or_create(operation, input_tensors, optional_input_tensors, output_tensors, optional_output_tensors);
             TT_ASSERT(program_with_callbacks.supports_program_cache());
 
             auto& program = program_with_callbacks.program;
@@ -200,15 +204,17 @@ std::vector<Tensor> run_device_operation(
         get_or_create_program = [](const DeviceOperation& operation,
                                    const std::vector<Tensor>& input_tensors,
                                    const std::vector<std::optional<const Tensor>>& optional_input_tensors,
-                                   std::vector<Tensor>& output_tensors) -> std::shared_ptr<Program> {
+                                   std::vector<Tensor>& output_tensors,
+                                   const std::vector<std::optional<Tensor>>& optional_output_tensors
+                                   ) -> std::shared_ptr<Program> {
             auto program_with_callbacks =
-                operation.create_program(input_tensors, optional_input_tensors, output_tensors);
+                operation.create_program(input_tensors, optional_input_tensors, output_tensors, optional_output_tensors);
             return std::make_shared<Program>(std::move(program_with_callbacks.program));
         };
     }
     operation.validate(input_tensors, optional_input_tensors, optional_output_tensors);
     auto output_tensors = operation.create_output_tensors(input_tensors, optional_output_tensors);
-    auto program = get_or_create_program(operation, input_tensors, optional_input_tensors, output_tensors);
+    auto program = get_or_create_program(operation, input_tensors, optional_input_tensors, output_tensors, optional_output_tensors);
 
     // Enqueue or Launch Program
     std::visit(
