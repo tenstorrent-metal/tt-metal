@@ -28,6 +28,10 @@ from models.utility_functions import (
     get_devices_for_t3000,
 )
 
+from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
+    comp_pcc,
+)
+
 END_OF_TEXT = 11
 SPACE = 204
 
@@ -195,8 +199,6 @@ def run_falcon_demo_kv(
     prefill_on_host,
 ):
     torch.manual_seed(0)
-    # for device in devices:
-    #     device.enable_program_cache()
 
     configuration = FalconConfig(**model_config_entries)
 
@@ -252,18 +254,18 @@ def run_falcon_demo_kv(
     for device in devices:
         tt_lib.device.Synchronize(device)
 
-    if prefill_on_host:
-        # TODO: Remove pytorch model once prefill is on device
-        logger.info("Loading PyTorch model for prefill")
-        model_name = model_location_generator(model_version, model_subdir="Falcon")
-        hugging_face_reference_model = FalconForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
-        hugging_face_reference_model.eval()
-        pytorch_FalconCausalLM = PytorchFalconCausalLM(hugging_face_reference_model, num_layers)
-    else:
-        logger.info("Initializing and KV cache")
-        profiler.start(f"initializing_KV_cache")
-        kv_cache = initialize_kv_cache(model_config, configuration, num_layers, batch_size, max_seq_len, devices)
-        profiler.end(f"initializing_KV_cache")
+    # if prefill_on_host:
+    # TODO: Remove pytorch model once prefill is on device
+    logger.info("Loading PyTorch model for prefill")
+    model_name = model_location_generator(model_version, model_subdir="Falcon")
+    hugging_face_reference_model = FalconForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
+    hugging_face_reference_model.eval()
+    pytorch_FalconCausalLM = PytorchFalconCausalLM(hugging_face_reference_model, num_layers)
+    # else:
+    logger.info("Initializing and KV cache")
+    profiler.start(f"initializing_KV_cache")
+    kv_cache = initialize_kv_cache(model_config, configuration, num_layers, batch_size, max_seq_len, devices)
+    profiler.end(f"initializing_KV_cache")
 
     logger.info("Tokenizing inputs...")
     profiler.start(f"tokenizing_inputs")
@@ -274,25 +276,25 @@ def run_falcon_demo_kv(
     profiler.end(f"tokenizing_inputs")
 
     post_processor = partial(post_process)
-    if prefill_on_host:
-        logger.info("Initializing and filling KV cache")
-        profiler.start(f"initializing_KV_cache_on_host")
-        pt_logits, kv_cache = initialize_and_fill_kv_cache(
-            pytorch_FalconCausalLM,
-            model_config,
-            configuration,
-            prefill_ids[:, :num_input_tokens],
-            num_layers,
-            batch_size,
-            max_seq_len,
-            devices,
-        )
-        profiler.end(f"initializing_KV_cache")
+    # if prefill_on_host:
+    logger.info("Initializing and filling KV cache")
+    profiler.start(f"initializing_KV_cache_on_host")
+    pt_logits, pt_kv_cache = initialize_and_fill_kv_cache(
+        pytorch_FalconCausalLM,
+        model_config,
+        configuration,
+        prefill_ids[:, :num_input_tokens],
+        num_layers,
+        batch_size,
+        max_seq_len,
+        devices,
+    )
+    profiler.end(f"initializing_KV_cache")
 
-        output_ids = torch.zeros(num_users, 1, dtype=torch.int64)
-        for user_id in range(num_users):
-            user_output_ids = post_processor(logits=pt_logits[user_id : user_id + 1, :, :], index=num_input_tokens - 1)
-            output_ids[user_id] = user_output_ids
+    pt_output_ids = torch.zeros(num_users, 1, dtype=torch.int64)
+    for user_id in range(num_users):
+        user_output_ids = post_processor(logits=pt_logits[user_id : user_id + 1, :, :], index=num_input_tokens - 1)
+        pt_output_ids[user_id] = user_output_ids
 
     profiler.disable()
     # TODO: Is this safe? Disabling kernel caching disable program caching as well?
@@ -300,41 +302,65 @@ def run_falcon_demo_kv(
 
     ### First prefill run with compile ###
     use_cache = True
-    if not prefill_on_host:
-        logger.info("Running 1st run prefill stage with compile...")
-        output_ids = torch.zeros(num_users, 1, dtype=torch.int64)
-        time_prefill_compile = 0
-        for user_id in range(num_users):
-            logger.info(f"Filling kv cache for user {user_id + 1}")
-            time_prefill_compile_start = time.time()
-            (
-                tt_prefill_embeddings,
-                tt_prefill_attention_mask,
-            ) = tt_FalconCausalLM.model_preprocessing(
-                "prefill", prefill_ids[user_id : user_id + 1], 0, num_input_tokens=num_input_tokens
+    # if not prefill_on_host:
+    logger.info("Running 1st run prefill stage with compile...")
+    output_ids = torch.zeros(num_users, 1, dtype=torch.int64)
+    time_prefill_compile = 0
+    for user_id in range(num_users):
+        logger.info(f"Filling kv cache for user {user_id + 1}")
+        time_prefill_compile_start = time.time()
+        (
+            tt_prefill_embeddings,
+            tt_prefill_attention_mask,
+        ) = tt_FalconCausalLM.model_preprocessing(
+            "prefill", prefill_ids[user_id : user_id + 1], 0, num_input_tokens=num_input_tokens
+        )
+        assert tt_prefill_attention_mask is not None
+
+        tt_logits, kv_cache = tt_FalconCausalLM(
+            input_embeddings=tt_prefill_embeddings,
+            llm_mode="prefill",
+            attention_mask=tt_prefill_attention_mask,
+            user_id=user_id,
+            layer_past=kv_cache,
+            layer_past_len=0,
+            use_cache=use_cache,
+        )
+        time_prefill_compile_end = time.time()
+        time_prefill_compile += time_prefill_compile_end - time_prefill_compile_start
+
+        del tt_prefill_embeddings
+        del tt_prefill_attention_mask
+
+        logits = torch.cat([tt2torch_tensor(tt_o).squeeze(1) for tt_o in tt_logits], -1)
+        del tt_logits
+
+        user_output_ids = post_processor(logits=logits, index=num_input_tokens - 1)
+        output_ids[user_id] = user_output_ids
+
+        output_pcc = comp_pcc(output_ids[0], pt_output_ids[0])
+        logger.info(f"Output id {i}: {output_pcc}")
+
+        for i in range(60):
+            tt_layer = (
+                torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in kv_cache[i][0]], 1),
+                torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in kv_cache[i][1]], 1),
             )
-            assert tt_prefill_attention_mask is not None
 
-            tt_logits, kv_cache = tt_FalconCausalLM(
-                input_embeddings=tt_prefill_embeddings,
-                llm_mode="prefill",
-                attention_mask=tt_prefill_attention_mask,
-                user_id=user_id,
-                layer_past=kv_cache,
-                layer_past_len=0,
-                use_cache=use_cache,
+            torch_layer = (
+                torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in pt_kv_cache[i][0]], 1),
+                torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in pt_kv_cache[i][1]], 1),
             )
-            time_prefill_compile_end = time.time()
-            time_prefill_compile += time_prefill_compile_end - time_prefill_compile_start
 
-            del tt_prefill_embeddings
-            del tt_prefill_attention_mask
+            output_pcc = comp_pcc(torch_layer[0], tt_layer[0])
+            logger.info(f"K Cache Layer {i}: {output_pcc}")
 
-            logits = torch.cat([tt2torch_tensor(tt_o).squeeze(1) for tt_o in tt_logits], -1)
-            del tt_logits
+            output_pcc = comp_pcc(torch_layer[1], tt_layer[1])
+            logger.info(f"V Cache Layer {i}: {output_pcc}")
 
-            user_output_ids = post_processor(logits=logits, index=num_input_tokens - 1)
-            output_ids[user_id] = user_output_ids
+    if prefill_on_host:
+        kv_cache = pt_kv_cache
+        output_ids = pt_output_ids
 
     # TODO: Should the concat be removed since output token for prefill shouldn't be used
     generated_ids = torch.concat((prefill_ids[..., :num_input_tokens], output_ids), dim=1)
@@ -424,8 +450,7 @@ def run_falcon_demo_kv(
 
     print_output_prompts(generated_ids, tokenizer)
 
-    # for device in devices:
-    #     device.disable_and_clear_program_cache()
+    tt_lib.program_cache.disable_and_clear()
 
     del user_output_ids
     del output_ids
