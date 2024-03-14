@@ -6,7 +6,7 @@
 #include "risc_attribs.h"
 #include "tt_metal/hostdevcommon/common_values.hpp"
 #include "tt_metal/impl/dispatch/kernels/command_queue_common.hpp"
-#include "cq_cmds.hpp"
+#include "tt_metal/impl/dispatch/cq_commands.hpp"
 
 CQWriteInterface cq_write_interface;
 CQReadInterface cq_read_interface;

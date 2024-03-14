@@ -9,7 +9,7 @@
 //    double buffered ScratchBuf for out of band data (e.g., from DRAM)
 //  - syncs w/ dispatcher via 2 semaphores, page_ready, page_done
 
-#include "tt_metal/impl/dispatch/kernels/cq_cmds.hpp"
+#include "tt_metal/impl/dispatch/cq_commands.hpp"
 #include "debug/dprint.h"
 
 constexpr uint32_t dispatch_cb_base = get_compile_time_arg_val(0);

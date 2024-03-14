@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include "tt_metal/common/base.hpp"
+#include "tt_metal/impl/dispatch/cq_commands.hpp"
 #include "tt_metal/impl/dispatch/device_command.hpp"
 #include "tt_metal/impl/dispatch/dispatch_core_manager.hpp"
 #include "tt_metal/llrt/llrt.hpp"
@@ -13,10 +14,28 @@
 
 using namespace tt::tt_metal;
 
+static constexpr uint32_t PREFETCH_Q_LOG_MINSIZE = 4;
+static constexpr uint32_t PREFETCH_Q_ENTRIES = 128;
+static constexpr uint32_t MAX_PREFETCH_COMMAND_SIZE = 64 * 1024;
+static constexpr uint32_t CMDDAT_Q_SIZE = 128 * 1024;
+static constexpr uint32_t SCRATCH_DB_SIZE = 128 * 1024;
+
+constexpr uint32_t HUGEPAGE_ALIGNMENT = ((1 << PREFETCH_Q_LOG_MINSIZE) > CQ_PREFETCH_CMD_BARE_MIN_SIZE) ? (1 << PREFETCH_Q_LOG_MINSIZE) : CQ_PREFETCH_CMD_BARE_MIN_SIZE;
+
+static constexpr uint32_t LOG_PREFETCH_DISPATCH_TRANSFER_PAGE_SIZE = 12;
+static constexpr uint32_t PREFETCH_DISPATCH_TRANSFER_PAGE_SIZE = 1 << LOG_PREFETCH_DISPATCH_TRANSFER_PAGE_SIZE;
+
+static constexpr uint32_t DISPATCH_BUFFER_LOG_PAGE_SIZE = 12;
+static constexpr uint32_t DISPATCH_BUFFER_SIZE_BLOCKS = 4;
+
+// 764 to make this not divisible by 3 so we can test wrapping of dispatch buffer
+constexpr uint32_t DISPATCH_BUFFER_BLOCK_SIZE_PAGES = 764 * 1024 / (1 << DISPATCH_BUFFER_LOG_PAGE_SIZE) / DISPATCH_BUFFER_SIZE_BLOCKS;
+
 // Starting L1 address of commands
-inline uint32_t get_command_start_l1_address(bool use_eth_l1) {
-    //place holder for future relocatoin of unreserved base on ethernet cores.
-    return use_eth_l1 ? ERISC_L1_UNRESERVED_BASE : L1_UNRESERVED_BASE;
+inline uint32_t get_dispatch_buffer_base(bool use_eth_l1) {
+    uint32_t dispatch_buffer_base_addr = use_eth_l1 ? ERISC_L1_UNRESERVED_BASE : L1_UNRESERVED_BASE;
+    TT_ASSERT((dispatch_buffer_base_addr & ((1 << DISPATCH_BUFFER_LOG_PAGE_SIZE) - 1)) == 0);
+    return dispatch_buffer_base_addr;
 }
 
 inline uint32_t get_eth_command_start_l1_address(SyncCBConfigRegion cq_region) {
@@ -166,6 +185,10 @@ class SystemMemoryManager {
     vector<int> cq_to_event;
     vector<int> cq_to_last_completed_event;
     vector<std::mutex> cq_to_event_locks;
+    vector<tt_cxy_pair> prefetcher_cores;
+    vector<uint32_t> prefetch_q_dev_ptrs;
+    vector<uint32_t> prefetch_q_dev_fences;
+    uint32_t prefetch_q_rd_ptr_addr = L1_UNRESERVED_BASE - 4; // THIS NEEDS TO BE UPDATED
 
    public:
     SystemMemoryManager(chip_id_t device_id, uint8_t num_hw_cqs) :
@@ -176,6 +199,9 @@ class SystemMemoryManager {
 
         this->issue_byte_addrs.resize(num_hw_cqs);
         this->completion_byte_addrs.resize(num_hw_cqs);
+        this->prefetcher_cores.resize(num_hw_cqs);
+        this->prefetch_q_dev_ptrs.resize(num_hw_cqs);
+        this->prefetch_q_dev_fences.resize(num_hw_cqs);
 
         // Split hugepage into however many pieces as there are CQs
         chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device_id);
@@ -193,9 +219,11 @@ class SystemMemoryManager {
         }
         this->channel_offset = DeviceCommand::MAX_HUGEPAGE_SIZE * channel;
 
-        for (uint8_t cq_id = 0; cq_id < num_hw_cqs; cq_id++) {
-            tt_cxy_pair issue_queue_reader_core = dispatch_core_manager::get(num_hw_cqs).issue_queue_reader_core(device_id, channel, cq_id);
+        uint32_t prefetch_q_base = L1_UNRESERVED_BASE;
+        for (uint8_t cq_id = 0; cq_id < num_hw_cqs; cq_id++) {            
+            tt_cxy_pair issue_queue_reader_core = dispatch_core_manager::get(num_hw_cqs).prefetcher_core(device_id, channel, cq_id);
             CoreType core_type = dispatch_core_manager::get(num_hw_cqs).get_dispatch_core_type(device_id);
+            this->prefetcher_cores[cq_id] = issue_queue_reader_core;
             const std::tuple<uint32_t, uint32_t> issue_interface_tlb_data = tt::Cluster::instance().get_tlb_data(tt_cxy_pair(issue_queue_reader_core.chip, tt::get_physical_core_coordinate(issue_queue_reader_core, core_type))).value();
             auto [issue_tlb_offset, issue_tlb_size] = issue_interface_tlb_data;
             this->issue_byte_addrs[cq_id] = issue_tlb_offset + CQ_ISSUE_WRITE_PTR % issue_tlb_size;
@@ -208,6 +236,8 @@ class SystemMemoryManager {
             this->cq_interfaces.push_back(SystemMemoryCQInterface(channel, cq_id, this->cq_size));
             this->cq_to_event.push_back(0);
             this->cq_to_last_completed_event.push_back(0);
+            this->prefetch_q_dev_ptrs[cq_id] = prefetch_q_base;
+            this->prefetch_q_dev_fences[cq_id] = prefetch_q_base + PREFETCH_Q_ENTRIES * sizeof(uint16_t);
         }
         vector<std::mutex> temp_mutexes(num_hw_cqs);
         cq_to_event_locks.swap(temp_mutexes);
@@ -343,7 +373,7 @@ class SystemMemoryManager {
             cq_interface.issue_fifo_wr_toggle = not cq_interface.issue_fifo_wr_toggle;
         }
 
-        // Notify dispatch core
+        // Notify prefetch core
         if (not lazy) {
             this->send_issue_queue_write_ptr(cq_id);
         }
@@ -393,7 +423,7 @@ class SystemMemoryManager {
         SystemMemoryCQInterface& cq_interface = this->cq_interfaces[cq_id];
         cq_interface.issue_fifo_wr_ptr = (CQ_START + cq_interface.offset) >> 4;
         cq_interface.issue_fifo_wr_toggle = not cq_interface.issue_fifo_wr_toggle;
-        this->send_issue_queue_write_ptr(cq_id);
+        // this->send_issue_queue_write_ptr(cq_id);
     }
 
     void wrap_completion_queue_rd_ptr(const uint8_t cq_id) {
@@ -426,4 +456,30 @@ class SystemMemoryManager {
         return this->cq_size;
     }
 
+    void fetch_queue_reserve_back(const uint8_t cq_id) {
+        // Wait for space in the FetchQ
+        uint32_t fence;
+        while (this->prefetch_q_dev_ptrs[cq_id] == this->prefetch_q_dev_fences[cq_id]) {
+            tt::Cluster::instance().read_core(&fence, sizeof(uint32_t), this->prefetcher_cores[cq_id], this->prefetch_q_rd_ptr_addr);
+            this->prefetch_q_dev_fences[cq_id] = fence;
+        }
+
+        // Wrap FetchQ if possible
+        uint32_t prefetch_q_base = L1_UNRESERVED_BASE;
+        uint32_t prefetch_q_limit = prefetch_q_base + PREFETCH_Q_ENTRIES * sizeof(uint16_t);
+        if (this->prefetch_q_dev_ptrs[cq_id] == prefetch_q_limit) {
+            this->prefetch_q_dev_ptrs[cq_id] = prefetch_q_base;
+
+            while (this->prefetch_q_dev_ptrs[cq_id] == this->prefetch_q_dev_fences[cq_id]) {
+                tt::Cluster::instance().read_core(&fence, sizeof(uint32_t), this->prefetcher_cores[cq_id], this->prefetch_q_rd_ptr_addr);
+                this->prefetch_q_dev_fences[cq_id] = fence;
+            }
+        }
+    }
+
+    void fetch_queue_push_back(uint32_t command_size_B, const uint8_t cq_id) {
+        uint32_t command_size_16B = command_size_B << 4;
+        tt::Cluster::instance().write_core((void *)&command_size_16B, sizeof(uint16_t), this->prefetcher_cores[cq_id], this->prefetch_q_dev_ptrs[cq_id], true);
+        this->prefetch_q_dev_ptrs[cq_id] += sizeof(uint16_t);
+    }
 };
