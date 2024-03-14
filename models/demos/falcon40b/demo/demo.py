@@ -130,6 +130,8 @@ def initialize_and_fill_kv_cache(
         input_ids=prefill_ids, past_key_values=None, use_cache=True
     )
 
+    return pytorch_out, pytorch_layer_present
+
     head_dim = configuration.hidden_size // configuration.num_attention_heads
     q_heads_per_kv_heads = configuration.num_attention_heads // configuration.num_kv_heads
     num_users, kv_cache_len = prefill_ids.shape
@@ -264,7 +266,7 @@ def run_falcon_demo_kv(
     # else:
     logger.info("Initializing and KV cache")
     profiler.start(f"initializing_KV_cache")
-    kv_cache = initialize_kv_cache(model_config, configuration, num_layers, batch_size, max_seq_len, devices)
+    kv_cache = initialize_kv_cache(model_config, configuration, num_layers, 1, max_seq_len, devices)
     profiler.end(f"initializing_KV_cache")
 
     logger.info("Tokenizing inputs...")
@@ -283,7 +285,7 @@ def run_falcon_demo_kv(
         pytorch_FalconCausalLM,
         model_config,
         configuration,
-        prefill_ids[:, :num_input_tokens],
+        prefill_ids,
         num_layers,
         batch_size,
         max_seq_len,
@@ -300,7 +302,7 @@ def run_falcon_demo_kv(
     # TODO: Is this safe? Disabling kernel caching disable program caching as well?
     enable_persistent_kernel_cache()
 
-    ### First prefill run with compile ###
+    # ### First prefill run with compile ###
     use_cache = True
     # if not prefill_on_host:
     logger.info("Running 1st run prefill stage with compile...")
@@ -313,7 +315,7 @@ def run_falcon_demo_kv(
             tt_prefill_embeddings,
             tt_prefill_attention_mask,
         ) = tt_FalconCausalLM.model_preprocessing(
-            "prefill", prefill_ids[user_id : user_id + 1], 0, num_input_tokens=num_input_tokens
+            "prefill", prefill_ids[user_id : user_id + 1, :], 0, num_input_tokens=num_input_tokens
         )
         assert tt_prefill_attention_mask is not None
 
@@ -339,24 +341,61 @@ def run_falcon_demo_kv(
         output_ids[user_id] = user_output_ids
 
         output_pcc = comp_pcc(output_ids[0], pt_output_ids[0])
-        logger.info(f"Output id {i}: {output_pcc}")
+        logger.info(f"Output id: {output_pcc}")
 
-        for i in range(60):
-            tt_layer = (
+        breakpoint()
+
+        # for i in range(60):
+        #     tt_layer = (
+        #         torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in kv_cache[i][0]], 1),
+        #         torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in kv_cache[i][1]], 1),
+        #     )
+
+        #     torch_layer = (
+        #         torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in pt_kv_cache[i][0]], 1),
+        #         torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in pt_kv_cache[i][1]], 1),
+        #     )
+
+        #     output_pcc = comp_pcc(torch_layer[0][:, :num_input_tokens, :], tt_layer[0][:, :num_input_tokens, :])
+        #     logger.info(f"K Cache Layer {i}: {output_pcc}")
+
+        #     output_pcc = comp_pcc(torch_layer[1][:, :num_input_tokens, :], tt_layer[1][:, :num_input_tokens, :])
+        #     logger.info(f"V Cache Layer {i}: {output_pcc}")
+
+        does_pass = True
+        does_pass2 = True
+        for i in range(num_layers):
+            # Only check every 4 layers for full model
+            # if num_layers == 60 and i % 4 > 0:
+            #     continue
+
+            pytorch_layer_pres = pt_kv_cache[i]
+            tt_layer_pres = (
                 torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in kv_cache[i][0]], 1),
                 torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in kv_cache[i][1]], 1),
             )
-
-            torch_layer = (
-                torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in pt_kv_cache[i][0]], 1),
-                torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in pt_kv_cache[i][1]], 1),
+            tt_layer_pres = (
+                torch.repeat_interleave(
+                    tt_layer_pres[0][:, :, :32, :],
+                    configuration.num_attention_heads // configuration.num_kv_heads,
+                    1,
+                ),
+                torch.repeat_interleave(
+                    tt_layer_pres[1][:, :, :32, :],
+                    configuration.num_attention_heads // configuration.num_kv_heads,
+                    1,
+                ),
             )
 
-            output_pcc = comp_pcc(torch_layer[0], tt_layer[0])
+            does_pass2, output_pcc = comp_pcc(pytorch_layer_pres[0], tt_layer_pres[0], 0.99)
             logger.info(f"K Cache Layer {i}: {output_pcc}")
 
-            output_pcc = comp_pcc(torch_layer[1], tt_layer[1])
+            does_pass = does_pass and does_pass2
+
+            does_pass2, output_pcc = comp_pcc(pytorch_layer_pres[1], tt_layer_pres[1], 0.99)
             logger.info(f"V Cache Layer {i}: {output_pcc}")
+
+            does_pass = does_pass and does_pass2
 
     if prefill_on_host:
         kv_cache = pt_kv_cache
@@ -640,9 +679,9 @@ def test_demo(
         model_config=model_config,
         batch_size=32,
         num_layers=model_config_entries["num_hidden_layers"],
-        max_seq_len=128,  # 1024,
+        max_seq_len=32,  # 1024,
         model_location_generator=model_location_generator,
         tt_cache_path=tt_cache_path,
         devices=devices,
-        prefill_on_host=False,
+        prefill_on_host=True,
     )

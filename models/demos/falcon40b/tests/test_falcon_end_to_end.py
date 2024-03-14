@@ -21,6 +21,8 @@ from models.demos.falcon40b.tt.model_config import (
     get_model_config,
 )
 
+from transformers import AutoTokenizer
+
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_pcc,
 )
@@ -35,6 +37,33 @@ from models.utility_functions import (
     skip_for_grayskull,
     get_devices_for_t3000,
 )
+
+
+def preprocess_and_validate_inputs(input_prompts, tokenizer):
+    tokenizer.pad_token = tokenizer.eos_token
+
+    num_users = len(input_prompts)
+    num_input_tokens = -1
+    for prompt in input_prompts:
+        tokenized_prompt = tokenizer(prompt, padding=False, add_special_tokens=False, return_tensors="pt")
+        num_input_tokens = max(num_input_tokens, len(tokenized_prompt["input_ids"][0]))
+
+    seq_len_padded_to_32 = nearest_32(num_input_tokens)
+    assert seq_len_padded_to_32 == 32, "Prefill only supports 32 tokens max"
+
+    tokenized_inputs = tokenizer(
+        input_prompts,
+        padding="max_length",
+        max_length=seq_len_padded_to_32,
+        add_special_tokens=False,
+        return_tensors="pt",
+    )
+    prefill_ids = tokenized_inputs["input_ids"]
+
+    logger.info(f"# of users: {num_users}")
+    logger.info(f"# of input tokens per user: {num_input_tokens}")
+
+    return prefill_ids, num_users, num_input_tokens
 
 
 # TODO: Replace this with actual Falcon application-level tests
@@ -77,7 +106,10 @@ def run_test_FalconCausalLM_end_to_end(
     use_global_cos_sin_cache = True
 
     if 1:
-        model_input = torch.arange(seq_len * batch).reshape(batch, seq_len)
+        tokenizer = AutoTokenizer.from_pretrained(model_version)
+        model_input, num_users, num_input_tokens = preprocess_and_validate_inputs(
+            ["Tell me a joke."], tokenizer
+        )  # //torch.load("prefill.pt") # torch.arange(seq_len * batch).reshape(batch, seq_len)
     else:
         # batch identical sequences for debugging
         model_input = torch.stack([torch.arange(seq_len)] * batch).reshape(batch, seq_len)
@@ -90,8 +122,8 @@ def run_test_FalconCausalLM_end_to_end(
 
         past_key_values = None
         tt_layer_past = ()
-        tt_k_cache_host = torch.zeros(batch, num_kv_heads, max_position_embeddings, head_dim)
-        tt_v_cache_host = torch.zeros(batch, num_kv_heads, max_position_embeddings, head_dim)
+        tt_k_cache_host = torch.zeros(batch, num_kv_heads, seq_len, head_dim)
+        tt_v_cache_host = torch.zeros(batch, num_kv_heads, seq_len, head_dim)
         tt_k_cache_host = torch.chunk(tt_k_cache_host, len(devices), 1)
         tt_v_cache_host = torch.chunk(tt_v_cache_host, len(devices), 1)
 
@@ -331,6 +363,8 @@ def run_test_FalconCausalLM_end_to_end(
     does_pass, output_pcc = comp_pcc(pytorch_out, tt_out, out_pcc)
     logger.info(f"Output: {output_pcc}")
 
+    breakpoint()
+
     for i in range(num_layers):
         # Only check every 4 layers for full model
         # if num_layers == 60 and i % 4 > 0:
@@ -338,8 +372,8 @@ def run_test_FalconCausalLM_end_to_end(
 
         pytorch_layer_pres = pytorch_layer_present[i]
         tt_layer_pres = (
-            torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in tt_layer_present[i][0]], 1),
-            torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in tt_layer_present[i][1]], 1),
+            torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in tt_layer_present[0][0]], 1),
+            torch.cat([tt2torch_tensor(tt_layer_p) for tt_layer_p in tt_layer_present[0][1]], 1),
         )
         tt_layer_pres = (
             torch.repeat_interleave(
