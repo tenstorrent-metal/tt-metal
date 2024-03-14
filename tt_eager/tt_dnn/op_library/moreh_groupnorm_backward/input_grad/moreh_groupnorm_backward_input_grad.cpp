@@ -30,7 +30,7 @@ operation::ProgramWithCallbacks moreh_groupnorm_backward_input_grad_impl(
     const Tensor &mean,
     const Tensor &rstd,
     uint32_t num_groups,
-    const Tensor &input_grad,
+    Tensor &input_grad,
     const std::optional<const Tensor> gamma) {
     ////////////////////////////////////////////////////////////////////////////
     //                      Device Setup

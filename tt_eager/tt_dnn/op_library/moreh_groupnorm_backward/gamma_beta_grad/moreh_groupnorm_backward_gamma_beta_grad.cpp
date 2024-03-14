@@ -30,8 +30,8 @@ operation::ProgramWithCallbacks moreh_groupnorm_backward_gamma_beta_grad_impl(
     const Tensor &mean,
     const Tensor &rstd,
     uint32_t num_groups,
-    Tensor &gamma_grad,
-    Tensor &beta_grad) {
+    const std::optional<Tensor> dgamma,
+    const std::optional<Tensor> dbeta) {
     ////////////////////////////////////////////////////////////////////////////
     //                      Device Setup
     ////////////////////////////////////////////////////////////////////////////
@@ -70,8 +70,11 @@ operation::ProgramWithCallbacks moreh_groupnorm_backward_gamma_beta_grad_impl(
     const auto num_inner_tiles = batch * HtWt;  // inner_size
 
     // TODO(seunghwan100): Make gamm_grad, beta_grad optional
-    const bool gamma_grad_has_value = true;
-    const bool beta_grad_has_value = true;
+    const bool gamma_grad_has_value = dgamma.has_value();
+    const bool beta_grad_has_value = dbeta.has_value();
+
+    auto &gamma_grad = dgamma.value();
+    auto &beta_grad = dbeta.value();
 
     ////////////////////////////////////////////////////////////////////////////
     //                         Core Setup

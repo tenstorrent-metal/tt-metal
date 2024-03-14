@@ -871,6 +871,9 @@ void py_module(py::module& m_primary) {
         py::arg("input_grad_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("gamma_grad_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("beta_grad_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+        py::arg("input_requires_grad").noconvert() = true,
+        py::arg("gamma_requires_grad").noconvert() = true,
+        py::arg("beta_requires_grad").noconvert() = true,
         R"doc(
         "Performs a moreh_groupnorm_backward operation.
     )doc");
