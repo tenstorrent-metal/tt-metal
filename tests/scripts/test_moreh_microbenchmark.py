@@ -374,7 +374,9 @@ def test_matmul_single_core(
     run_moreh_single_test("matmul single core sharded", command)
 
 
-def test_dram_read_write_test(input_size, num_bytes, rr_vc, read_write):
+def test_dram_read_write_test(
+    input_size, num_bytes, rr_vc, full_grid, grid, hybrid_noc, num_reads_per_barrier, read_write
+):
     command = (
         "TT_METAL_DEVICE_PROFILER=1 ./build/test/tt_metal/perf_microbenchmark/6_dram_offchip/test_dram_offchip "
         + "--input-size "
@@ -383,12 +385,20 @@ def test_dram_read_write_test(input_size, num_bytes, rr_vc, read_write):
         + str(read_write)
         + " --num-tests "
         + str(1)
-        + " --full-grid "
-        + str(1)
         + " --transfer-bytes "
         + str(num_bytes)
         + " --rr-vc "
         + str(rr_vc)
+        + " --num-cores-c "
+        + str(grid[0])
+        + " --num-cores-r "
+        + str(grid[1])
+        + " --full-grid "
+        + str(full_grid)
+        + " --hybrid-noc "
+        + str(hybrid_noc)
+        + " --num-reads "
+        + str(num_reads_per_barrier)
         + " --bypass-check "
     )
     run_moreh_single_test("DRAM BW test multi-core", command)
@@ -750,17 +760,35 @@ def test_matmul_single_core_sharded(
     return
 
 
+@pytest.mark.parametrize("num_reads_per_barrier", [128])
 @pytest.mark.parametrize(
-    "num_bytes",
-    [256, 512, 1024, 2048],
-)
-@pytest.mark.parametrize(
-    "arch, freq, test_vector, num_tests, rr_vc",
+    "arch, freq, test_vector, num_tests, rr_vc, full_grid, grid, hybrid_noc, num_bytes_per_read",
     [
-        ("wormhole_b0", 1000, np.array([8192, 8192]), 10, 0),
+        ################################## baseline ##############################
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 0, 1, [8,7], 0, 256),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 0, 1, [8,7], 0, 512),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 0, 1, [8,7], 0, 1024),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 0, 1, [8,7], 0, 2048),
+        ################################## baseline + hybrid noc #####################
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 0, 1, [8,7], 1, 256),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 0, 1, [8,7], 1, 512),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 0, 1, [8,7], 1, 1024),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 0, 1, [8,7], 1, 2048),
+        # ################################## baseline + round-robin VC ##################
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 1, 1, [8,7], 0, 256),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 1, 1, [8,7], 0, 512),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 1, 1, [8,7], 0, 1024),
+        # ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 1, 1, [8,7], 0, 2048),
+        # ################### baseline + round-robin VC  + hybrid noc ##################
+        ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 1, 1, [8, 7], 1, 256),
+        ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 1, 1, [8, 7], 1, 512),
+        ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 1, 1, [8, 7], 1, 1024),
+        ("wormhole_b0", 1000, np.array([7168, 4096]), 10, 1, 1, [8, 7], 1, 2048),
     ],
 )
-def test_dram_read(arch, freq, test_vector, num_tests, num_bytes, rr_vc):
+def test_dram_read(
+    arch, freq, test_vector, num_tests, rr_vc, full_grid, grid, hybrid_noc, num_reads_per_barrier, num_bytes_per_read
+):
     file_name = PROFILER_LOGS_DIR / "moreh_multi_core_DRAM_read_BW.csv"
     header = ["Kernel Duration (Cycles)"]
     data = []
@@ -769,7 +797,9 @@ def test_dram_read(arch, freq, test_vector, num_tests, num_bytes, rr_vc):
     throughput_list = []
     for _ in range(num_tests):
         input_size = int(test_vector[0]) * int(test_vector[1])
-        test_dram_read_write_test(input_size, num_bytes, rr_vc, 0)
+        test_dram_read_write_test(
+            input_size, num_bytes_per_read, rr_vc, full_grid, grid, hybrid_noc, num_reads_per_barrier, 0
+        )
         cycle = profile_results_kernel_duration()
         time = cycle / freq / 1000.0 / 1000.0
         throughput = (input_size / 1024.0 / 1024.0 / 1024.0) / time

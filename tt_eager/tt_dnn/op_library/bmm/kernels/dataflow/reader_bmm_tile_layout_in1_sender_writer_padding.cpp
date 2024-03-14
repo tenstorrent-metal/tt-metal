@@ -159,6 +159,20 @@ void kernel_main() {
                 uint32_t in1_tensor_tile_id = in1_tensor_row_start_tile_id;
                 for(uint32_t w = 0; w < in1_block_w; ++w) {
                     if (w < last_block_w) {
+                        // uint32_t bank_id = umodsi3_const_divisor<NUM_DRAM_BANKS>(in1_tensor_tile_id);
+                        // uint64_t noc_read_addr;
+
+                        // if (bank_id == 0 or bank_id == 2) {
+                        //     noc_read_addr = s1.get_noc_addr(1, in1_tensor_tile_id, bank_id);
+                        //     noc_async_read_one_packet(1, noc_read_addr, l1_write_addr_in1, in1_single_tile_size_bytes, in1_tensor_tile_id & NOC_UNICAST_READ_REQ_VC_RANGE_MASK);
+                        // } else {
+                        //     noc_read_addr = s1.get_noc_addr(in1_tensor_tile_id);
+                        //     noc_async_read_one_packet(noc_read_addr, l1_write_addr_in1, in1_single_tile_size_bytes, in1_tensor_tile_id & NOC_UNICAST_READ_REQ_VC_RANGE_MASK);
+                        // }
+
+
+                        uint64_t noc_read_addr = s1.get_noc_addr(in1_tensor_tile_id);
+                        noc_async_read_one_packet(noc_read_addr, l1_write_addr_in1, in1_single_tile_size_bytes, in1_tensor_tile_id & NOC_UNICAST_READ_REQ_VC_RANGE_MASK);
                         noc_async_read_tile(in1_tensor_tile_id, s1, l1_write_addr_in1);
                     }
                     l1_write_addr_in1 += in1_single_tile_size_bytes;
@@ -170,6 +184,7 @@ void kernel_main() {
             in1_tensor_current_block_start_tile_id += in1_tensor_next_block_stride;
 
             // Barrier! make sure the reads are done
+            // noc_async_read_barrier(1);
             noc_async_read_barrier();
             #ifndef SKIP_MCAST
 

@@ -36,7 +36,8 @@ void kernel_launch() {
 #else
     firmware_kernel_common_init((void tt_l1_ptr *)MEM_NCRISC_INIT_LOCAL_L1_BASE);
 
-    noc_local_state_init(noc_index);
+    noc_local_state_init(0);
+    noc_local_state_init(1);
 
     kernel_profiler::mark_time(CC_KERNEL_MAIN_START);
     kernel_main();

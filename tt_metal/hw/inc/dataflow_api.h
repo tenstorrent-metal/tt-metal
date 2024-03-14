@@ -573,6 +573,78 @@ struct InterleavedAddrGenFast {
     }
 
     FORCE_INLINE
+    std::uint64_t get_noc_addr(const uint32_t noc, const uint32_t id, const uint32_t bank_id, const uint32_t offset = 0) const {
+        // uint32_t bank_id;
+        uint32_t addr;
+        uint32_t noc_xy;
+
+        if constexpr (DRAM) {
+#ifdef IS_NOT_POW2_NUM_DRAM_BANKS
+            // bank_id = umodsi3_const_divisor<NUM_DRAM_BANKS>(id);
+            addr = MUL_WITH_TILE_SIZE((uint)this->data_format, udivsi3_const_divisor<NUM_DRAM_BANKS>(id)) +
+                   this->bank_base_address + offset;
+#else
+            bank_id = id & (NUM_DRAM_BANKS - 1);
+            addr = MUL_WITH_TILE_SIZE((uint)this->data_format, id >> LOG_BASE_2_OF_NUM_DRAM_BANKS) +
+                   this->bank_base_address + offset;
+#endif
+            addr += bank_to_dram_offset[bank_id];
+            noc_xy = dram_bank_to_noc_xy[noc][bank_id];
+        } else {
+#ifdef IS_NOT_POW2_NUM_L1_BANKS
+            bank_id = umodsi3_const_divisor<NUM_L1_BANKS>(id);
+            addr = MUL_WITH_TILE_SIZE((uint)this->data_format, udivsi3_const_divisor<NUM_L1_BANKS>(id)) +
+                   this->bank_base_address + offset;
+#else
+            bank_id = id & (NUM_L1_BANKS - 1);
+            addr = MUL_WITH_TILE_SIZE((uint)this->data_format, id >> LOG_BASE_2_OF_NUM_L1_BANKS) +
+                   this->bank_base_address + offset;
+#endif
+            addr += bank_to_l1_offset[bank_id];
+            noc_xy = l1_bank_to_noc_xy[noc][bank_id];
+        }
+
+        uint64_t noc_addr = get_noc_addr_helper(noc_xy, addr);
+        return noc_addr;
+    }
+
+//     FORCE_INLINE
+//     std::uint64_t get_noc_addr_noc1(const uint32_t id, const uint32_t offset = 0) const {
+//         uint32_t bank_id;
+//         uint32_t addr;
+//         uint32_t noc_xy;
+
+//         if constexpr (DRAM) {
+// #ifdef IS_NOT_POW2_NUM_DRAM_BANKS
+//             bank_id = umodsi3_const_divisor<NUM_DRAM_BANKS>(id);
+//             addr = MUL_WITH_TILE_SIZE((uint)this->data_format, udivsi3_const_divisor<NUM_DRAM_BANKS>(id)) +
+//                    this->bank_base_address + offset;
+// #else
+//             bank_id = id & (NUM_DRAM_BANKS - 1);
+//             addr = MUL_WITH_TILE_SIZE((uint)this->data_format, id >> LOG_BASE_2_OF_NUM_DRAM_BANKS) +
+//                    this->bank_base_address + offset;
+// #endif
+//             addr += bank_to_dram_offset[bank_id];
+//             noc_xy = dram_bank_to_noc_xy[1][bank_id];
+//         } else {
+// #ifdef IS_NOT_POW2_NUM_L1_BANKS
+//             bank_id = umodsi3_const_divisor<NUM_L1_BANKS>(id);
+//             addr = MUL_WITH_TILE_SIZE((uint)this->data_format, udivsi3_const_divisor<NUM_L1_BANKS>(id)) +
+//                    this->bank_base_address + offset;
+// #else
+//             bank_id = id & (NUM_L1_BANKS - 1);
+//             addr = MUL_WITH_TILE_SIZE((uint)this->data_format, id >> LOG_BASE_2_OF_NUM_L1_BANKS) +
+//                    this->bank_base_address + offset;
+// #endif
+//             addr += bank_to_l1_offset[bank_id];
+//             noc_xy = l1_bank_to_noc_xy[1][bank_id];
+//         }
+
+//         uint64_t noc_addr = get_noc_addr_helper(noc_xy, addr);
+//         return noc_addr;
+//     }
+
+    FORCE_INLINE
     void noc_async_read_tile(const uint32_t id, uint32_t dest_addr, const uint32_t offset = 0) const {
         uint32_t bank_id;
         uint32_t src_addr;
@@ -927,6 +999,65 @@ void noc_async_read_one_packet(std::uint64_t src_noc_addr, std::uint32_t dst_loc
 
     DEBUG_STATUS('N', 'A', 'R', 'D');
 }
+
+FORCE_INLINE
+void noc_async_read_one_packet(std::uint32_t noc, std::uint64_t src_noc_addr, std::uint32_t dst_local_l1_addr, std::uint32_t size, std::uint32_t vc=NOC_UNICAST_READ_REQ_VC) {
+    /*
+        Read requests - use static VC
+        Read responses - assigned VCs dynamically
+    */
+
+    DEBUG_STATUS('R', 'P', 'W');
+    while (!noc_cmd_buf_ready(noc, NCRISC_RD_CMD_BUF));
+    DEBUG_STATUS('R', 'P', 'D');
+
+    DEBUG_STATUS('N', 'A', 'R', 'W');
+    DEBUG_SANITIZE_NOC_ADDR(src_noc_addr, size);
+    DEBUG_SANITIZE_WORKER_ADDR(dst_local_l1_addr, size);
+
+    uint32_t noc_rd_cmd_field = NOC_CMD_CPY | NOC_CMD_RD | NOC_CMD_RESP_MARKED | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(vc);
+
+    NOC_CMD_BUF_WRITE_REG(noc, NCRISC_RD_CMD_BUF, NOC_CTRL, noc_rd_cmd_field);
+
+    NOC_CMD_BUF_WRITE_REG(noc, NCRISC_RD_CMD_BUF, NOC_RET_ADDR_LO, dst_local_l1_addr);
+    NOC_CMD_BUF_WRITE_REG(noc, NCRISC_RD_CMD_BUF, NOC_TARG_ADDR_LO, (uint32_t)src_noc_addr);
+    NOC_CMD_BUF_WRITE_REG(noc, NCRISC_RD_CMD_BUF, NOC_TARG_ADDR_MID, src_noc_addr >> 32);
+    NOC_CMD_BUF_WRITE_REG(noc, NCRISC_RD_CMD_BUF, NOC_AT_LEN_BE, size);
+    NOC_CMD_BUF_WRITE_REG(noc, NCRISC_RD_CMD_BUF, NOC_CMD_CTRL, NOC_CTRL_SEND_REQ);
+    noc_reads_num_issued[noc] += 1;
+
+    DEBUG_STATUS('N', 'A', 'R', 'D');
+}
+
+
+// FORCE_INLINE
+// void noc_async_read_one_packet_noc1(std::uint64_t src_noc_addr, std::uint32_t dst_local_l1_addr, std::uint32_t size, std::uint32_t vc=NOC_UNICAST_READ_REQ_VC) {
+//     /*
+//         Read requests - use static VC
+//         Read responses - assigned VCs dynamically
+//     */
+
+//     DEBUG_STATUS('R', 'P', 'W');
+//     while (!noc_cmd_buf_ready(1, NCRISC_RD_CMD_BUF));
+//     DEBUG_STATUS('R', 'P', 'D');
+
+//     DEBUG_STATUS('N', 'A', 'R', 'W');
+//     DEBUG_SANITIZE_NOC_ADDR(src_noc_addr, size);
+//     DEBUG_SANITIZE_WORKER_ADDR(dst_local_l1_addr, size);
+
+//     uint32_t noc_rd_cmd_field = NOC_CMD_CPY | NOC_CMD_RD | NOC_CMD_RESP_MARKED | NOC_CMD_VC_STATIC | NOC_CMD_STATIC_VC(vc);
+
+//     NOC_CMD_BUF_WRITE_REG(1, NCRISC_RD_CMD_BUF, NOC_CTRL, noc_rd_cmd_field);
+
+//     NOC_CMD_BUF_WRITE_REG(1, NCRISC_RD_CMD_BUF, NOC_RET_ADDR_LO, dst_local_l1_addr);
+//     NOC_CMD_BUF_WRITE_REG(1, NCRISC_RD_CMD_BUF, NOC_TARG_ADDR_LO, (uint32_t)src_noc_addr);
+//     NOC_CMD_BUF_WRITE_REG(1, NCRISC_RD_CMD_BUF, NOC_TARG_ADDR_MID, src_noc_addr >> 32);
+//     NOC_CMD_BUF_WRITE_REG(1, NCRISC_RD_CMD_BUF, NOC_AT_LEN_BE, size);
+//     NOC_CMD_BUF_WRITE_REG(1, NCRISC_RD_CMD_BUF, NOC_CMD_CTRL, NOC_CTRL_SEND_REQ);
+//     noc_reads_num_issued[1] += 1;
+
+//     DEBUG_STATUS('N', 'A', 'R', 'D');
+// }
 
 // TODO: write docs
 // this issues only a single packet with size <= NOC_MAX_BURST_SIZE (ie maximum packet size)
@@ -1350,6 +1481,14 @@ FORCE_INLINE
 void noc_async_read_barrier() {
     DEBUG_STATUS('N', 'R', 'B', 'W');
     while (!ncrisc_noc_reads_flushed(noc_index))
+        ;
+    DEBUG_STATUS('N', 'R', 'B', 'D');
+}
+
+FORCE_INLINE
+void noc_async_read_barrier(std::uint32_t noc) {
+    DEBUG_STATUS('N', 'R', 'B', 'W');
+    while (!ncrisc_noc_reads_flushed(noc))
         ;
     DEBUG_STATUS('N', 'R', 'B', 'D');
 }

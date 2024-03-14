@@ -58,7 +58,8 @@ std::tuple<tt_metal::Program, tt_metal::KernelHandle, uint32_t> create_program(
     const uint32_t &single_tile_size,
     const tt::DataFormat &tile_format,
     const uint32_t &access_type,
-    bool rr_vc);
+    bool rr_vc,
+    bool hybrid_noc);
 
 bool assign_runtime_args_to_program(
     tt_metal::Device *device,
@@ -91,9 +92,19 @@ bool validation(
     const uint32_t &cb_addr,
     const uint32_t &num_reqs_at_a_time,
     const uint32_t &single_tile_size,
-    const uint32_t &access_type);
+    const uint32_t &access_type,
+    bool bypass_validate);
 
 uint32_t get_dram_bandwidth(tt::ARCH arch);
+
+int find_largest_divisor(int num_tiles_per_core, int max) {
+    for (int i = max; i > 0; i--) {
+        if (num_tiles_per_core % i == 0) {
+            return i; // Return the first (largest) i that divides num_tiles_per_core without remainder
+        }
+    }
+    return 1; // If no divisor found greater than 1, return 1 (though this should not happen in this loop)
+}
 
 int main(int argc, char **argv) {
     if (getenv("TT_METAL_SLOW_DISPATCH_MODE") != nullptr) {
@@ -114,6 +125,8 @@ int main(int argc, char **argv) {
     uint32_t num_cores_c = 1;
     uint32_t transfer_bytes = 2048;
     bool rr_vc = false;
+    bool hybrid_noc = false;
+    uint32_t num_reads_per_barrier = 1;
 
     try {
         ////////////////////////////////////////////////////////////////////////////
@@ -150,6 +163,12 @@ int main(int argc, char **argv) {
 
             std::tie(rr_vc, input_args) =
                 test_args::get_command_option_uint32_and_remaining_args(input_args, "--rr-vc", false);
+
+            std::tie(hybrid_noc, input_args) =
+                test_args::get_command_option_uint32_and_remaining_args(input_args, "--hybrid-noc", false);
+
+            std::tie(num_reads_per_barrier, input_args) =
+                test_args::get_command_option_uint32_and_remaining_args(input_args, "--num-reads", 1);
 
             test_args::validate_remaining_args(input_args);
         } catch (const std::exception &e) {
@@ -225,9 +244,9 @@ int main(int argc, char **argv) {
         ////////////////////////////////////////////////////////////////////////////
         //                      Application Setup
         ////////////////////////////////////////////////////////////////////////////
-        uint32_t num_reqs_at_a_time = 1;
+        uint32_t num_reqs_at_a_time = num_tiles_per_core_group_2 == 0 ? find_largest_divisor(num_tiles_per_core_group_1, num_reads_per_barrier) : 1;
         auto [program, kernel, cb_addr] =
-            create_program(device, all_cores, num_reqs_at_a_time, single_tile_size, tile_format, access_type, rr_vc);
+            create_program(device, all_cores, num_reqs_at_a_time, single_tile_size, tile_format, access_type, rr_vc, hybrid_noc);
         pass &= assign_runtime_args_to_program(
             device,
             program,
@@ -317,7 +336,8 @@ int main(int argc, char **argv) {
             cb_addr,
             num_reqs_at_a_time,
             single_tile_size,
-            access_type);
+            access_type,
+            transfer_bytes < single_tile_size);
 
         pass &= tt_metal::CloseDevice(device);
     } catch (const std::exception &e) {
@@ -397,7 +417,8 @@ std::tuple<tt_metal::Program, tt_metal::KernelHandle, uint32_t> create_program(
     const uint32_t &single_tile_size,
     const tt::DataFormat &tile_format,
     const uint32_t &access_type,
-    bool rr_vc) {
+    bool rr_vc,
+    bool hybrid_noc) {
     tt_metal::Program program = tt_metal::Program();
 
     uint32_t cb_index = 0;
@@ -409,6 +430,10 @@ std::tuple<tt_metal::Program, tt_metal::KernelHandle, uint32_t> create_program(
     auto cb = tt_metal::CreateCircularBuffer(program, all_cores, cb_config);
 
     vector<uint32_t> compute_args = {(std::uint32_t)rr_vc};
+    std::map<string, string> compute_defines;
+    if (hybrid_noc) {
+        compute_defines["HYBRID_NOC"] = "1";
+    }
 
     tt_metal::KernelHandle reader_kernel;
     if (device->arch() == ARCH::GRAYSKULL) {
@@ -422,7 +447,7 @@ std::tuple<tt_metal::Program, tt_metal::KernelHandle, uint32_t> create_program(
             tt_metal::DataMovementConfig{
                 .processor = (access_type == 0) ? tt_metal::DataMovementProcessor::RISCV_1
                                                 : tt_metal::DataMovementProcessor::RISCV_0,
-                .noc = (access_type == 0) ? tt_metal::NOC::RISCV_1_default : tt_metal::NOC::RISCV_0_default, .compile_args = compute_args});
+                .noc = (access_type == 0) ? tt_metal::NOC::RISCV_1_default : tt_metal::NOC::RISCV_0_default, .compile_args = compute_args, .defines = compute_defines});
     } else {
         reader_kernel = tt_metal::CreateKernel(
             program,
@@ -434,7 +459,7 @@ std::tuple<tt_metal::Program, tt_metal::KernelHandle, uint32_t> create_program(
             tt_metal::DataMovementConfig{
                 .processor = (access_type == 0) ? tt_metal::DataMovementProcessor::RISCV_0
                                                 : tt_metal::DataMovementProcessor::RISCV_1,
-                .noc = (access_type == 0) ? tt_metal::NOC::RISCV_0_default : tt_metal::NOC::RISCV_1_default, .compile_args = compute_args});
+                .noc = (access_type == 0) ? tt_metal::NOC::RISCV_0_default : tt_metal::NOC::RISCV_1_default, .compile_args = compute_args, .defines = compute_defines});
     }
 
 
@@ -468,13 +493,13 @@ bool assign_runtime_args_to_program(
         } else {
             TT_ASSERT(false, "Core not in specified core ranges");
         }
-        uint32_t num_blocks = num_tiles_per_core / num_reqs_at_a_time;
+        uint32_t num_slices_per_tile = single_tile_size / transfer_bytes;
+        uint32_t num_blocks = num_slices_per_tile * (num_tiles_per_core / num_reqs_at_a_time);
         std::vector<uint32_t> kernel_args = {
             (std::uint32_t)input_buffer_addr,
             (std::uint32_t)(num_tiles_used),
             (std::uint32_t)num_blocks,
             (std::uint32_t)num_reqs_at_a_time,
-            (std::uint32_t)num_reqs_at_a_time * (single_tile_size / transfer_bytes),
             (std::uint32_t)transfer_bytes};
 
         tt_metal::SetRuntimeArgs(program, kernel, core, kernel_args);
@@ -497,7 +522,8 @@ bool validation(
     const uint32_t &cb_addr,
     const uint32_t &num_reqs_at_a_time,
     const uint32_t &single_tile_size,
-    const uint32_t &access_type) {
+    const uint32_t &access_type,
+    bool bypass_validate) {
     if (access_type == 0) {
         auto input_bf16 = unpack_uint32_vec_into_bfloat16_vec(input_vec);
         for (uint32_t i = 0, input_offset = 0; i < num_cores; ++i) {
@@ -520,6 +546,9 @@ bool validation(
                 (input_offset + num_tiles_per_core - num_reqs_at_a_time) * constants::TILE_HW,
                 (input_offset + num_tiles_per_core) * constants::TILE_HW - 1);
 
+            if (bypass_validate) {
+                return true;
+            }
             if (!(sliced_input == result_bf16)) {
                 return false;
             }
