@@ -29,22 +29,24 @@ class TtFalconMLP(nn.Module):
         self.model_config = model_config
 
         layer_name = f"{base_url}.{layer_num}"
+        dense_h_to_4h_str = f"{layer_name}.mlp.dense_h_to_4h.weight"
+        dense_4h_to_h_str = f"{layer_name}.mlp.dense_4h_to_h.weight"
 
         self.dense_h_to_4h_weights = get_weights_cached(
             devices,
             model_config,
-            state_dict,
             tt_cache_path,
-            weight_cache_str=f"{layer_name}.mlp.dense_h_to_4h.weight",
+            dense_h_to_4h_str,
             weight_config_str="DENSE_H_TO_4H_MM_WEIGHTS",
+            weights_to_cache=torch.transpose(state_dict[dense_h_to_4h_str], -2, -1),
         )
         self.dense_4h_to_h_weights = get_weights_cached(
             devices,
             model_config,
-            state_dict,
             tt_cache_path,
-            weight_cache_str=f"{layer_name}.mlp.dense_4h_to_h.weight",
+            dense_4h_to_h_str,
             weight_config_str="DENSE_4H_TO_H_MM_WEIGHTS",
+            weights_to_cache=torch.transpose(state_dict[dense_4h_to_h_str], -2, -1),
         )
 
     def forward(self, x: tt_lib.tensor.Tensor) -> tt_lib.tensor.Tensor:
