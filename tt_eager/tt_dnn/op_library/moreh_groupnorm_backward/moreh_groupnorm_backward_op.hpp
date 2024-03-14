@@ -39,7 +39,8 @@ struct MorehGroupNormBackwardInputGrad {
     operation::ProgramWithCallbacks create_program(
         const std::vector<Tensor> &input_tensors,
         const std::vector<std::optional<const Tensor>> &optional_input_tensors,
-        std::vector<Tensor> &output_tensors) const;
+        std::vector<Tensor> &output_tensors,
+        const std::vector<std::optional<Tensor>> &optional_output_tensors) const;
 
     static constexpr auto attribute_names = std::make_tuple("num_groups", "input_grad_mem_config");
     const auto attribute_values() const {
@@ -53,7 +54,7 @@ operation::ProgramWithCallbacks moreh_groupnorm_backward_input_grad_impl(
     const Tensor &mean,
     const Tensor &rstd,
     uint32_t num_groups,
-    Tensor &input_grad,
+    const Tensor &input_grad,
     const std::optional<const Tensor> gamma = std::nullopt);
 
 Tensor moreh_groupnorm_backward_input_grad(

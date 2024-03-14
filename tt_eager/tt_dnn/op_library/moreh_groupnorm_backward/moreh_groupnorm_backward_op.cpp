@@ -98,13 +98,15 @@ std::vector<Tensor> MorehGroupNormBackwardInputGrad::create_output_tensors(
 operation::ProgramWithCallbacks MorehGroupNormBackwardInputGrad::create_program(
     const std::vector<Tensor> &input_tensors,
     const std::vector<std::optional<const Tensor>> &optional_input_tensors,
-    std::vector<Tensor> &output_tensors) const {
+    std::vector<Tensor> &output_tensors,
+    const std::vector<std::optional<Tensor>> &optional_output_tensors) const {
     const auto &output_grad = input_tensors.at(0);
     const auto &input = input_tensors.at(1);
     const auto &mean = input_tensors.at(2);
     const auto &rstd = input_tensors.at(3);
 
-    auto &input_grad = output_tensors.at(0);
+    const auto &input_grad =
+        (optional_output_tensors.at(0).has_value()) ? (optional_output_tensors.at(0).value()) : (output_tensors.at(0));
 
     auto gamma = optional_input_tensors.at(0);
 
