@@ -70,7 +70,7 @@ class Command {
     Command() {}
     virtual void process() {};
     virtual EnqueueCommandType type() = 0;
-    virtual const DeviceCommand assemble_device_command(uint32_t buffer_size) = 0;
+    virtual const void assemble_device_commands(uint32_t buffer_size) = 0;
 };
 
 class EnqueueReadBufferCommand : public Command {
@@ -79,11 +79,10 @@ class EnqueueReadBufferCommand : public Command {
     void* dst;
     uint32_t pages_to_read;
     uint32_t command_queue_id;
-    uint32_t event;
     bool stall;
     CoreType dispatch_core_type;
+    static std::vector<uint32_t> commands;
 
-    virtual const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) = 0;
    protected:
     Device* device;
     uint32_t src_page_index;
@@ -96,11 +95,10 @@ class EnqueueReadBufferCommand : public Command {
         void* dst,
         bool stall,
         SystemMemoryManager& manager,
-        uint32_t event,
         uint32_t src_page_index = 0,
         std::optional<uint32_t> pages_to_read = std::nullopt);
 
-    const DeviceCommand assemble_device_command(uint32_t dst);
+    const void assemble_device_commands(uint32_t dst);
 
     void process();
 
@@ -110,9 +108,6 @@ class EnqueueReadBufferCommand : public Command {
 };
 
 class EnqueueReadInterleavedBufferCommand : public EnqueueReadBufferCommand {
-   private:
-    const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) override;
-
    public:
     EnqueueReadInterleavedBufferCommand(
         uint32_t command_queue_id,
@@ -121,7 +116,6 @@ class EnqueueReadInterleavedBufferCommand : public EnqueueReadBufferCommand {
         void* dst,
         bool stall,
         SystemMemoryManager& manager,
-        uint32_t event,
         uint32_t src_page_index = 0,
         std::optional<uint32_t> pages_to_read = std::nullopt)
             :EnqueueReadBufferCommand(command_queue_id,
@@ -130,16 +124,12 @@ class EnqueueReadInterleavedBufferCommand : public EnqueueReadBufferCommand {
                                 dst,
                                 stall,
                                 manager,
-                                event,
                                 src_page_index,
                                 pages_to_read) {}
 };
 
 
 class EnqueueReadShardedBufferCommand : public EnqueueReadBufferCommand {
-   private:
-    const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) override;
-
    public:
     EnqueueReadShardedBufferCommand(
         uint32_t command_queue_id,
@@ -148,7 +138,6 @@ class EnqueueReadShardedBufferCommand : public EnqueueReadBufferCommand {
         void* dst,
         bool stall,
         SystemMemoryManager& manager,
-        uint32_t event,
         uint32_t src_page_index = 0,
         std::optional<uint32_t> pages_to_read = std::nullopt)
             :EnqueueReadBufferCommand(command_queue_id,
@@ -157,7 +146,6 @@ class EnqueueReadShardedBufferCommand : public EnqueueReadBufferCommand {
                                 dst,
                                 stall,
                                 manager,
-                                event,
                                 src_page_index,
                                 pages_to_read) {}
 };
@@ -168,13 +156,11 @@ class EnqueueWriteBufferCommand : public Command {
    private:
 
     SystemMemoryManager& manager;
-    uint32_t event;
     const void* src;
     uint32_t pages_to_write;
     uint32_t command_queue_id;
     CoreType dispatch_core_type;
 
-    virtual const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) = 0;
    protected:
     Device* device;
     const Buffer& buffer;
@@ -186,11 +172,10 @@ class EnqueueWriteBufferCommand : public Command {
         const Buffer& buffer,
         const void* src,
         SystemMemoryManager& manager,
-        uint32_t event,
         uint32_t dst_page_index = 0,
         std::optional<uint32_t> pages_to_write = std::nullopt);
 
-    const DeviceCommand assemble_device_command(uint32_t src_address);
+    const void assemble_device_commands(uint32_t src_address);
 
     void process();
 
@@ -200,8 +185,6 @@ class EnqueueWriteBufferCommand : public Command {
 };
 
 class EnqueueWriteInterleavedBufferCommand : public EnqueueWriteBufferCommand {
-   private:
-    const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) override;
    public:
     EnqueueWriteInterleavedBufferCommand(
         uint32_t command_queue_id,
@@ -209,7 +192,6 @@ class EnqueueWriteInterleavedBufferCommand : public EnqueueWriteBufferCommand {
         const Buffer& buffer,
         const void* src,
         SystemMemoryManager& manager,
-        uint32_t event,
         uint32_t dst_page_index = 0,
         std::optional<uint32_t> pages_to_write = std::nullopt)
         : EnqueueWriteBufferCommand(
@@ -218,7 +200,6 @@ class EnqueueWriteInterleavedBufferCommand : public EnqueueWriteBufferCommand {
             buffer,
             src,
             manager,
-            event,
             dst_page_index,
             pages_to_write){;}
 
@@ -227,8 +208,6 @@ class EnqueueWriteInterleavedBufferCommand : public EnqueueWriteBufferCommand {
 
 
 class EnqueueWriteShardedBufferCommand : public EnqueueWriteBufferCommand {
-   private:
-    const DeviceCommand create_buffer_transfer_instruction(uint32_t dst_address, uint32_t padded_page_size, uint32_t num_pages) override;
    public:
     EnqueueWriteShardedBufferCommand(
         uint32_t command_queue_id,
@@ -236,7 +215,6 @@ class EnqueueWriteShardedBufferCommand : public EnqueueWriteBufferCommand {
         const Buffer& buffer,
         const void* src,
         SystemMemoryManager& manager,
-        uint32_t event,
         uint32_t dst_page_index = 0,
         std::optional<uint32_t> pages_to_write = std::nullopt)
         : EnqueueWriteBufferCommand(
@@ -245,7 +223,6 @@ class EnqueueWriteShardedBufferCommand : public EnqueueWriteBufferCommand {
             buffer,
             src,
             manager,
-            event,
             dst_page_index,
             pages_to_write){;}
 
@@ -258,15 +235,14 @@ class EnqueueProgramCommand : public Command {
     Device* device;
     const Program& program;
     SystemMemoryManager& manager;
-    uint32_t event;
     bool stall;
     CoreType dispatch_core_type;
     std::optional<std::reference_wrapper<Trace>> trace = {};
 
    public:
-    EnqueueProgramCommand(uint32_t command_queue_id, Device* device, const Program& program, SystemMemoryManager& manager, uint32_t event, bool stall, std::optional<std::reference_wrapper<Trace>> trace);
+    EnqueueProgramCommand(uint32_t command_queue_id, Device* device, const Program& program, SystemMemoryManager& manager, bool stall, std::optional<std::reference_wrapper<Trace>> trace);
 
-    const DeviceCommand assemble_device_command(uint32_t src_address);
+    const void assemble_device_commands(uint32_t src_address);
 
     void process();
 
@@ -275,61 +251,18 @@ class EnqueueProgramCommand : public Command {
     constexpr bool has_side_effects() { return true; }
 };
 
-class EnqueueWrapCommand : public Command {
-   protected:
-    Device* device;
-    SystemMemoryManager& manager;
-    uint32_t command_queue_id;
-
-   public:
-    EnqueueWrapCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager);
-
-    virtual const DeviceCommand assemble_device_command(uint32_t) = 0;
-
-    virtual void process() = 0;
-
-    EnqueueCommandType type() { return EnqueueCommandType::ENQUEUE_WRAP; }
-};
-
-class EnqueueIssueWrapCommand : public EnqueueWrapCommand {
-    public:
-     EnqueueIssueWrapCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager);
-
-     const DeviceCommand assemble_device_command(uint32_t);
-
-     void process();
-
-     constexpr bool has_side_effects() {
-        // This command does not make it to dispatch core, and pre-fetcher can get the next command while dispatcher is still running.
-        return true;
-     }
-};
-
-class EnqueueCompletionWrapCommand : public EnqueueWrapCommand {
-    private:
-     uint32_t event;
-
-    public:
-     EnqueueCompletionWrapCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, uint32_t event);
-
-     const DeviceCommand assemble_device_command(uint32_t);
-
-     void process();
-
-     constexpr bool has_side_effects() { return false; }
-};
-
 class EnqueueRecordEventCommand : public Command {
    private:
     uint32_t command_queue_id;
     Device* device;
     SystemMemoryManager& manager;
-    uint32_t event;
+    uint32_t event_id;
+    static std::vector<uint32_t> commands;
 
    public:
-    EnqueueRecordEventCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, uint32_t event);
+    EnqueueRecordEventCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, uint32_t event_id);
 
-    const DeviceCommand assemble_device_command(uint32_t);
+    const void assemble_device_commands(uint32_t dst_address);
 
     void process();
 
@@ -343,14 +276,13 @@ class EnqueueWaitForEventCommand : public Command {
     uint32_t command_queue_id;
     Device* device;
     SystemMemoryManager& manager;
-    uint32_t event;
     const Event& sync_event;
     CoreType dispatch_core_type;
 
    public:
-    EnqueueWaitForEventCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, uint32_t event, const Event& sync_event);
+    EnqueueWaitForEventCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, const Event& sync_event);
 
-    const DeviceCommand assemble_device_command(uint32_t);
+    const void assemble_device_commands(uint32_t);
 
     void process();
 
@@ -453,7 +385,6 @@ class HWCommandQueue {
 
     ~HWCommandQueue();
 
-    CoreCoord issue_queue_reader_core;
     CoreCoord completion_queue_writer_core;
     volatile bool is_dprint_server_hung();
     volatile bool is_noc_hung();
@@ -494,8 +425,6 @@ class HWCommandQueue {
     void enqueue_wait_for_event(std::shared_ptr<Event> event);
     void enqueue_trace();
     void finish();
-    void issue_wrap();
-    void completion_wrap(uint32_t event);
     void launch(launch_msg_t& msg);
     friend void EnqueueTraceImpl(CommandQueue& cq);
     friend void EnqueueProgramImpl(CommandQueue& cq, std::variant < std::reference_wrapper<Program>, std::shared_ptr<Program> > program, bool blocking);
