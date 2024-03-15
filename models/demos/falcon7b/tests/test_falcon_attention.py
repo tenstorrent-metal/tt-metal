@@ -84,6 +84,10 @@ def run_test_FalconAttention_inference(
     ) = get_rand_falcon_inputs(
         llm_mode, seq_len, batch, kv_cache_len, devices, global_batch, head_dim, max_position_embeddings, configuration
     )
+    if layer_past is not None:
+        layer_past = layer_past[0]
+        layer_past = (layer_past[0].squeeze(1), layer_past[1].squeeze(1))
+    tt_layer_past = tt_layer_past[0]
 
     # PyTorch output --------------------------------------------------------------------
     pytorch_FalconAttention_model = PytorchFalconAttentionModel(hugging_face_reference_model, layer_num)

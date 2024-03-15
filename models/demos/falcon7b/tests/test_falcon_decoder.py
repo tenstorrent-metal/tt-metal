@@ -20,7 +20,7 @@ from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_allclose,
     comp_pcc,
 )
-from models.utility_functions import torch2tt_tensor, tt2torch_tensor, get_devices_for_t3000
+from models.utility_functions import get_devices_for_t3000
 
 
 class PytorchFalconDecoderModel(torch.nn.Module):
@@ -85,6 +85,10 @@ def run_test_FalconDecoder_inference(
     ) = get_rand_falcon_inputs(
         llm_mode, seq_len, batch, kv_cache_len, devices, global_batch, head_dim, max_position_embeddings, configuration
     )
+    if layer_past is not None:
+        layer_past = layer_past[0]
+        layer_past = (layer_past[0].squeeze(1), layer_past[1].squeeze(1))
+    tt_layer_past = tt_layer_past[0]
 
     # PyTorch output =======================================================================
     pytorch_FalconDecoder_model = PytorchFalconDecoderModel(hugging_face_reference_model, layer_num)
