@@ -6,6 +6,7 @@ import tt_lib
 import torch.nn as nn
 import math
 import ttnn
+import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 from models.utility_functions import (
@@ -30,6 +31,12 @@ from models.experimental.functional_stable_diffusion.tt2.ttnn_functional_downblo
 from models.experimental.functional_stable_diffusion.tt2.ttnn_functional_upblock_2d import upblock_2d
 from models.experimental.functional_stable_diffusion.tt2.ttnn_functional_utility_functions import (
     run_ttnn_conv_with_pre_and_post_tensor_formatting,
+    pre_process_input_new,
+    post_process_output,
+    permute_conv_parameters,
+    pad_group_norm_weight,
+    pre_process_input,
+    update_gn_expected_input_sharded_memory_config_and_grid_size,
 )
 
 fp32_accum = True
@@ -131,9 +138,9 @@ class UNet2DConditionModel:
             weights_dtype=ttnn.bfloat8_b,
             conv_blocking_and_parallelization_config_override={},
             use_shallow_conv_variant=False,
-            enable_auto_formatting=True,
             compute_kernel_config=conv_compute_kernel_config,
         )
+        # breakpoint()
         self.down_blocks = []
         input_height = self.conv_in.output_height
         input_width = self.conv_in.output_height
@@ -142,7 +149,12 @@ class UNet2DConditionModel:
         for i, down_block_type in enumerate(down_block_types):
             if down_block_type == "CrossAttnDownBlock2D":
                 down_block = cross_attention_down_block_2d(
-                    device, parameters.down_blocks[i], reader_patterns_cache, batch_size, input_height, input_width
+                    device,
+                    parameters.down_blocks[i],
+                    reader_patterns_cache,
+                    batch_size,
+                    input_height,
+                    input_width,
                 )
             elif down_block_type == "DownBlock2D":
                 down_block = downblock2d(
@@ -220,10 +232,24 @@ class UNet2DConditionModel:
             weights_dtype=ttnn.bfloat8_b,
             conv_blocking_and_parallelization_config_override={"act_block_h": 64},
             use_shallow_conv_variant=False,
-            enable_auto_formatting=True,
+            # enable_auto_formatting=True,
             deallocate_activation=True,
             compute_kernel_config=conv_compute_kernel_config,
         )
+
+        self.fallback_on_groupnorm = os.environ.get("FALLBACK_ON_GROUPNORM", "0") == "1"
+        self.norm_num_groups = 32
+        if not self.fallback_on_groupnorm:
+            parameters.conv_norm_out.weight = pad_group_norm_weight(
+                parameters.conv_norm_out.weight, self.norm_num_groups, self.conv_out.in_channels
+            )
+            parameters.conv_norm_out.bias = pad_group_norm_weight(
+                parameters.conv_norm_out.bias, self.norm_num_groups, self.conv_out.in_channels
+            )
+        self.group_norm_grid_size = list(self.conv_out.conv.grid_size)
+        self.gn_expected_input_sharded_memory_config = self.conv_out.conv.input_sharded_memory_config
+        # breakpoint()
+        # self.gn_expected_input_sharded_memory_config = update_gn_expected_input_sharded_memory_config_and_grid_size(self.gn_expected_input_sharded_memory_config, self.group_norm_grid_size, self.norm_num_groups, in_channels)
 
         self.emb = TtTimestepEmbedding(parameters.time_embedding)
 
@@ -320,15 +346,10 @@ class UNet2DConditionModel:
             class_emb = class_embedding(class_labels)
             emb = emb + class_emb
 
-        sample = run_ttnn_conv_with_pre_and_post_tensor_formatting(
-            self.device,
-            self.conv_in,
-            sample,
-            self.conv_in.batch_size,
-            self.conv_in.output_height,
-            self.conv_in.output_width,
-            self.conv_in.out_channels,
-        )
+        # sample in l1 interelaved and tiled and nhwc
+        sample = ttnn.to_memory_config(sample, self.conv_in.conv.input_sharded_memory_config)
+        sample = self.conv_in(sample)
+        sample = ttnn.reallocate(sample)  # TODO: Test remove
 
         # con_in completes
 
@@ -339,9 +360,11 @@ class UNet2DConditionModel:
             attention_head_dim = (attention_head_dim,) * len(self.down_block_types)
 
         # 3.down
-        down_block_res_samples = (sample,)
+        sample_copied_to_dram = ttnn.to_memory_config(sample, ttnn.DRAM_MEMORY_CONFIG)
+        down_block_res_samples = (sample_copied_to_dram,)
         output_channel = block_out_channels[0]
         for i, (down_block_type, down_block) in enumerate(zip(self.down_block_types, self.down_blocks)):
+            print(f"Down block {i}")
             input_channel = output_channel
             output_channel = block_out_channels[i]
             is_final_block = i == len(block_out_channels) - 1
@@ -395,6 +418,7 @@ class UNet2DConditionModel:
             down_block_res_samples += res_samples
 
         # 4.mid
+        print("Mid block")
         sample = self.mid_block(
             hidden_states=sample,
             temb=emb,
@@ -424,6 +448,7 @@ class UNet2DConditionModel:
         only_cross_attention = list(reversed(only_cross_attention))
         output_channel = reversed_block_out_channels[0]
         for i, (up_block_type, up_block) in enumerate(zip(self.up_block_types, self.up_blocks)):
+            print(f"Up block {i}")
             is_final_block = i == len(block_out_channels) - 1
 
             prev_output_channel = output_channel
@@ -446,6 +471,10 @@ class UNet2DConditionModel:
                 upsample_size = down_block_res_samples[-1].shape[2:]
 
             if up_block_type == "CrossAttnUpBlock2D":
+                # breakpoint()
+                ttnn.dump_device_memory_state(self.device, prefix="before_uplock_sample_reallocate_")
+                sample = ttnn.reallocate(sample)
+                ttnn.dump_device_memory_state(self.device, prefix="before_uplock_")
                 sample = up_block(
                     hidden_states=sample,
                     temb=emb,
@@ -495,25 +524,56 @@ class UNet2DConditionModel:
                 ), f"CrossAttnUpBlock2D, and UpBlock2D are the only up blocks implemented! you requested {up_block_type}"
 
         # 6.post-process
-        sample = ttnn.group_norm(
-            sample,
-            num_groups=norm_num_groups,
-            epsilon=norm_eps,
-            weight=self.parameters.conv_norm_out.weight,
-            bias=self.parameters.conv_norm_out.bias,
-        )
+
+        sample = ttnn.to_memory_config(sample, ttnn.L1_MEMORY_CONFIG)
+        sample = ttnn.to_layout(sample, ttnn.ROW_MAJOR_LAYOUT)
+        if self.fallback_on_groupnorm:
+            assert self.norm_num_groups == norm_num_groups
+            # sample = ttnn.to_memory_config(sample, ttnn.L1_MEMORY_CONFIG)
+            sample = ttnn.reshape(
+                sample,
+                (
+                    self.conv_out.batch_size,
+                    self.conv_out.input_height,
+                    self.conv_out.input_width,
+                    self.conv_out.in_channels,
+                ),
+            )
+            sample = ttnn.permute(sample, (0, 3, 1, 2))
+            sample = ttnn.operations.normalization._fallback_group_norm(
+                sample,
+                num_groups=norm_num_groups,
+                weight=self.parameters.conv_norm_out.weight,
+                bias=self.parameters.conv_norm_out.bias,
+                epsilon=norm_eps,
+            )
+
+            sample = pre_process_input(self.device, sample)
+
+        else:
+            sample = ttnn.to_memory_config(sample, self.gn_expected_input_sharded_memory_config)
+            print(f"Starting final group norm")
+            print("GN input shape - ", sample.shape)
+            print(f"Final GN: memory_config={ttnn.get_memory_config(sample)}")
+            sample = ttnn.group_norm(
+                sample,
+                num_groups=norm_num_groups,
+                epsilon=norm_eps,
+                weight=self.parameters.conv_norm_out.weight,
+                bias=self.parameters.conv_norm_out.bias,
+                memory_config=self.conv_out.conv.input_sharded_memory_config,
+                core_grid=ttnn.CoreGrid(
+                    y=self.group_norm_grid_size[1],
+                    x=self.group_norm_grid_size[0],
+                ),
+            )
+        sample = ttnn.to_memory_config(sample, ttnn.L1_MEMORY_CONFIG)
+        sample = ttnn.to_layout(sample, ttnn.TILE_LAYOUT)
         sample = ttnn.silu(sample)
-
-        sample = run_ttnn_conv_with_pre_and_post_tensor_formatting(
-            self.device,
-            self.conv_out,
-            sample,
-            self.conv_out.batch_size,
-            self.conv_out.input_height,
-            self.conv_out.input_width,
-            self.conv_out.out_channels,
-        )
-
+        if ttnn.get_memory_config(sample) != self.conv_out.conv.input_sharded_memory_config:
+            sample = ttnn.to_memory_config(sample, self.conv_out.conv.input_sharded_memory_config)
+        sample = self.conv_out(sample)
+        sample = ttnn.to_memory_config(sample, ttnn.L1_MEMORY_CONFIG)
         # con_in completes
 
         return sample
