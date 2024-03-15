@@ -1926,9 +1926,14 @@ def gen_dim_args(
         rank = len(input_shapes[0])
 
         # select one of the possible combnations
-        choices = [(rank - 1,), (rank - 2,), (rank - 1, rank - 2)]
-        idx = np.random.choice(len(choices), 1)
-        dims = choices[idx.item()]
+        if rank == 4 or rank == 3:
+            choices = [(rank - 1,), (rank - 2,), (rank - 1, rank - 2)]
+            idx = np.random.choice(len(choices), 1)
+            dims = choices[idx.item()]
+        else:
+            choices = [(rank - 1,), (rank - 2,)]
+            idx = np.random.choice(len(choices), 1)
+            dims = choices[idx.item()]
 
         input_info.update({"dim": dims})
         yield input_info
