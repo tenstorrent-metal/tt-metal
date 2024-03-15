@@ -188,7 +188,6 @@ class SystemMemoryManager {
     vector<tt_cxy_pair> prefetcher_cores;
     vector<uint32_t> prefetch_q_dev_ptrs;
     vector<uint32_t> prefetch_q_dev_fences;
-    uint32_t prefetch_q_rd_ptr_addr = L1_UNRESERVED_BASE - 4; // THIS NEEDS TO BE UPDATED
 
    public:
     SystemMemoryManager(chip_id_t device_id, uint8_t num_hw_cqs) :
@@ -226,7 +225,7 @@ class SystemMemoryManager {
             this->prefetcher_cores[cq_id] = issue_queue_reader_core;
             const std::tuple<uint32_t, uint32_t> issue_interface_tlb_data = tt::Cluster::instance().get_tlb_data(tt_cxy_pair(issue_queue_reader_core.chip, tt::get_physical_core_coordinate(issue_queue_reader_core, core_type))).value();
             auto [issue_tlb_offset, issue_tlb_size] = issue_interface_tlb_data;
-            this->issue_byte_addrs[cq_id] = issue_tlb_offset + CQ_ISSUE_WRITE_PTR % issue_tlb_size;
+            this->issue_byte_addrs[cq_id] = issue_tlb_offset /*+ CQ_ISSUE_WRITE_PTR % issue_tlb_size*/;
 
             tt_cxy_pair completion_queue_writer_core = dispatch_core_manager::get(num_hw_cqs).completion_queue_writer_core(device_id, channel, cq_id);
             const std::tuple<uint32_t, uint32_t> completion_interface_tlb_data = tt::Cluster::instance().get_tlb_data(tt_cxy_pair(completion_queue_writer_core.chip, tt::get_physical_core_coordinate(completion_queue_writer_core, core_type))).value();
@@ -460,7 +459,7 @@ class SystemMemoryManager {
         // Wait for space in the FetchQ
         uint32_t fence;
         while (this->prefetch_q_dev_ptrs[cq_id] == this->prefetch_q_dev_fences[cq_id]) {
-            tt::Cluster::instance().read_core(&fence, sizeof(uint32_t), this->prefetcher_cores[cq_id], this->prefetch_q_rd_ptr_addr);
+            tt::Cluster::instance().read_core(&fence, sizeof(uint32_t), this->prefetcher_cores[cq_id], CQ_PREFETCH_Q_RD_PTR);
             this->prefetch_q_dev_fences[cq_id] = fence;
         }
 
@@ -471,7 +470,7 @@ class SystemMemoryManager {
             this->prefetch_q_dev_ptrs[cq_id] = prefetch_q_base;
 
             while (this->prefetch_q_dev_ptrs[cq_id] == this->prefetch_q_dev_fences[cq_id]) {
-                tt::Cluster::instance().read_core(&fence, sizeof(uint32_t), this->prefetcher_cores[cq_id], this->prefetch_q_rd_ptr_addr);
+                tt::Cluster::instance().read_core(&fence, sizeof(uint32_t), this->prefetcher_cores[cq_id], CQ_PREFETCH_Q_RD_PTR);
                 this->prefetch_q_dev_fences[cq_id] = fence;
             }
         }
@@ -479,7 +478,9 @@ class SystemMemoryManager {
 
     void fetch_queue_push_back(uint32_t command_size_B, const uint8_t cq_id) {
         uint32_t command_size_16B = command_size_B << 4;
+        // can't use fast_write_callable?
         tt::Cluster::instance().write_core((void *)&command_size_16B, sizeof(uint16_t), this->prefetcher_cores[cq_id], this->prefetch_q_dev_ptrs[cq_id], true);
         this->prefetch_q_dev_ptrs[cq_id] += sizeof(uint16_t);
+        tt_driver_atomics::sfence();
     }
 };
