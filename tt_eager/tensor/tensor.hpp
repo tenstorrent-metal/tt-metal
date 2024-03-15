@@ -31,7 +31,7 @@ struct Tensor {
         ttnn::Shape shape;
         DataType dtype;
         Layout layout;
-
+        bool metadata_populated = false;
         TensorAttributes(const Storage storage, const ttnn::Shape shape, DataType dtype, Layout layout) : storage(storage), shape(shape), dtype(dtype), layout(layout) {}
         TensorAttributes() : shape({0xff, 0xff, 0xff, 0xff}), dtype(DataType::INVALID), layout(Layout::INVALID) {}
         ~TensorAttributes() = default;
@@ -40,7 +40,9 @@ struct Tensor {
     // Shared pointer to all attributes associated with this tensor
     // Can be safely passed between threads when the tensor is copied
     std::shared_ptr<TensorAttributes> tensor_attributes;
-
+    // Tensor gets worker queue handle through the device
+    Device* worker = nullptr;
+    bool deallocate_through_destructor = false;
     // ======================================================================================
     //                                  Hi Level APIs
     // ======================================================================================
@@ -48,9 +50,10 @@ struct Tensor {
     Tensor(const Storage storage, const Shape shape, DataType dtype, Layout layout);
 
     // Default constructor to initialize empty tensor
-    Tensor() : tensor_attributes(std::make_shared<TensorAttributes>()) {}
+    Tensor(Device* worker = nullptr) : tensor_attributes(std::make_shared<TensorAttributes>()), worker(worker) {}
 
     Tensor(const Tensor &other) = default;
+
     Tensor &operator=(const Tensor &other) = default;
 
     Tensor(Tensor &&other) = default;
@@ -58,7 +61,11 @@ struct Tensor {
 
     ~Tensor();
 
+    void deepcopy(const Tensor& other);
+
     void deallocate(bool force = false);
+
+    Device* get_worker_handle(bool blocking = false) const;
 
     Tensor to(
         Device *target_device,
@@ -101,13 +108,13 @@ struct Tensor {
     // ======================================================================================
     //                                      Getters
     // ======================================================================================
-    const TensorAttributes& get_attr() const { return *tensor_attributes; }
+    const TensorAttributes& get_attr() const;
     const Storage &get_storage() const;
-    const Shape &get_legacy_shape() const { return this->get_attr().shape.value(); }
-    const ttnn::Shape &get_shape() const { return this->get_attr().shape; }
-    const DataType& get_dtype() const { return this->get_attr().dtype; }
-    const Layout& get_layout() const { return this->get_attr().layout; }
-
+    const Shape &get_legacy_shape() const;
+    const ttnn::Shape &get_shape() const;
+    const DataType& get_dtype() const;
+    const Layout& get_layout() const;
+    bool metadata_populated() const;
 
     // ======================================================================================
     //                                      Setters

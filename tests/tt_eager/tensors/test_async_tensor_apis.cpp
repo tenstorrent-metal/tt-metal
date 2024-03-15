@@ -9,6 +9,7 @@
 #include "tensor/owned_buffer.hpp"
 #include "tensor/owned_buffer_functions.hpp"
 #include "tests/tt_metal/tt_metal/unit_tests_common/common/common_fixture.hpp"
+#include "tt_dnn/op_library/eltwise_binary/eltwise_binary_op.hpp"
 #include "common/bfloat16.hpp"
 #include "common/constants.hpp"
 
@@ -54,6 +55,7 @@ TEST_F(CommonFixture, TestTensorOwnershipSanity) {
         readback_tensor.set_shape(thread_local_tensor.get_shape());
         readback_tensor.set_dtype(thread_local_tensor.get_dtype());
         readback_tensor.set_layout(thread_local_tensor.get_layout());
+        readback_tensor.tensor_attributes->metadata_populated = true;
         // Ensure that the readback buffer is owned inside and outside the lambda
         std::visit([](auto&& storage) {
             using T = std::decay_t<decltype(storage)>;
@@ -91,6 +93,51 @@ TEST_F(CommonFixture, TestTensorOwnershipSanity) {
     EXPECT_EQ(readback_tensor.get_dtype(), DataType::FLOAT32);
     EXPECT_EQ(readback_tensor.get_layout(), Layout::ROW_MAJOR);
     EXPECT_EQ(readback_tensor.get_shape(), ttnn::Shape(Shape({1, 1, 32, 128})));
+}
+
+TEST_F(CommonFixture, TestAsyncEltwiseBinary) {
+    Device* device = this->devices_[0];
+    device->set_worker_mode(Device::WorkerQueueMode::ASYNCHRONOUS);
+    // Initialize tensors and move them to DRAM
+    int num_loops = 1000;
+    auto slow_dispatch_mode = getenv("TT_METAL_SLOW_DISPATCH_MODE");
+    if (slow_dispatch_mode) {
+        // Times out on CI with 1000 loops and SD (too slow)
+        num_loops = 10;
+    }
+    for (int i = 0; i < num_loops; i++) {
+        Tensor input_tensor_a = tt::numpy::full<float>(Shape({1, 1, 1024, 1024}), static_cast<float>(i), DataType::BFLOAT16).to(device);
+        Tensor input_tensor_b = tt::numpy::full<float>(Shape({1, 1, 1024, 1024}), static_cast<float>(i), DataType::BFLOAT16).to(device);
+        Tensor input_tensor_c = tt::numpy::full<float>(Shape({1, 1, 1024, 1024}), static_cast<float>(i), DataType::BFLOAT16).to(device);
+
+        Tensor output_tensor_device = mul(add(input_tensor_a, input_tensor_b), input_tensor_c);
+        Tensor output_tensor_device_2 = sub(output_tensor_device, input_tensor_c);
+
+        EXPECT_EQ(output_tensor_device.get_shape(), ttnn::Shape(Shape({1, 1, 1024, 1024})));
+        EXPECT_EQ(output_tensor_device.get_dtype(), DataType::BFLOAT16);
+
+        // Simulate user deallocation here -> inserts a sync on worker queue
+        output_tensor_device.deallocate();
+        Tensor output_tensor_host = output_tensor_device_2.cpu();
+        // Verify output data
+        std::visit([](auto&& storage) {
+            using T = std::decay_t<decltype(storage)>;
+            if constexpr (std::is_same_v<T, OwnedStorage>) {
+                std::visit(
+                    [](auto&& buf) {
+                        using buf_type = std::decay_t<decltype(buf)>;
+                        if constexpr (std::is_same_v<buf_type, owned_buffer::Buffer<float>>) {
+                            EXPECT_EQ(buf.use_count(), 1);
+                            for (int j = 0; j < 1024 * 1024; j++) {
+                                EXPECT_EQ(buf[j], 2 * j * j - j);
+                            }
+                        }
+                    },
+                storage.buffer);
+            }
+        }, output_tensor_host.get_storage());
+    }
+    device->set_worker_mode(Device::WorkerQueueMode::SYNCHRONOUS);
 }
 
 TEST_F(CommonFixture, TestTensorAsyncDataMovement) {
@@ -140,6 +187,7 @@ TEST_F(CommonFixture, TestTensorAsyncDataMovement) {
             readback_tensor.set_shape(thread_local_tensor.get_shape());
             readback_tensor.set_dtype(thread_local_tensor.get_dtype());
             readback_tensor.set_layout(thread_local_tensor.get_layout());
+            readback_tensor.tensor_attributes->metadata_populated = true;
             // Ensure that this buffer is currently owned by both the thread_local and read_back tensors
             // This is because we explictly pass in the buffer to a new tensor_attr object
             std::visit([](auto&& storage) {
