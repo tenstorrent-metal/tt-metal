@@ -151,17 +151,19 @@ def vit_embeddings(
     config,
     pixel_values,
     cls_token,
+    position_embeddings,
     *,
     parameters,
 ):
     parameters = parameters.vit.embeddings
-    cls_token = parameters.cls_token
+    # cls_token = parameters.cls_token
+    # position_embeddings = parameters.position_embeddings
 
     patch_embeddings = vit_patch_embeddings(config, pixel_values, parameters=parameters.patch_embeddings)
     embedding_output = ttnn.concat((cls_token, patch_embeddings), dim=1)
 
     embedding_output = ttnn.add(
-        embedding_output, parameters.position_embeddings, memory_config=ttnn.L1_MEMORY_CONFIG, dtype=ttnn.bfloat8_b
+        embedding_output, position_embeddings, memory_config=ttnn.L1_MEMORY_CONFIG, dtype=ttnn.bfloat8_b
     )
     embedding_output = ttnn.to_layout(embedding_output, layout=ttnn.TILE_LAYOUT)
     # Needed to improve PCC in an older commit
@@ -422,9 +424,10 @@ def vit(
     pixel_values,
     attention_mask,
     cls_token,
+    position_embeddings,
     parameters,
 ):
-    embeddings_output = vit_embeddings(config, pixel_values, cls_token, parameters=parameters)
+    embeddings_output = vit_embeddings(config, pixel_values, cls_token, position_embeddings, parameters=parameters)
 
     hidden_states = vit_encoder(
         config,

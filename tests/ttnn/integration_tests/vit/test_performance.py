@@ -138,9 +138,9 @@ def test_performance_vit_encoder(device, use_program_cache, model_name, batch_si
 @pytest.mark.models_performance_bare_metal
 @pytest.mark.models_performance_virtual_machine
 @pytest.mark.parametrize("model_name", ["google/vit-base-patch16-224"])
-@pytest.mark.parametrize("batch_size", [1])
+@pytest.mark.parametrize("batch_size", [8])
 @pytest.mark.parametrize("image_size", [224])
-@pytest.mark.parametrize("sequence_size", [196])
+@pytest.mark.parametrize("sequence_size", [224])
 @pytest.mark.parametrize("functional_vit", [ttnn_functional_vit, ttnn_optimized_vit])
 def test_performance_vit_e2e(
     device, use_program_cache, model_name, batch_size, image_size, sequence_size, functional_vit
@@ -148,22 +148,36 @@ def test_performance_vit_e2e(
     disable_persistent_kernel_cache()
 
     config = transformers.ViTConfig.from_pretrained(model_name)
-    model = transformers.ViTForImageClassification.from_pretrained("google/vit-base-patch16-224")
+    config.num_hidden_layers = 12
+    model = transformers.ViTForImageClassification.from_pretrained("google/vit-base-patch16-224", config=config)
 
     dataset = load_dataset("huggingface/cats-image")
     image = dataset["test"]["image"]
     image_processor = AutoImageProcessor.from_pretrained("google/vit-base-patch16-224")
     torch_pixel_values = image_processor(image, return_tensors="pt").pixel_values.to(torch.bfloat16)
-    # torch_pixel_values = torch_pixel_values.repeat(batch_size, 1, 1, 1)
+    torch_pixel_values = torch_pixel_values.repeat(batch_size, 1, 1, 1)
 
     # cls_token expand to batch_size
     model_state_dict = model.state_dict()
     torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    torch_position_embeddings = model_state_dict["vit.embeddings.position_embeddings"]
     if batch_size > 1:
         torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+        torch_position_embeddings = torch.nn.Parameter(torch_position_embeddings.expand(batch_size, -1, -1))
     else:
         torch_cls_token = torch.nn.Parameter(torch_cls_token)
-    cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device)
+        torch_position_embeddings = torch.nn.Parameter(torch_position_embeddings)
+
+    if functional_vit == ttnn_functional_vit:
+        cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+        position_embeddings = ttnn.from_torch(
+            torch_position_embeddings, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device
+        )
+    elif functional_vit == ttnn_optimized_vit:
+        cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device)
+        position_embeddings = ttnn.from_torch(
+            torch_position_embeddings, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device
+        )
 
     if functional_vit == ttnn_functional_vit:
         tt_model_name = f"ttnn_{model_name}"
@@ -178,8 +192,8 @@ def test_performance_vit_e2e(
         device=device,
     )
 
-    torch_pixel_values = torch_pixel_values.to(torch.bfloat16)
-    pixel_values = ttnn.from_torch(torch_pixel_values, layout=ttnn.TILE_LAYOUT, device=device)
+    torch_pixel_values = torch_pixel_values
+    pixel_values = ttnn.from_torch(torch_pixel_values, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=device)
 
     torch_attention_mask = torch.ones(config.num_hidden_layers, sequence_size, dtype=torch.float32)
     if torch_attention_mask is not None:
@@ -204,6 +218,7 @@ def test_performance_vit_e2e(
             pixel_values,
             head_masks,
             cls_token,
+            position_embeddings,
             parameters=parameters,
         )
         tt_output = ttnn.from_device(tt_output)

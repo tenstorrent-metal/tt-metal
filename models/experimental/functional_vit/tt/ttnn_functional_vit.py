@@ -30,13 +30,13 @@ def vit_patch_embeddings(
 
     pixel_values = ttnn.to_layout(pixel_values, layout=ttnn.ROW_MAJOR_LAYOUT)
 
-    pixel_values = ttnn.reshape(pixel_values, (1, img_c, img_h, patch_count, patch_size))
-    pixel_values = ttnn.reshape(pixel_values, (1, img_c, patch_count, patch_size, patch_count, patch_size))
-    # pixel_values = ttnn.reshape(pixel_values, (1, img_c, patch_count, patch_count, patch_size, patch_size))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, img_h, patch_count, patch_size))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count, patch_size, patch_count, patch_size))
+    # pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count, patch_count, patch_size, patch_size))
     pixel_values = ttnn.permute(pixel_values, (0, 1, 2, 4, 3, 5))
-    pixel_values = ttnn.reshape(pixel_values, (1, img_c, patch_count_sq, patch_size_sq))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_sq, patch_size_sq))
     pixel_values = ttnn.permute(pixel_values, (0, 2, 1, 3))
-    pixel_values = ttnn.reshape(pixel_values, (1, patch_count_sq, patch_size_sq_trpl))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, patch_count_sq, patch_size_sq_trpl))
 
     pixel_values = ttnn.to_layout(pixel_values, layout=ttnn.TILE_LAYOUT)
 
@@ -51,16 +51,18 @@ def vit_embeddings(
     config,
     pixel_values,
     cls_token,
+    position_embeddings,
     *,
     parameters,
 ):
     parameters = parameters.vit.embeddings
     # cls_token = parameters.cls_token
+    # position_embeddings = parameters.position_embeddings
 
     patch_embeddings = vit_patch_embeddings(config, pixel_values, parameters=parameters.patch_embeddings)
     # patch_embeddings = ttnn.to_layout(patch_embeddings, layout=ttnn.TILE_LAYOUT)
     embedding_output = ttnn.concat((cls_token, patch_embeddings), dim=1)
-    embedding_output = embedding_output + parameters.position_embeddings
+    embedding_output = embedding_output + position_embeddings
     # embedding_output = ttnn.pad(embedding_output, ((0, 0), (0, 27), (0, 0)), 0)
 
     return embedding_output
@@ -244,10 +246,11 @@ def vit(
     pixel_values,
     attention_mask,
     cls_token,
+    position_embeddings,
     *,
     parameters,
 ):
-    embeddings_output = vit_embeddings(config, pixel_values, cls_token, parameters=parameters)
+    embeddings_output = vit_embeddings(config, pixel_values, cls_token, position_embeddings, parameters=parameters)
 
     hidden_states = vit_encoder(
         config,

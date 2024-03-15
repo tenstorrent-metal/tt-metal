@@ -76,14 +76,21 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
         custom_preprocessor=ttnn_functional_vit.custom_preprocessor,
     )
 
-    # cls_token expand to batch_size
+    # cls_token & position embeddings expand to batch_size
+    # TODO: pass batch_size to preprocess_model_parameters
     model_state_dict = model.state_dict()
     torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    torch_position_embeddings = model_state_dict["vit.embeddings.position_embeddings"]
     if batch_size > 1:
         torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+        torch_position_embeddings = torch.nn.Parameter(torch_position_embeddings.expand(batch_size, -1, -1))
     else:
         torch_cls_token = torch.nn.Parameter(torch_cls_token)
+        torch_position_embeddings = torch.nn.Parameter(torch_position_embeddings)
     cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+    position_embeddings = ttnn.from_torch(
+        torch_position_embeddings, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device
+    )
 
     pixel_values = ttnn.from_torch(torch_pixel_values, layout=ttnn.TILE_LAYOUT, device=device)
 
@@ -91,6 +98,7 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
         config,
         pixel_values,
         cls_token,
+        position_embeddings,
         parameters=parameters,
     )
     output = ttnn.to_torch(output)
@@ -99,7 +107,7 @@ def test_vit_embeddings(device, model_name, batch_size, image_size, image_channe
     # pad_size = (0, 0, 0, 27)
     # torch_output = torch.nn.functional.pad(torch_output, pad_size, "constant", 0)
 
-    assert_with_pcc(torch_output, torch.squeeze(output, 0), 0.9999)
+    assert_with_pcc(torch_output, torch.squeeze(output, 0), 0.9999)  # 0.99968
 
 
 @skip_for_wormhole_b0()
@@ -200,7 +208,7 @@ def test_vit_output(device, model_name, batch_size, sequence_size):
     )
     output = ttnn.to_torch(output)
 
-    assert_with_pcc(torch_output, output.to(torch_output.dtype), 0.9999)  # 99919
+    assert_with_pcc(torch_output, output.to(torch_output.dtype), 0.9999)  # 9994
 
 
 @skip_for_wormhole_b0()
@@ -234,7 +242,7 @@ def test_vit_layer(device, model_name, batch_size, sequence_size):
     )
     output = ttnn.to_torch(output)
 
-    assert_with_pcc(torch_output, output, 0.9999)  # 0.9956
+    assert_with_pcc(torch_output, output, 0.9999)  # 0.9957
 
 
 @skip_for_wormhole_b0()
@@ -274,7 +282,7 @@ def test_vit_encoder(device, model_name, batch_size, sequence_size):
     )
     output = ttnn.to_torch(output)
 
-    assert_with_pcc(torch_output, output, 0.9999)  # 0.996
+    assert_with_pcc(torch_output, output, 0.9999)  # 0.9294
 
 
 @skip_for_wormhole_b0()
@@ -301,14 +309,21 @@ def test_vit(device, model_name, batch_size, image_size, image_channels):
         custom_preprocessor=ttnn_functional_vit.custom_preprocessor,
     )
 
-    # cls_token expand to batch_size
+    # cls_token & position embeddings expand to batch_size
+    # TODO: pass batch_size to preprocess_model_parameters
     model_state_dict = model.state_dict()
     torch_cls_token = model_state_dict["vit.embeddings.cls_token"]
+    torch_position_embeddings = model_state_dict["vit.embeddings.position_embeddings"]
     if batch_size > 1:
         torch_cls_token = torch.nn.Parameter(torch_cls_token.expand(batch_size, -1, -1))
+        torch_position_embeddings = torch.nn.Parameter(torch_position_embeddings.expand(batch_size, -1, -1))
     else:
         torch_cls_token = torch.nn.Parameter(torch_cls_token)
+        torch_position_embeddings = torch.nn.Parameter(torch_position_embeddings)
     cls_token = ttnn.from_torch(torch_cls_token, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device)
+    position_embeddings = ttnn.from_torch(
+        torch_position_embeddings, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device
+    )
 
     torch_pixel_values = torch_pixel_values.to(torch.bfloat16)
     pixel_values = ttnn.from_torch(torch_pixel_values, layout=ttnn.TILE_LAYOUT, device=device)
@@ -318,8 +333,9 @@ def test_vit(device, model_name, batch_size, image_size, image_channels):
         pixel_values,
         None,
         cls_token,
+        position_embeddings,
         parameters=parameters,
     )
     output = ttnn.to_torch(output)
 
-    assert_with_pcc(torch_output, output[0][0], 0.9999)  # 0.979
+    assert_with_pcc(torch_output, output[0][0], 0.9999)  # 0.9806
