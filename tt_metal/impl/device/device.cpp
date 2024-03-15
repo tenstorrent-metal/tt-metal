@@ -281,7 +281,7 @@ void Device::compile_command_queue_programs() {
     uint32_t dispatch_buffer_base = get_dispatch_buffer_base();
     uint32_t dev_hugepage_base = 0; // what is this????
     uint32_t prefetch_q_base = L1_UNRESERVED_BASE;
-    uint32_t prefetch_q_rd_ptr_addr = L1_UNRESERVED_BASE - 4; // XXXXX hacks and hacks and hacks FIND A SPOT FOR THE FETCH Q
+    uint32_t prefetch_q_rd_ptr_addr = CQ_PREFETCH_Q_RD_PTR;
     uint32_t prefetch_q_size = PREFETCH_Q_ENTRIES * sizeof(uint16_t);
     constexpr uint32_t noc_read_alignment = 32;
     uint32_t cmddat_q_base = prefetch_q_base + ((prefetch_q_size + noc_read_alignment - 1) / noc_read_alignment * noc_read_alignment);
@@ -584,7 +584,6 @@ void Device::configure_command_queue_programs() {
     Program& command_queue_program = *this->command_queue_programs[0];
 
     uint32_t prefetch_q_base = L1_UNRESERVED_BASE;
-    uint32_t prefetch_q_rd_ptr_addr = L1_UNRESERVED_BASE - 4; // XXXXX hacks and hacks and hacks
 
     for (uint8_t cq_id = 0; cq_id < this->num_hw_cqs(); cq_id++) {
         // Reset the host manager's pointer for this command queue
@@ -594,8 +593,6 @@ void Device::configure_command_queue_programs() {
         pointers[HOST_CQ_COMPLETION_WRITE_PTR / sizeof(uint32_t)] = (CQ_START + this->sysmem_manager_->get_issue_queue_size(cq_id) + get_absolute_cq_offset(channel, cq_id, cq_size)) >> 4;
 
         tt::Cluster::instance().write_sysmem(pointers.data(), pointers.size() * sizeof(uint32_t), cq_id * cq_size, mmio_device_id, channel);
-
-
     }
 
     if (this->is_mmio_capable()) {
@@ -620,7 +617,7 @@ void Device::configure_command_queue_programs() {
                 std::vector<uint32_t> prefetch_q_rd_ptr_addr_data = {
                     (uint32_t)(prefetch_q_base + PREFETCH_Q_ENTRIES * sizeof(uint16_t))
                 };
-                detail::WriteToDeviceL1(this, prefetcher_location, prefetch_q_rd_ptr_addr, prefetch_q_rd_ptr_addr_data);
+                detail::WriteToDeviceL1(this, prefetcher_location, CQ_PREFETCH_Q_RD_PTR, prefetch_q_rd_ptr_addr_data);
                 detail::WriteToDeviceL1(this, prefetcher_location, prefetch_q_base, prefetch_q);
 
                 // Initialize completion queue write pointer and read pointer copy
