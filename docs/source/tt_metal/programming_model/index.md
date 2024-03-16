@@ -13,9 +13,9 @@ to write parallel and efficient code with full access to the Tensix hardware via
 
 <img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide5.jpeg">
 
-<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide6.jpeg">
+<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/NOC_Architecture">
 
-<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Screenshot 2024-03-16 at 12.58.50 PM.png">
+<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide6.jpeg">
 
 <img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide7.jpeg">
 
