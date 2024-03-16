@@ -7,7 +7,9 @@ to write parallel and efficient code with full access to the Tensix hardware via
 
 <img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide2.jpeg">
 
-<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide3.jpeg">
+<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide10.jpeg">
+
+<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide11.jpeg">
 
 <img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide4.jpeg">
 
@@ -19,15 +21,11 @@ to write parallel and efficient code with full access to the Tensix hardware via
 
 <img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide7.jpeg">
 
-<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide8.jpeg">
-
 <img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide9.jpeg">
 
-<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide10.jpeg">
-
-<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide11.jpeg">
-
 <img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide12.jpeg">
+
+<img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide8.jpeg">
 
 <img width="1470" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/blob/mbahnas/vit_ttnn_L1_interleaved/docs/source/images/Slide13.jpeg">
 
