@@ -37,6 +37,7 @@ enum CQDispatchCmdId : uint8_t {
     CQ_DISPATCH_CMD_SINK = 7,               // act as a data sink (for testing)
     CQ_DISPATCH_CMD_DEBUG = 8,              // log waypoint data to watcher, checksum
     CQ_DISPATCH_CMD_TERMINATE = 9,          // quit
+    CQ_DISPATCH_CMD_WRITE_EVENT = 10        // write event to host and L1
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -122,6 +123,14 @@ struct CQDispatchWritePackedMulticastSubCmd {
     uint32_t num_mcast_dests;
 } __attribute__((packed));
 
+struct CQDispatchWriteEventCmd {
+    uint8_t pad1;
+    uint16_t pad2;
+    uint32_t pad3;
+    uint32_t pad4;
+    uint32_t event_id;
+} __attribute__((packed));
+
 struct CQDispatchWaitCmd {
     uint8_t pad1;
     uint16_t pad2;
@@ -136,6 +145,7 @@ struct CQDispatchCmd {
         CQDispatchWriteCmd write;
         CQDispatchWritePagedCmd write_paged;
         CQDispatchWritePackedCmd write_packed;
+        CQDispatchWriteEventCmd write_event;
         CQDispatchWaitCmd wait;
         CQGenericDebugCmd debug;
     } __attribute__((packed));
