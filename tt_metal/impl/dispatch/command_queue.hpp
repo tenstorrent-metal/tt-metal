@@ -262,7 +262,7 @@ class EnqueueRecordEventCommand : public Command {
    public:
     EnqueueRecordEventCommand(uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, uint32_t event_id);
 
-    const void assemble_device_commands(uint32_t dst_address);
+    const void assemble_device_commands(uint32_t);
 
     void process();
 

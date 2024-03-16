@@ -264,12 +264,88 @@ std::vector<uint32_t> EnqueueRecordEventCommand::commands;
 EnqueueRecordEventCommand::EnqueueRecordEventCommand(
     uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, uint32_t event_id):
     command_queue_id(command_queue_id), device(device), manager(manager), event_id(event_id) {
+
+    if (this->commands.empty()) {
+        uint32_t stride = align(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), HUGEPAGE_ALIGNMENT);
+
+        CQPrefetchCmd relay_wait;
+        relay_wait.base.cmd_id = CQ_PREFETCH_CMD_RELAY_INLINE;
+        relay_wait.relay_inline.length = sizeof(CQDispatchCmd);
+        relay_wait.relay_inline.stride = stride;
+
+        uint32_t *relay_wait_ptr = (uint32_t *)&relay_wait;
+        for (int i = 0; i < sizeof(CQPrefetchCmd) / sizeof(uint32_t); i++) {
+            this->commands.push_back(*relay_wait_ptr++);
+        }
+
+        CQDispatchCmd dispatch_wait;
+        dispatch_wait.base.cmd_id = CQ_DISPATCH_CMD_WAIT;
+        dispatch_wait.wait.addr = DISPATCH_MESSAGE_ADDR;
+        dispatch_wait.wait.count = 0; // ????? TODO: SHOULD THIS BE NUM WORKERS IN THE LAST OUTSTANDING ENQUEUED PROGRAM?????
+
+        uint32_t *dispatch_wait_ptr = (uint32_t *)&dispatch_wait;
+        for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
+            this->commands.push_back(*dispatch_wait_ptr++);
+        }
+
+        uint32_t pad_size_bytes = stride;
+        for (int i = 0; i < pad_size_bytes / sizeof(uint32_t); i++) {
+            this->commands.push_back(0);
+        }
+
+        CQPrefetchCmd relay_event;
+        relay_event.base.cmd_id = CQ_PREFETCH_CMD_RELAY_INLINE;
+        relay_event.relay_inline.length = sizeof(CQDispatchCmd);
+        relay_event.relay_inline.stride = stride;
+
+        uint32_t *relay_event_ptr = (uint32_t *)&relay_event;
+        for (int i = 0; i < sizeof(CQPrefetchCmd) / sizeof(uint32_t); i++) {
+            this->commands.push_back(*relay_event_ptr++);
+        }
+
+        CQDispatchCmd write_event_cmd;
+        write_event_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_EVENT;
+        write_event_cmd.write_event.event_id = 0;
+
+        uint32_t *write_event_cmd_ptr = (uint32_t *)&write_event_cmd;
+        for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
+            this->commands.push_back(*write_event_cmd_ptr++);
+        }
+
+        for (int i = 0; i < pad_size_bytes / sizeof(uint32_t); i++) {
+            this->commands.push_back(0);
+        }
+    }
 }
 
-const void EnqueueRecordEventCommand::assemble_device_commands(uint32_t dst_address) {
+const void EnqueueRecordEventCommand::assemble_device_commands(uint32_t) {
+    uint32_t write_event_idx = (align(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), HUGEPAGE_ALIGNMENT) + sizeof(CQPrefetchCmd)) / sizeof(uint32_t);
+
+    CQDispatchCmd *write_event_cmd = (CQDispatchCmd*)(this->commands.data() + write_event_idx);
+    write_event_cmd->write_event.event_id = this->event_id;
 }
 
 void EnqueueRecordEventCommand::process() {
+    this->assemble_device_commands(0);
+
+    uint32_t fetch_size_bytes = this->commands.size() * sizeof(uint32_t);
+
+    // move this into the command queue interface
+    TT_ASSERT(fetch_size_bytes <= MAX_PREFETCH_COMMAND_SIZE, "Generated prefetcher command exceeds max command size");
+    TT_ASSERT((fetch_size_bytes >> PREFETCH_Q_LOG_MINSIZE) < 0xFFFF, "FetchQ command too large to represent");
+
+    // Wrap issue queue if necessary
+    if (this->manager.get_issue_queue_write_ptr(this->command_queue_id) + fetch_size_bytes >=
+        this->manager.get_issue_queue_limit(this->command_queue_id)) {
+        this->manager.wrap_issue_queue_wr_ptr(this->command_queue_id);
+    }
+
+    this->manager.fetch_queue_reserve_back(this->command_queue_id);
+
+    uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
+    this->manager.cq_write(this->commands.data(), fetch_size_bytes, write_ptr);
+
+    this->manager.fetch_queue_push_back(fetch_size_bytes, this->command_queue_id);
 }
 
 EnqueueWaitForEventCommand::EnqueueWaitForEventCommand(
@@ -431,16 +507,6 @@ void HWCommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blockin
         uint32_t pages_to_read = std::min(total_pages_to_read, num_pages_available);
         TT_ASSERT(pages_to_read, "There should always be pages to read");
 
-        // MAJOR HACK: SET THE LOCATION WHERE EVENT WILL BE WRITTEN TO SOME RANDOM VALUE SO READ_COMPLETION_Q THREAD CAN POLL ON EVENT
-        uint32_t hack_value = 39;
-        uint32_t relative_addr = completion_q_write_ptr - (DeviceCommand::MAX_HUGEPAGE_SIZE * channel);
-        tt::Cluster::instance().write_sysmem(&hack_value, sizeof(uint32_t), relative_addr, mmio_device_id, channel);
-        tt_driver_atomics::sfence();
-
-        uint32_t rdback_hack;
-        tt::Cluster::instance().read_sysmem(&rdback_hack, sizeof(uint32_t), relative_addr, mmio_device_id, channel);
-        TT_ASSERT(hack_value == rdback_hack);
-
         auto command = EnqueueReadInterleavedBufferCommand(
             this->id, this->device, buffer, dst, this->stall_before_read, this->manager, src_page_index, pages_to_read);
         this->enqueue_command(command, false);
@@ -592,19 +658,18 @@ void HWCommandQueue::enqueue_program(
 void HWCommandQueue::enqueue_record_event(std::shared_ptr<Event> event) {
     ZoneScopedN("HWCommandQueue_enqueue_record_event");
     // this->num_issued_commands++;
-    // // uint32_t command_size = DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
 
-    // // Populate event struct for caller. When async queues are enabled, this is in child thread, so consumers
-    // // of the event must wait for it to be ready (ie. populated) here. Set ready flag last. This couldn't be
-    // // in main thread otherwise event_id selection would get out of order due to main/worker thread timing.
-    // event->cq_id = this->id;
-    // event->event_id = this->manager.get_next_event(this->id);
-    // event->device = this->device;
-    // event->ready = true; // what does this mean???
+    // Populate event struct for caller. When async queues are enabled, this is in child thread, so consumers
+    // of the event must wait for it to be ready (ie. populated) here. Set ready flag last. This couldn't be
+    // in main thread otherwise event_id selection would get out of order due to main/worker thread timing.
+    event->cq_id = this->id;
+    event->event_id = this->manager.get_next_event(this->id);
+    event->device = this->device;
+    event->ready = true; // what does this mean???
 
-    // auto command = EnqueueRecordEventCommand(this->id, this->device, this->manager, event->event_id);
-    // this->enqueue_command(command, false);
-    // this->manager.next_completion_queue_push_back(align(EVENT_PADDED_SIZE, 32), this->id);
+    auto command = EnqueueRecordEventCommand(this->id, this->device, this->manager, event->event_id);
+    this->enqueue_command(command, false);
+    // this->manager.next_completion_queue_push_back(align(EVENT_PADDED_SIZE, 32), this->id); // DO WE NEED THIS????
 }
 
 void HWCommandQueue::enqueue_wait_for_event(std::shared_ptr<Event> event) {
@@ -718,26 +783,9 @@ void HWCommandQueue::read_completion_queue() {
 
 void HWCommandQueue::finish() {
     ZoneScopedN("HWCommandQueue_finish");
-    TT_THROW("Finish is not supported in FD2.0");
-    // tt::log_debug(tt::LogDispatch, "Finish for command queue {}", this->id);
-
-    // if (tt::llrt::OptionsG.get_test_mode_enabled()) {
-    //     while (this->num_issued_commands > this->num_completed_commands) {
-    //         if (DPrintServerHangDetected()) {
-    //             // DPrint Server hang. Mark state and early exit. Assert in main thread.
-    //             this->exit_condition = true;
-    //             this->dprint_server_hang = true;
-    //             return;
-    //         } else if (tt::watcher_server_killed_due_to_error()) {
-    //             // Illegal NOC txn killed watcher. Mark state and early exit. Assert in main thread.
-    //             this->exit_condition = true;
-    //             this->illegal_noc_txn_hang = true;
-    //             return;
-    //         }
-    //     }
-    // } else {
-    //     while (this->num_issued_commands > this->num_completed_commands);
-    // }
+    tt::log_debug(tt::LogDispatch, "Finish for command queue {}", this->id);
+    std::shared_ptr<Event> event = std::make_shared<Event>();
+    this->enqueue_record_event(event);
 }
 
 volatile bool HWCommandQueue::is_dprint_server_hung() {
