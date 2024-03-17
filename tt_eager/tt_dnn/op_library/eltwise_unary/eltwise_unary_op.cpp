@@ -257,18 +257,75 @@ void EltwiseUnary::validate(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor_a = input_tensors.at(0);
     TT_FATAL(input_tensor_a.storage_type() == StorageType::DEVICE, "Operands to eltwise unary need to be on device!");
     TT_FATAL(input_tensor_a.buffer() != nullptr , "Operands to eltwise unary need to be allocated in buffers on device!");
-    TT_FATAL((input_tensor_a.get_layout() == Layout::TILE), "Inputs to eltwise unary must be tilized");
-    TT_FATAL(input_tensor_a.memory_config().memory_layout == TensorMemoryLayout::INTERLEAVED, "Eltwise unary does not currently support sharding");
-    TT_FATAL(this->output_mem_config.memory_layout == TensorMemoryLayout::INTERLEAVED, "Eltwise unary does not currently support sharding");
 }
 
 std::vector<Shape> EltwiseUnary::compute_output_shapes(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor = input_tensors.at(0);
-    return {input_tensor.get_legacy_shape()};
+    if (output_mem_config.is_sharded()){
+        const auto input_shape = input_tensor.get_legacy_shape().without_padding();
+
+        uint32_t out_n = input_shape[0];
+        uint32_t out_c = input_shape[1];
+        uint32_t out_h = input_shape[2];
+        uint32_t out_w = input_shape[3];
+        const auto out_dims = std::vector<uint32_t>({ out_n, out_c, out_h, out_w });
+        auto out_shape = Shape{out_dims};
+
+        return {out_shape};
+    }
+    else{
+        return {input_tensor.get_legacy_shape()};
+    }
 }
 
 std::vector<Tensor> EltwiseUnary::create_output_tensors(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor = input_tensors.at(0);
+    if (output_mem_config.is_sharded()) {
+        if (input_tensor.memory_config().is_sharded()) {
+            auto mem_config = output_mem_config;
+            auto input_shard_spec = input_tensor.memory_config().shard_spec.value();
+            auto output_shape = compute_output_shapes(input_tensors).at(0);
+            if (input_tensor.memory_config().memory_layout == TensorMemoryLayout::HEIGHT_SHARDED) {
+                auto ncores = input_shard_spec.num_cores();
+                array<uint32_t, 2> output_shard_shape = {div_up(output_shape[0] * output_shape[1] * output_shape[2], ncores), output_shape[-1]};
+                auto output_shard_spec = input_shard_spec;
+                output_shard_spec.shape = output_shard_shape;
+                mem_config.shard_spec = output_shard_spec;
+                log_debug(LogOp, "output_shard_shape: {}", output_shard_shape);
+                log_debug(LogOp, "output_shard_spec: {}", output_shard_spec);
+                return {create_sharded_device_tensor(output_shape, input_tensor.get_dtype(), input_tensor.get_layout(), input_tensor.device(), mem_config)};
+            }else if (input_tensor.memory_config().memory_layout == TensorMemoryLayout::WIDTH_SHARDED) {
+                auto ncores = input_shard_spec.num_cores();
+                array<uint32_t, 2> output_shard_shape = {output_shape[0] * output_shape[1] * output_shape[2], div_up(output_shape[-1],ncores)};
+                auto output_shard_spec = input_shard_spec;
+                output_shard_spec.shape = output_shard_shape;
+                mem_config.shard_spec = output_shard_spec;
+                log_debug(LogOp, "output_shard_shape: {}", output_shard_shape);
+                log_debug(LogOp, "output_shard_spec: {}", output_shard_spec);
+                return {create_sharded_device_tensor(output_shape, input_tensor.get_dtype(), input_tensor.get_layout(), input_tensor.device(), mem_config)};
+            }
+             else if (input_tensor.memory_config().memory_layout == TensorMemoryLayout::BLOCK_SHARDED) {
+                auto shard_grid = input_shard_spec.grid.ranges();
+                TT_FATAL(shard_grid.size() == 1, "Block sharded input should have only one CoreRange");
+                auto core_range = *shard_grid.begin();
+                uint32_t ncores_w = core_range.end.x + 1;
+                uint32_t ncores_h = core_range.end.y + 1;
+                // array<uint32_t, 2> output_shard_shape = {output_shape[0] * output_shape[1] * output_shape[2] / ncores_h, output_shape[-1] / ncores_w};
+                // auto output_shard_spec = input_shard_spec;
+                // output_shard_spec.shape = output_shard_shape;
+                // mem_config.shard_spec = output_shard_spec;
+                auto output_shard_spec = mem_config.shard_spec.value();
+                auto output_shard_shape = output_shard_spec.shape;
+                log_debug(LogOp, "ncores_w, ncores_h: {} {}", ncores_w, ncores_h);
+                log_debug(LogOp, "output_shard_shape: {}", output_shard_shape);
+                return {create_sharded_device_tensor(output_shape, input_tensor.get_dtype(), input_tensor.get_layout(), input_tensor.device(), mem_config)};
+            } else {
+                TT_FATAL(false, "input memory config is not HEIGHT or WIDTH or BLOCK sharded");
+            }
+        } else {
+            TT_FATAL(false, "Output memory config is sharded but input memory config is not sharded");
+        }
+    }
     return operation::generic_create_output_tensors(*this, input_tensors, input_tensor.get_dtype(), Layout::TILE, this->output_mem_config);
 }
 

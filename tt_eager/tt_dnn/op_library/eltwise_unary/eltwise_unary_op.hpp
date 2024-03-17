@@ -149,6 +149,12 @@ inline Tensor run_eltwise_unary(
     TT_FATAL(ops_chain.size() > 0, "At least 1 unary op must be specified");
     Shape pad_shape = AutoFormat::pad_to_tile_shape(input_tensor.get_legacy_shape());
     FormatParams input_format_params = {.pad_shape = pad_shape, .pad_value = 0.0, .target_layout = Layout::TILE};
+    if(output_mem_config.is_sharded() && (output_mem_config.memory_layout ==
+        TensorMemoryLayout::HEIGHT_SHARDED || output_mem_config.memory_layout == TensorMemoryLayout::BLOCK_SHARDED || output_mem_config.memory_layout == TensorMemoryLayout::WIDTH_SHARDED)){
+       return operation::run_without_autoformat(
+               EltwiseUnary{ops_chain, output_mem_config}, {input_tensor})
+        .at(0);
+    }
     return operation::run_with_autoformat(
                EltwiseUnary{ops_chain, output_mem_config}, {input_tensor}, {input_format_params}, {Layout::TILE})
         .at(0);
