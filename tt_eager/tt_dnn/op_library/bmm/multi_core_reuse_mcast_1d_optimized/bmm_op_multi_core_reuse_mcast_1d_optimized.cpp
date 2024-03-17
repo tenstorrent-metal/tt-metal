@@ -53,13 +53,13 @@ operation::ProgramWithCallbacks create_program_mcast_in0(
 
     uint32_t in0_block_tiles = per_core_M * in0_block_w;
     uint32_t in0_CB_tiles = in0_block_tiles;
-    if (B * num_blocks > 1) {
+    if (B * num_blocks > 1 && !in0_is_sharded) {
         in0_CB_tiles = in0_CB_tiles * 2; // double buffer
     }
     uint32_t in0_CB_size = in0_CB_tiles * in0_single_tile_size;
     uint32_t in1_block_tiles = per_core_N * in0_block_w;
     uint32_t in1_CB_tiles = in1_block_tiles;
-    if (B * num_blocks > 1) {
+    if (B * num_blocks > 1 && !in0_is_sharded) {
         in1_CB_tiles = in1_CB_tiles * 2; // double buffer
     }
     uint32_t in1_CB_size = in1_CB_tiles * in1_single_tile_size;
