@@ -297,7 +297,7 @@ inline bool LAZY_COMMAND_QUEUE_MODE = false;
 /*
  Used so the host knows how to properly copy data into user space from the completion queue (in hugepages)
 */
-struct IssuedReadData {
+struct ReadBufferDescriptor {
     TensorMemoryLayout buffer_layout;
     uint32_t page_size;
     uint32_t padded_page_size;
@@ -307,7 +307,7 @@ struct IssuedReadData {
     uint32_t num_pages_read;
     uint32_t cur_host_page_id;
 
-    IssuedReadData(Buffer& buffer, uint32_t padded_page_size, void* dst, uint32_t dst_offset, uint32_t num_pages_read, uint32_t cur_host_page_id) {
+    ReadBufferDescriptor(Buffer& buffer, uint32_t padded_page_size, void* dst, uint32_t dst_offset, uint32_t num_pages_read, uint32_t cur_host_page_id) {
         this->buffer_layout = buffer.buffer_layout();
         this->page_size = buffer.page_size();
         this->padded_page_size = padded_page_size;
@@ -321,47 +321,18 @@ struct IssuedReadData {
     }
 };
 
-inline std::mutex issued_read_mutex;
-inline std::mutex completion_wrap_mutex;
+/*
+ Used so host knows data in completion queue is just an event ID
+*/
+struct ReadEventDescriptor {
+    uint32_t event_id;
 
-template <typename T, std::mutex& my_mutex>
-class thread_safe_map {
-    /*
-        Required for maps that are shared between the issue and completion
-        queue threads.
-    */
-    private:
-     std::unordered_map<uint32_t, T> issued_events;
-    public:
-     thread_safe_map<T, my_mutex>() {}
-
-     const T& at(uint32_t event) const {
-        std::lock_guard lock(my_mutex);
-        return this->issued_events.at(event);
-     }
-
-     void emplace(uint32_t event, const T& issued_read_data) {
-        std::lock_guard lock(my_mutex);
-        this->issued_events.emplace(event, issued_read_data);
-     }
-
-     void erase(uint32_t event) {
-        std::lock_guard lock(my_mutex);
-        this->issued_events.erase(event);
-     }
-
-     size_t count(uint32_t event) const {
-        std::lock_guard lock(my_mutex);
-        return this->issued_events.count(event);
-     }
-
-     size_t size() const {
-        std::lock_guard lock(my_mutex);
-        return this->issued_events.size();
-     }
+    ReadEventDescriptor(uint32_t event) {
+        this->event_id = event;
+    }
 };
 
-typedef thread_safe_map<IssuedReadData, issued_read_mutex> IssuedReadMap;
+typedef LockFreeQueue<std::variant<ReadBufferDescriptor, ReadEventDescriptor>> CompletionReaderQueue;
 }
 
 struct AllocBufferMetadata {
@@ -400,16 +371,15 @@ class HWCommandQueue {
     volatile bool exit_condition;
     volatile bool dprint_server_hang = false;
     volatile bool illegal_noc_txn_hang = false;
-    volatile uint32_t num_issued_commands;
-    volatile uint32_t num_completed_commands;
-    detail::IssuedReadMap issued_reads;
-    detail::thread_safe_map<uint32_t, detail::completion_wrap_mutex> issued_completion_wraps;
+    volatile uint32_t num_entries_in_completion_q;  // issue queue writer thread increments this when an issued command is expected back in the completion queue
+    volatile uint32_t num_completed_completion_q_reads; // completion queue reader thread increments this after reading an entry out of the completion queue
+    detail::CompletionReaderQueue issued_completion_q_reads;
 
     Device* device;
 
     CoreType get_dispatch_core_type();
 
-    void copy_into_user_space(uint32_t event, uint32_t read_ptr, chip_id_t mmio_device_id, uint16_t channel);
+    void copy_into_user_space(const detail::ReadBufferDescriptor &read_buffer_descriptor, uint32_t read_ptr, chip_id_t mmio_device_id, uint16_t channel);
     void read_completion_queue();
 
     template <typename T>
