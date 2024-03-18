@@ -8,6 +8,10 @@
 #include <memory>
 #include "tt_metal/common/assert.hpp"
 
+/*
+    Supports single writer, single reader
+*/
+
 template<typename T>
 class LockFreeQueue {
     private:

@@ -22,8 +22,8 @@ static constexpr uint32_t SCRATCH_DB_SIZE = 128 * 1024;
 
 constexpr uint32_t HUGEPAGE_ALIGNMENT = ((1 << PREFETCH_Q_LOG_MINSIZE) > CQ_PREFETCH_CMD_BARE_MIN_SIZE) ? (1 << PREFETCH_Q_LOG_MINSIZE) : CQ_PREFETCH_CMD_BARE_MIN_SIZE;
 
-static constexpr uint32_t LOG_PREFETCH_DISPATCH_TRANSFER_PAGE_SIZE = 12;
-static constexpr uint32_t PREFETCH_DISPATCH_TRANSFER_PAGE_SIZE = 1 << LOG_PREFETCH_DISPATCH_TRANSFER_PAGE_SIZE;
+static constexpr uint32_t LOG_TRANSFER_PAGE_SIZE = 12;
+static constexpr uint32_t TRANSFER_PAGE_SIZE = 1 << LOG_TRANSFER_PAGE_SIZE;
 
 static constexpr uint32_t DISPATCH_BUFFER_LOG_PAGE_SIZE = 12;
 static constexpr uint32_t DISPATCH_BUFFER_SIZE_BLOCKS = 4;
@@ -427,7 +427,7 @@ class SystemMemoryManager {
     }
 
     void completion_queue_pop_front(uint32_t data_read_B, const uint8_t cq_id) {
-        uint32_t data_read_16B = align(data_read_B, 32) >> 4;
+        uint32_t data_read_16B = data_read_B >> 4;
 
         SystemMemoryCQInterface& cq_interface = this->cq_interfaces[cq_id];
         cq_interface.completion_fifo_rd_ptr += data_read_16B;

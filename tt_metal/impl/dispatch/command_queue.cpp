@@ -118,7 +118,7 @@ EnqueueReadBufferCommand::EnqueueReadBufferCommand(
  *  Header: (Optional) CQ_PREFETCH_CMD_STALL to avoid RAW hazards
  *  Payload: (Optional) CQ_PREFETCH_CMD_RELAY_INLINE to relay the dispatch command below
  *  Payload: (Optional) CQ_DISPATCH_CMD_WAIT to avoid RAW hazards
- *  Header: CQ_PREFETCH_CMD_RELAY_INLINE_NOFLUSH instructs prefetcher to relay payload to dispatcher after PREFETCH_DISPATCH_TRANSFER_PAGE_SIZE is read by prefetcher
+ *  Header: CQ_PREFETCH_CMD_RELAY_INLINE_NOFLUSH instructs prefetcher to relay payload to dispatcher after TRANSFER_PAGE_SIZE is read by prefetcher
  *  Paylod: CQ_DISPATCH_CMD_WRITE_HOST instructs dispatcher to write data to host completion queue
  *  Header: CQ_PREFETCH_CMD_RELAY_PAGED instructs prefetcher to relay data from some interleaved buffer to dispatcher
  *  Payload: Empty
@@ -391,8 +391,8 @@ HWCommandQueue::HWCommandQueue(Device* device, uint32_t id) : manager(device->sy
     ZoneScopedN("CommandQueue_constructor");
     this->device = device;
     this->id = id;
-    this->num_issued_commands = 0;
-    this->num_completed_commands = 0;
+    this->num_entries_in_completion_q = 0;
+    this->num_completed_completion_q_reads = 0;
 
     chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
@@ -415,14 +415,11 @@ HWCommandQueue::~HWCommandQueue() {
         this->completion_queue_thread.join();  // We errored out already prior
     } else {
         TT_ASSERT(
-            this->issued_reads.size() == 0,
+            this->issued_completion_q_reads.empty() == 0,
             "There should be no reads in flight after closing our completion queue thread");
         TT_ASSERT(
-            this->issued_completion_wraps.size() == 0,
-            "There should be no completion wraps in flight after closing our completion queue thread");
-        TT_ASSERT(
-            this->num_issued_commands == this->num_completed_commands,
-            "There shouldn't be any commands in flight after closing our completion queue thread. Num uncompleted commands: {}", this->num_issued_commands - this->num_completed_commands);
+            this->num_entries_in_completion_q == this->num_completed_completion_q_reads,
+            "There shouldn't be any commands in flight after closing our completion queue thread. Num uncompleted commands: {}", this->num_entries_in_completion_q - this->num_completed_completion_q_reads);
         this->exit_condition = true;
         this->completion_queue_thread.join();
     }
@@ -475,6 +472,7 @@ void HWCommandQueue::enqueue_read_buffer(std::shared_ptr<Buffer> buffer, void* d
 }
 
 // Read buffer command is enqueued in the issue region and device writes requested buffer data into the completion region
+// THIS NEEDS TO BE UPDATED WHEN INTEGRATING WITH AUSTINS CHANGES!
 void HWCommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blocking) {
     ZoneScopedN("HWCommandQueue_read_buffer");
 
@@ -507,9 +505,9 @@ void HWCommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blockin
             this->id, this->device, buffer, dst, this->stall_before_read, this->manager, src_page_index, pages_to_read);
         this->enqueue_command(command, false);
 
-        // this->issued_reads.emplace(
+        // this->issued_completion_q_reads.emplace(
         //     read_event->event_id,
-        //     detail::IssuedReadData(buffer, padded_page_size, dst, unpadded_dst_offset, pages_to_read, src_page_index));
+        //     detail::ReadBufferDescriptor(buffer, padded_page_size, dst, unpadded_dst_offset, pages_to_read, src_page_index));
 
         uint32_t completion_num_bytes = align(pages_to_read * padded_page_size, 32);
         this->manager.next_completion_queue_push_back(completion_num_bytes, this->id);
@@ -649,7 +647,6 @@ void HWCommandQueue::enqueue_program(
 
 void HWCommandQueue::enqueue_record_event(std::shared_ptr<Event> event) {
     ZoneScopedN("HWCommandQueue_enqueue_record_event");
-    // this->num_issued_commands++;
 
     // Populate event struct for caller. When async queues are enabled, this is in child thread, so consumers
     // of the event must wait for it to be ready (ie. populated) here. Set ready flag last. This couldn't be
@@ -658,6 +655,10 @@ void HWCommandQueue::enqueue_record_event(std::shared_ptr<Event> event) {
     event->event_id = this->manager.get_next_event(this->id);
     event->device = this->device;
     event->ready = true; // what does this mean???
+
+
+    this->issued_completion_q_reads.push(detail::ReadEventDescriptor(event->event_id));
+    this->num_entries_in_completion_q++;
 
     auto command = EnqueueRecordEventCommand(this->id, this->device, this->manager, event->event_id);
     this->enqueue_command(command, false);
@@ -683,9 +684,15 @@ void HWCommandQueue::enqueue_trace() {
     TT_THROW("Not implemented");
 }
 
-void HWCommandQueue::copy_into_user_space(uint32_t event, uint32_t read_ptr, chip_id_t mmio_device_id, uint16_t channel) {
-    const auto& [buffer_layout, page_size, padded_page_size, dev_page_to_host_page_mapping, dst, dst_offset, num_pages_read, cur_host_page_id] =
-        this->issued_reads.at(event);
+void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &read_buffer_descriptor, uint32_t read_ptr, chip_id_t mmio_device_id, uint16_t channel) {
+    const auto& [buffer_layout, page_size, padded_page_size, dev_page_to_host_page_mapping, dst, dst_offset, num_pages_read, cur_host_page_id] = read_buffer_descriptor;
+
+    uint32_t read_data_ptr = read_ptr;
+    if (dst_offset == 0) {
+        // First piece of buffer data written to completion queue will be prepended with the dispatcher command
+        //  because data is inlined with command coming into dispatcher
+        read_data_ptr += align(CQ_DISPATCH_CMD_SIZE, HUGEPAGE_ALIGNMENT);
+    }
 
     uint32_t padded_num_bytes = num_pages_read * padded_page_size;
     if (buffer_layout == TensorMemoryLayout::INTERLEAVED or
@@ -693,10 +700,10 @@ void HWCommandQueue::copy_into_user_space(uint32_t event, uint32_t read_ptr, chi
         void* contiguous_dst = (void*)(uint64_t(dst) + dst_offset);
         if ((page_size % 32) == 0) {
             tt::Cluster::instance().read_sysmem(
-                contiguous_dst, padded_num_bytes, read_ptr + align(EVENT_PADDED_SIZE, 32), mmio_device_id, channel);
+                contiguous_dst, padded_num_bytes, read_data_ptr, mmio_device_id, channel);
         } else {
             uint32_t dst_offset = 0;
-            uint32_t read_src = read_ptr + align(EVENT_PADDED_SIZE, 32);
+            uint32_t read_src = read_data_ptr;
             for (uint32_t offset = 0; offset < padded_page_size * num_pages_read; offset += padded_page_size) {
                 tt::Cluster::instance().read_sysmem(
                     (char*)(uint64_t(contiguous_dst) + dst_offset),
@@ -711,7 +718,7 @@ void HWCommandQueue::copy_into_user_space(uint32_t event, uint32_t read_ptr, chi
         buffer_layout == TensorMemoryLayout::WIDTH_SHARDED or
         buffer_layout == TensorMemoryLayout::BLOCK_SHARDED) {
         uint32_t host_page_id = cur_host_page_id;
-        uint32_t read_src = read_ptr + align(EVENT_PADDED_SIZE, 32);
+        uint32_t read_src = read_data_ptr;
         for (uint32_t offset = 0; offset < padded_page_size * num_pages_read; offset += padded_page_size) {
             uint32_t device_page_id = dev_page_to_host_page_mapping[host_page_id];
             void* page_dst = (void*)(uint64_t(dst) + device_page_id * page_size);
@@ -720,8 +727,9 @@ void HWCommandQueue::copy_into_user_space(uint32_t event, uint32_t read_ptr, chi
             host_page_id++;
         }
     }
-    this->manager.completion_queue_pop_front(padded_num_bytes, this->id);
-    this->issued_reads.erase(event);
+
+    uint32_t transfer_bytes_read = num_pages_read * TRANSFER_PAGE_SIZE;
+    this->manager.completion_queue_pop_front(transfer_bytes_read, this->id);
 }
 
 void HWCommandQueue::read_completion_queue() {
@@ -729,43 +737,42 @@ void HWCommandQueue::read_completion_queue() {
     chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(this->device->id());
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(this->device->id());
     while (true) {
-        if (this->num_issued_commands > this->num_completed_commands) {
-            uint32_t num_events_to_read = this->num_issued_commands - this->num_completed_commands;
-            std::cout << "num evvents to read " << num_events_to_read << std::endl;
+        if (this->num_entries_in_completion_q > this->num_completed_completion_q_reads) {
+            uint32_t num_events_to_read = this->num_entries_in_completion_q - this->num_completed_completion_q_reads;
             for (uint32_t i = 0; i < num_events_to_read; i++) {
-                // this->manager.completion_queue_wait_front(this->id, this->exit_condition); // CQ DISPATCHER IS NOT HANDSHAKING WITH HOST RN
-                uint32_t rd_hack = 39;
-                uint32_t read_ptr = this->manager.get_completion_queue_read_ptr(this->id);
-                while (rd_hack != 0) { // poll for first event
-                    // std::cout << "never reached condition" << std::endl;
-                    tt::Cluster::instance().read_sysmem(&rd_hack, 4, read_ptr, mmio_device_id, channel);
-                }
 
-                std::cout << "GOT HERE" << std::endl;
+                std::variant<detail::ReadBufferDescriptor, detail::ReadEventDescriptor> read_descriptor = *(this->issued_completion_q_reads.pop());
+
+                this->manager.completion_queue_wait_front(this->id, this->exit_condition); // CQ DISPATCHER IS NOT HANDSHAKING WITH HOST RN
 
                 if (this->exit_condition) {  // Early exit
                     return;
                 }
-                uint32_t event;
 
-                uint32_t read_toggle = this->manager.get_completion_queue_read_toggle(this->id);
-                tt::Cluster::instance().read_sysmem(&event, 4, read_ptr, mmio_device_id, channel);
+                uint32_t read_ptr = this->manager.get_completion_queue_read_ptr(this->id);
 
-                std::cout << "got event: " << event << std::endl;
-
-                if (this->issued_completion_wraps.count(event)) {
-                    this->manager.wrap_completion_queue_rd_ptr(this->id);
-                    this->manager.send_completion_queue_read_ptr(this->id);
-                    this->issued_completion_wraps.erase(event);
-                } else {
-                    if (this->issued_reads.count(event)) {
-                        this->copy_into_user_space(event, read_ptr, mmio_device_id, channel);
-                    }
-                    this->manager.completion_queue_pop_front(align(EVENT_PADDED_SIZE, 32), this->id);
-                }
-                this->manager.set_last_completed_event(this->id, event);
+                std::visit(
+                    [&](auto&& read_descriptor)
+                    {
+                        using T = std::decay_t<decltype(read_descriptor)>;
+                        if constexpr (std::is_same_v<T, detail::ReadBufferDescriptor>) {
+                            std::cout << "got read buffer descriptor" << std::endl;
+                            this->copy_into_user_space(read_descriptor, read_ptr, mmio_device_id, channel);
+                        }
+                        else if constexpr (std::is_same_v<T, detail::ReadEventDescriptor>) {
+                            std::cout << "got read event descriptor" << std::endl;
+                            uint32_t event_read_ptr = read_ptr + align(CQ_DISPATCH_CMD_SIZE, HUGEPAGE_ALIGNMENT); // add offset to read pointer because dispatch kernel always writes command + data back
+                            uint32_t event_completed;
+                            tt::Cluster::instance().read_sysmem(&event_completed, 4, event_read_ptr, mmio_device_id, channel);
+                            TT_ASSERT(event_completed == read_descriptor.event_id, "Event Order Issue: expected to read back completion signal for event {} but got {}!", read_descriptor.event_id, event_completed);
+                            this->manager.completion_queue_pop_front(TRANSFER_PAGE_SIZE, this->id);
+                            this->manager.set_last_completed_event(this->id, event_completed);
+                        }
+                    },
+                    read_descriptor
+                );
             }
-            this->num_completed_commands += num_events_to_read;
+            this->num_completed_completion_q_reads += num_events_to_read;
         } else if (this->exit_condition) {
             return;
         }
