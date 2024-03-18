@@ -76,11 +76,7 @@ def run_test_FalconModel_inference(
 
     # Generate dummy kv_cache --------------------------------------------------------------
     (
-        _,
-        _,
         past_key_values,
-        _,
-        _,
         tt_layer_past,
         kv_len,
     ) = get_rand_falcon_inputs(
@@ -94,6 +90,7 @@ def run_test_FalconModel_inference(
         max_position_embeddings,
         configuration,
         num_layers=num_layers,
+        generate_attention_inputs=False,
     )
 
     # Prepare output -----------------------------------------------------------------------

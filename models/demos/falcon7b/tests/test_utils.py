@@ -13,6 +13,7 @@ def get_rand_falcon_inputs(
     max_position_embeddings,
     configuration,
     num_layers=1,
+    generate_attention_inputs=True,
 ):
     # Generate input, attention_mask, and kv_cache --------------------------------------
     # TODO: Generate attention_mask on device
@@ -24,8 +25,9 @@ def get_rand_falcon_inputs(
         assert q_len % 32 == 0, "For prefill, seq_len must be multiple of 32!"
         assert kv_cache_len == 0, "For prefill, no kv_cache is passed in!"
 
-        attention_input = (torch.rand(global_batch, q_len, configuration.hidden_size) * 2) - 1
-        attention_mask_bool = torch.ones(global_batch, 1, q_len, kv_len, dtype=bool).triu(diagonal=1)
+        if generate_attention_inputs:
+            attention_input = (torch.rand(global_batch, q_len, configuration.hidden_size) * 2) - 1
+            attention_mask_bool = torch.ones(global_batch, 1, q_len, kv_len, dtype=bool).triu(diagonal=1)
         layer_past = None
 
         tt_layer_past = ()
@@ -33,7 +35,7 @@ def get_rand_falcon_inputs(
             tt_layer_past_cur = []
             for i, device in enumerate(devices):
                 # Generate kvcache for each layer and attention mask once
-                if layer == 0:
+                if generate_attention_inputs and layer == 0:
                     attention_input_i = attention_input[batch * i : batch * (i + 1)]
                     attention_mask_bool_i = attention_mask_bool[batch * i : batch * (i + 1)]
                     tt_attention_input.append(torch2tt_tensor(attention_input_i.unsqueeze(1), device))
@@ -55,9 +57,10 @@ def get_rand_falcon_inputs(
         assert batch % 32 == 0, "For decode, batch must be multiple of 32!"
         assert q_len == 1, "For decode, q_len must be 1!"
 
-        attention_input = (torch.rand(global_batch, q_len, configuration.hidden_size) * 2) - 1
-        # attention_input = (torch.rand(batch, q_len, 4544) * 2) - 1
-        attention_mask_bool = torch.zeros(global_batch, 1, q_len, kv_len, dtype=bool)
+        if generate_attention_inputs:
+            attention_input = (torch.rand(global_batch, q_len, configuration.hidden_size) * 2) - 1
+            # attention_input = (torch.rand(batch, q_len, 4544) * 2) - 1
+            attention_mask_bool = torch.zeros(global_batch, 1, q_len, kv_len, dtype=bool)
         layer_past = ()
         tt_layer_past = ()
         for layer in range(num_layers):
@@ -68,7 +71,7 @@ def get_rand_falcon_inputs(
             tt_layer_past_cur = []
             for i, device in enumerate(devices):
                 # Generate kvcache for each layer and attention mask once
-                if layer == 0:
+                if generate_attention_inputs and layer == 0:
                     tt_attention_input.append(
                         torch2tt_tensor(
                             attention_input[batch * i : batch * (i + 1)].unsqueeze(1).transpose(0, 2), device
@@ -107,15 +110,18 @@ def get_rand_falcon_inputs(
     else:
         raise NotImplementedError(f"Llm mode {llm_mode} is not supported! Must be one of prefill or decode.")
 
-    return (
-        attention_input,
-        attention_mask_bool,
-        layer_past,
-        tt_attention_input,
-        tt_attention_mask,
-        tt_layer_past,
-        kv_len,
-    )
+    if not generate_attention_inputs:
+        return (layer_past, tt_layer_past, kv_len)
+    else:
+        return (
+            attention_input,
+            attention_mask_bool,
+            layer_past,
+            tt_attention_input,
+            tt_attention_mask,
+            tt_layer_past,
+            kv_len,
+        )
 
 
 def concat_device_out_layer_present(num_devices, tt_layer_present, seq_end_idx, end_idx_only=False):
