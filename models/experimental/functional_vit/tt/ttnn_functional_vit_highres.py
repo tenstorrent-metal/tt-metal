@@ -23,23 +23,24 @@ def vit_patch_embeddings(
 ):
     batch_size, img_c, img_h, img_w = pixel_values.shape
     patch_size = 16
-    patch_count = img_h // patch_size  # 14
+    patch_count_h = img_h // patch_size  # 14
+    patch_count_w = img_w // patch_size  # 14
     patch_size_sq = int(patch_size * patch_size)  # 256
     patch_size_sq_trpl = int(patch_size_sq * img_c)  # 768
-    patch_count_sq = int(patch_count * patch_count)  # 196
+    patch_count_all = int(patch_count_h * patch_count_w)  # 196
 
     pixel_values = ttnn.to_layout(pixel_values, layout=ttnn.ROW_MAJOR_LAYOUT)
-
-    pixel_values = ttnn.reshape(pixel_values, (1, img_c, img_h, patch_count, patch_size))
-    pixel_values = ttnn.reshape(pixel_values, (1, img_c, patch_count, patch_size, patch_count, patch_size))
-    # pixel_values = ttnn.reshape(pixel_values, (1, img_c, patch_count, patch_count, patch_size, patch_size))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, img_h, patch_count_w, patch_size))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_h, patch_size, patch_count_w, patch_size))
+    # pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count, patch_count, patch_size, patch_size))
     pixel_values = ttnn.permute(pixel_values, (0, 1, 2, 4, 3, 5))
-    pixel_values = ttnn.reshape(pixel_values, (1, img_c, patch_count_sq, patch_size_sq))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_all, patch_size_sq))
     pixel_values = ttnn.permute(pixel_values, (0, 2, 1, 3))
-    pixel_values = ttnn.reshape(pixel_values, (1, patch_count_sq, patch_size_sq_trpl))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, patch_count_all, patch_size_sq_trpl))
+    pixel_values = ttnn.to_layout(pixel_values, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT)
 
-    pixel_values = ttnn.to_layout(pixel_values, layout=ttnn.TILE_LAYOUT)
-
+    ## Needed only when running the standalone module pytest test_vit_patch_embeddings
+    ## Please comment out when running the pytest on parent module like test_vit_embeddings or test_vit
     # parameters = parameters.vit.embeddings.patch_embeddings
     patch_embedding_output = pixel_values @ parameters.projection.weight
     patch_embedding_output = patch_embedding_output + parameters.projection.bias
@@ -50,16 +51,13 @@ def vit_embeddings(
     config,
     pixel_values,
     position_embeddings_interpolated,
-    cls_token,
     *,
     parameters,
 ):
     parameters = parameters.vit.embeddings
-    # cls_token = parameters.cls_token
 
     patch_embeddings = vit_patch_embeddings(config, pixel_values, parameters=parameters.patch_embeddings)
-    # patch_embeddings = ttnn.to_layout(patch_embeddings, layout=ttnn.TILE_LAYOUT)
-    embedding_output = ttnn.concat((cls_token, patch_embeddings), dim=1)
+    embedding_output = ttnn.concat((parameters.cls_token, patch_embeddings), dim=1)
     embedding_output = embedding_output + position_embeddings_interpolated
     # embedding_output = ttnn.pad(embedding_output, ((0, 0), (0, 31), (0, 0)), 0)
 
@@ -244,18 +242,16 @@ def vit(
     pixel_values,
     attention_mask,
     position_embeddings_interpolated,
-    cls_token,
     *,
     parameters,
 ):
-    embeddings_output = vit_embeddings(
-        config, pixel_values, position_embeddings_interpolated, cls_token, parameters=parameters
-    )
+    embeddings_output = vit_embeddings(config, pixel_values, position_embeddings_interpolated, parameters=parameters)
+    embeddings_output = ttnn.to_layout(embeddings_output, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT)
 
     hidden_states = vit_encoder(
         config,
         embeddings_output,
-        attention_mask=None,
+        attention_mask=attention_mask,
         parameters=parameters.vit.encoder,
     )
 

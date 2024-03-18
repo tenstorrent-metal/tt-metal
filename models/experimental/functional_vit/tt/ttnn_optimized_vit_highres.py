@@ -112,21 +112,20 @@ def vit_patch_embeddings(
 ):
     batch_size, img_c, img_h, img_w = pixel_values.shape
     patch_size = 16
-    patch_count = img_h // patch_size  # 14
+    patch_count_h = img_h // patch_size  # 14
+    patch_count_w = img_w // patch_size  # 14
     patch_size_sq = int(patch_size * patch_size)  # 256
     patch_size_sq_trpl = int(patch_size_sq * img_c)  # 768
-    patch_count_sq = int(patch_count * patch_count)  # 196
-
-    # TODO: enable input of non-square images
+    patch_count_all = int(patch_count_h * patch_count_w)  # 196
 
     pixel_values = ttnn.to_layout(pixel_values, layout=ttnn.ROW_MAJOR_LAYOUT)
-    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, img_h, patch_count, patch_size))
-    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count, patch_size, patch_count, patch_size))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, img_h, patch_count_w, patch_size))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_h, patch_size, patch_count_w, patch_size))
     # pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count, patch_count, patch_size, patch_size))
     pixel_values = ttnn.permute(pixel_values, (0, 1, 2, 4, 3, 5))
-    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_sq, patch_size_sq))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_all, patch_size_sq))
     pixel_values = ttnn.permute(pixel_values, (0, 2, 1, 3))
-    pixel_values = ttnn.reshape(pixel_values, (batch_size, patch_count_sq, patch_size_sq_trpl))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, patch_count_all, patch_size_sq_trpl))
     pixel_values = ttnn.to_layout(pixel_values, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT)
 
     ## Needed only when running the standalone module pytest test_vit_patch_embeddings
@@ -150,22 +149,25 @@ def vit_embeddings(
     config,
     pixel_values,
     position_embeddings_interpolated,
-    cls_token,
     *,
     parameters,
 ):
     parameters = parameters.vit.embeddings
-    cls_token = parameters.cls_token
 
     patch_embeddings = vit_patch_embeddings(config, pixel_values, parameters=parameters.patch_embeddings)
-    embedding_output = ttnn.concat((cls_token, patch_embeddings), dim=1)
+    embedding_output = ttnn.concat((parameters.cls_token, patch_embeddings), dim=1)
 
     embedding_output = ttnn.add(
         embedding_output, position_embeddings_interpolated, memory_config=ttnn.L1_MEMORY_CONFIG, dtype=ttnn.bfloat8_b
     )
 
-    # Needed to improve PCC in an older commit
-    # embedding_output = ttnn.pad(embedding_output, ((0, 0), (0, 27), (0, 0)), 0)
+    # padding
+    # 1024 / 16 = 64
+    # 64*64 + 32 = 4128 (from cls_token concat)
+    # 4352 = (4128 + 224)
+    # 4352 / 8 = 136
+
+    embedding_output = ttnn.pad(embedding_output, ((0, 0), (0, 224), (0, 0)), 0)
 
     return embedding_output
 
@@ -206,6 +208,88 @@ def vit_layernorm_after(
     return attention_output
 
 
+def vit_attention_experimental(
+    config,
+    hidden_states,
+    attention_mask,
+    parameters,
+):
+    num_heads = config.num_attention_heads
+    *_, hidden_size = hidden_states.shape
+    head_size = hidden_size // num_heads
+
+    query_key_value = ttnn.linear(
+        hidden_states,
+        parameters.attention.query_key_value.weight,
+        bias=parameters.attention.query_key_value.bias,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+        dtype=ttnn.bfloat8_b,
+        core_grid=ttnn.CoreGrid(y=8, x=8),
+        # program_config=program_configs["query_key_value_matmul_program_config"],
+    )
+    ttnn.reallocate(hidden_states)
+    (
+        query,
+        key,
+        value,
+    ) = ttnn.transformer.split_query_key_value_and_split_heads(
+        query_key_value,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+        num_heads=num_heads,
+    )
+    ttnn.deallocate(query_key_value)
+    ttnn.reallocate(value)
+
+    attention_scores = ttnn.matmul(
+        query,
+        key,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+        dtype=ttnn.bfloat8_b,
+        core_grid=ttnn.CoreGrid(y=8, x=12),
+        # program_config=program_configs["query_by_key_matmul_program_config"],
+    )
+    ttnn.deallocate(query)
+    ttnn.deallocate(key)
+    """
+    attention_probs = ttnn.transformer.attention_softmax_(
+        attention_scores,
+        attention_mask=attention_mask,
+        head_size=head_size,
+        # program_config=program_configs["softmax_program_config"],
+    )
+
+    context_layer = ttnn.matmul(
+        attention_probs,
+        value,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+        dtype=ttnn.bfloat8_b,
+        core_grid=ttnn.CoreGrid(y=8, x=8),
+        # program_config=program_configs["attention_probabilities_by_value_matmul_program_config"],
+    )
+    ttnn.deallocate(attention_probs)
+    ttnn.deallocate(value)
+
+    context_layer = ttnn.transformer.concatenate_heads(
+        context_layer,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+
+    self_output = ttnn.linear(
+        context_layer,
+        parameters.output.dense.weight,
+        bias=parameters.output.dense.bias,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+        dtype=ttnn.bfloat8_b,
+        core_grid=ttnn.CoreGrid(y=8, x=8),
+        # program_config=program_configs["self_output_matmul_program_config"],
+    )
+    ttnn.deallocate(context_layer)
+
+    return self_output
+    """
+    return attention_scores
+
+
 def vit_attention(
     config,
     hidden_states,
@@ -225,7 +309,7 @@ def vit_attention(
         core_grid=ttnn.CoreGrid(y=8, x=8),
         # program_config=program_configs["query_key_value_matmul_program_config"],
     )
-
+    ttnn.reallocate(hidden_states)
     (
         query,
         key,
@@ -236,13 +320,14 @@ def vit_attention(
         num_heads=num_heads,
     )
     ttnn.deallocate(query_key_value)
+    ttnn.reallocate(value)
 
     attention_scores = ttnn.matmul(
         query,
         key,
         memory_config=ttnn.L1_MEMORY_CONFIG,
         dtype=ttnn.bfloat8_b,
-        core_grid=ttnn.CoreGrid(y=8, x=8),
+        core_grid=ttnn.CoreGrid(y=8, x=12),
         # program_config=program_configs["query_by_key_matmul_program_config"],
     )
     ttnn.deallocate(query)
@@ -422,12 +507,9 @@ def vit(
     pixel_values,
     attention_mask,
     position_embeddings_interpolated,
-    cls_token,
     parameters,
 ):
-    embeddings_output = vit_embeddings(
-        config, pixel_values, position_embeddings_interpolated, cls_token, parameters=parameters
-    )
+    embeddings_output = vit_embeddings(config, pixel_values, position_embeddings_interpolated, parameters=parameters)
 
     hidden_states = vit_encoder(
         config,

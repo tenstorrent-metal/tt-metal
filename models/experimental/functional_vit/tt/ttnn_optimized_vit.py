@@ -113,21 +113,20 @@ def vit_patch_embeddings(
 ):
     batch_size, img_c, img_h, img_w = pixel_values.shape
     patch_size = 16
-    patch_count = img_h // patch_size  # 14
+    patch_count_h = img_h // patch_size  # 14
+    patch_count_w = img_w // patch_size  # 14
     patch_size_sq = int(patch_size * patch_size)  # 256
     patch_size_sq_trpl = int(patch_size_sq * img_c)  # 768
-    patch_count_sq = int(patch_count * patch_count)  # 196
-
-    # TODO: enable input of non-square images
+    patch_count_all = int(patch_count_h * patch_count_w)  # 196
 
     pixel_values = ttnn.to_layout(pixel_values, layout=ttnn.ROW_MAJOR_LAYOUT)
-    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, img_h, patch_count, patch_size))
-    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count, patch_size, patch_count, patch_size))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, img_h, patch_count_w, patch_size))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_h, patch_size, patch_count_w, patch_size))
     # pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count, patch_count, patch_size, patch_size))
     pixel_values = ttnn.permute(pixel_values, (0, 1, 2, 4, 3, 5))
-    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_sq, patch_size_sq))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, img_c, patch_count_all, patch_size_sq))
     pixel_values = ttnn.permute(pixel_values, (0, 2, 1, 3))
-    pixel_values = ttnn.reshape(pixel_values, (batch_size, patch_count_sq, patch_size_sq_trpl))
+    pixel_values = ttnn.reshape(pixel_values, (batch_size, patch_count_all, patch_size_sq_trpl))
     pixel_values = ttnn.to_layout(pixel_values, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT)
 
     ## Needed only when running the standalone module pytest test_vit_patch_embeddings
