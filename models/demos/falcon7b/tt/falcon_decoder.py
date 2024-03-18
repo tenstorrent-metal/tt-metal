@@ -11,7 +11,6 @@ import tt_lib
 
 from models.demos.falcon7b.tt.falcon_attention import TtFalconAttention
 from models.demos.falcon7b.tt.falcon_mlp import TtFalconMLP
-from models.utility_functions import pad_by_zero
 from models.demos.falcon7b.tt.model_utils import get_weights_cached
 
 

@@ -14,12 +14,12 @@ from models.demos.falcon7b.tt.model_config import (
     get_model_config,
     get_tt_cache_path,
 )
-from models.demos.falcon7b.tests.test_utils import get_rand_falcon_inputs, concat_device_outputs
+from models.demos.falcon7b.tests.test_utils import get_rand_falcon_inputs, concat_device_out_layer_present
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_allclose,
     comp_pcc,
 )
-from models.utility_functions import torch2tt_tensor, tt2torch_tensor, get_devices_for_t3000
+from models.utility_functions import tt2torch_tensor, get_devices_for_t3000
 
 
 class PytorchFalconModel(torch.nn.Module):
@@ -80,7 +80,7 @@ def run_test_FalconModel_inference(
         _,
         past_key_values,
         _,
-        tt_attention_mask,
+        _,
         tt_layer_past,
         kv_len,
     ) = get_rand_falcon_inputs(
@@ -101,12 +101,12 @@ def run_test_FalconModel_inference(
     pytorch_out, pytorch_layer_present = pytorch_FalconModel(
         input_ids=model_input, past_key_values=past_key_values, use_cache=use_cache
     )
-    breakpoint()
+
     # NOTE: Passing in pytorch tensor here instead of ll buda tensor
     # since we don't yet have embedding support on device
     # device, state_dict, base_url, max_position_embeddings, config, num_decoders
     tt_FalconModel = TtFalconModel(
-        device,
+        devices,
         state_dict,
         base_url,
         num_layers,
@@ -117,12 +117,14 @@ def run_test_FalconModel_inference(
     )
     # TODO: Generate embeddings and attention_mask on device
     if llm_mode == "prefill":
-        tt_outs = []
-        model_inputs = torch.split(model_input, 1)
+        tt_outs = torch.zeros(global_batch, seq_len, configuration.hidden_size)  # Output tensor to overwrite
         tt_embeddings, tt_attention_mask = zip(
             *[
-                tt_FalconModel.model_preprocessing(llm_mode, m_i, kv_cache_len, num_input_tokens=seq_len)
-                for m_i in model_inputs
+                # Get embeddings and attention_mask for each device
+                tt_FalconModel.model_preprocessing(
+                    llm_mode, model_input[i::batch], kv_cache_len, num_input_tokens=seq_len
+                )
+                for i in range(batch)
             ]
         )
         for user_id in range(batch):
@@ -135,8 +137,9 @@ def run_test_FalconModel_inference(
                 layer_past_len=kv_cache_len,
                 use_cache=use_cache,
             )
-            tt_outs.append(tt2torch_tensor(tt_out).squeeze(1))
-        tt_out = torch.vstack(tt_outs)
+            # Get outputs from all devices
+            tt_outs[user_id::batch] = torch.concat([tt2torch_tensor(tt_out[i]).squeeze(1) for i in range(num_devices)])
+        tt_out = tt_outs
 
     elif llm_mode == "decode":
         tt_embeddings, tt_attention_mask = tt_FalconModel.model_preprocessing(
@@ -150,32 +153,25 @@ def run_test_FalconModel_inference(
             layer_past_len=kv_cache_len,
             use_cache=use_cache,
         )
-        tt_out = tt2torch_tensor(tt_out).squeeze(1)
-        tt_out = tt_out.transpose(0, 1)
+        for i in range(num_devices):
+            tt_out[i] = tt2torch_tensor(tt_out[i]).squeeze(1).transpose(0, 1)
+        tt_out = torch.concat(tt_out)
 
     # check outputs ----------------------------------------------------------------------
     does_pass, output_pcc = comp_pcc(pytorch_out, tt_out, pcc)
     logger.info(f"Output: {output_pcc}")
 
     for i in range(num_layers):
-        tt_layer_pres = (
-            tt2torch_tensor(tt_layer_present[i][0]),
-            tt2torch_tensor(tt_layer_present[i][1]),
-        )
         if llm_mode == "prefill":
-            pytorch_layer_pres = pytorch_layer_present[i]
-            tt_layer_pres = (
-                tt_layer_pres[0][:, :, :kv_len, :],
-                tt_layer_pres[1][:, :, :kv_len, :],
-            )
+            pytorch_layer_pres = (pytorch_layer_present[i][0].squeeze(1), pytorch_layer_present[i][1].squeeze(1))
+            tt_layer_pres = concat_device_out_layer_present(num_devices, tt_layer_present[i], kv_len)
         elif llm_mode == "decode":
             pytorch_layer_pres = (
-                pytorch_layer_present[i][0][:, :, kv_cache_len, :],
-                pytorch_layer_present[i][1][:, :, kv_cache_len, :],
+                pytorch_layer_present[i][0].squeeze(1)[:, kv_cache_len, :],
+                pytorch_layer_present[i][1].squeeze(1)[:, kv_cache_len, :],
             )
-            tt_layer_pres = (
-                tt_layer_pres[0][:, :, kv_cache_len, :],
-                tt_layer_pres[1][:, :, kv_cache_len, :],
+            tt_layer_pres = concat_device_out_layer_present(
+                num_devices, tt_layer_present[i], kv_cache_len, end_idx_only=True
             )
 
         does_pass2, output_pcc = comp_pcc(pytorch_layer_pres[0], tt_layer_pres[0], pcc)
@@ -199,10 +195,10 @@ def run_test_FalconModel_inference(
 @pytest.mark.parametrize(
     "llm_mode, batch, seq_len, kv_cache_len",
     (
-        ("prefill", 2, 128, 0),
+        ("prefill", 1, 128, 0),
         ("decode", 32, 1, 128),
     ),
-    ids=["prefill_seq128_batch32", "decode_batch32"],
+    ids=["prefill_seq128_batch1", "decode_batch32"],
 )
 @pytest.mark.parametrize(
     "num_layers, pcc",

@@ -20,7 +20,7 @@ def get_rand_falcon_inputs(
     tt_attention_mask = []
     if llm_mode == "prefill":
         q_len, kv_len = seq_len, seq_len
-        assert batch == 1, "For prefill, batch must be 1!"
+        # assert batch == 1, "For prefill, batch must be 1!"
         assert q_len % 32 == 0, "For prefill, seq_len must be multiple of 32!"
         assert kv_cache_len == 0, "For prefill, no kv_cache is passed in!"
 
@@ -118,19 +118,31 @@ def get_rand_falcon_inputs(
     )
 
 
-def concat_device_outputs(num_devices, tt_out, llm_mode, tt_layer_present, kv_len):
+def concat_device_out_layer_present(num_devices, tt_layer_present, seq_end_idx, end_idx_only=False):
     for i in range(num_devices):
-        tt_out[i] = tt2torch_tensor(tt_out[i]).squeeze(1)
-        if llm_mode == "decode":
-            tt_out[i] = tt_out[i].transpose(0, 1)
         tt_layer_present[i] = (
             tt2torch_tensor(tt_layer_present[i][0]).squeeze(1),
             tt2torch_tensor(tt_layer_present[i][1]).squeeze(1),
         )
-        tt_layer_present[i] = (
-            tt_layer_present[i][0][:, :kv_len, :],
-            tt_layer_present[i][1][:, :kv_len, :],
-        )
-    tt_out = torch.concat(tt_out)
+        if not end_idx_only:
+            tt_layer_present[i] = (
+                tt_layer_present[i][0][:, :seq_end_idx, :],
+                tt_layer_present[i][1][:, :seq_end_idx, :],
+            )
+        else:
+            tt_layer_present[i] = (
+                tt_layer_present[i][0][:, seq_end_idx, :],
+                tt_layer_present[i][1][:, seq_end_idx, :],
+            )
     tt_layer_present = (torch.concat([x[0] for x in tt_layer_present]), torch.concat([x[1] for x in tt_layer_present]))
+    return tt_layer_present
+
+
+def concat_device_outputs(num_devices, tt_out, llm_mode, tt_layer_present, seq_end_idx):
+    for i in range(num_devices):
+        tt_out[i] = tt2torch_tensor(tt_out[i]).squeeze(1)
+        if llm_mode == "decode":
+            tt_out[i] = tt_out[i].transpose(0, 1)
+    tt_out = torch.concat(tt_out)
+    tt_layer_present = concat_device_out_layer_present(num_devices, tt_layer_present, seq_end_idx)
     return tt_out, tt_layer_present
