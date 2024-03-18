@@ -1959,6 +1959,42 @@ namespace tt::tt_metal::detail{
                 "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
         )doc");
 
+    m_tensor.def("complex_add_bw", &tt::tt_metal::complex_add_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("other").noconvert(), py::arg("alpha") = 1.0f, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for addition of  complex tensors``input`` and ``other`` with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "input", "First input tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "other", "Second input Tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "alpha", "Alpha value", "float", "default to 1.0f", "No"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("complex_sub_bw", &tt::tt_metal::complex_sub_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("other").noconvert(), py::arg("alpha") = 1.0f, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for subtraction of  complex tensors``input`` and ``other`` with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "input", "First input tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "other", "Second input Tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "alpha", "Alpha value", "float", "default to 1.0f", "No"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
     m_tensor.def("multigammaln_bw", &tt::tt_metal::multigammaln_bw,
             py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
             Performs backward operations for multigammaln of ``input`` tensors with given ``grad`` and value of P is taken as 4.

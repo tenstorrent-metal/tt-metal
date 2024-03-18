@@ -1686,6 +1686,41 @@ std::vector<Tensor> real_bw(const Tensor& grad, const Tensor& input, const Memor
     return operation::decorate_as_composite(__func__, _real_bw)(grad, input, output_mem_config);
 }
 
+// complex add
+// self: grad, other: grad * alpha
+std::vector<Tensor> _complex_add_bw(const Tensor& grad, const Tensor& input, const Tensor& other, float alpha, const MemoryConfig& output_mem_config) {
+    CHECK_FOR_COMPLEX(input);
+    CHECK_FOR_COMPLEX(other);
+    CHECK_FOR_COMPLEX(grad);
+    std::vector<Tensor> grad_tensor;
+    Tensor grad_a = grad;
+    grad_tensor.emplace_back(grad_a);
+    Tensor grad_b = mul_unary(grad, alpha, output_mem_config );
+    grad_tensor.emplace_back(grad_b);
+    return grad_tensor;
+}
+std::vector<Tensor> complex_add_bw(const Tensor& grad, const Tensor& input, const Tensor& other, float alpha, const MemoryConfig& output_mem_config)
+{
+    return operation::decorate_as_composite(__func__, _complex_add_bw)(grad, input, other, alpha, output_mem_config);
+}
+
+// complex sub
+// self: grad, other: -grad * alpha
+std::vector<Tensor> _complex_sub_bw(const Tensor& grad, const Tensor& input, const Tensor& other, float alpha, const MemoryConfig& output_mem_config) {
+    CHECK_FOR_COMPLEX(input);
+    CHECK_FOR_COMPLEX(other);
+    CHECK_FOR_COMPLEX(grad);
+    std::vector<Tensor> grad_tensor;
+    Tensor grad_a = grad;
+    grad_tensor.emplace_back(grad_a);
+    Tensor grad_b = mul_unary(neg(grad, output_mem_config), alpha, output_mem_config );
+    grad_tensor.emplace_back(grad_b);
+    return grad_tensor;
+}
+std::vector<Tensor> complex_sub_bw(const Tensor& grad, const Tensor& input, const Tensor& other, float alpha, const MemoryConfig& output_mem_config)
+{
+    return operation::decorate_as_composite(__func__, _complex_sub_bw)(grad, input, other, alpha, output_mem_config);
+}
 #undef CHECK_FOR_COMPLEX
 
 std::vector<Tensor> _multigammaln_bw(const Tensor& grad, const Tensor& input, const MemoryConfig& output_mem_config) {
