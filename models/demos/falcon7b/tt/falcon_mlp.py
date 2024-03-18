@@ -148,6 +148,34 @@ class TtFalconMLP(nn.Module):
                 output_dtype=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
                 compute_kernel_config=compute_kernel_config,
             )
+        elif is_wormhole_b0() and x.shape()[-2] == 128 and llm_mode == "prefill":
+            compute_kernel_cfg = tt_lib.tensor.WormholeComputeKernelConfig(
+                math_fidelity=tt_lib.tensor.MathFidelity.LoFi,
+                math_approx_mode=True,
+                fp32_dest_acc_en=False,
+                packer_l1_acc=True,
+            )
+
+            prog_cfg = tt_lib.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
+                compute_with_storage_grid_size=(8, 4),
+                in0_block_w=1,
+                per_core_M=1,
+                per_core_N=71,
+                out_subblock_h=1,
+                out_subblock_w=1,
+                transpose_mcast=False,
+                fused_activation=[tt_lib.tensor.FusibleActivation.GELU, True],
+            )
+
+            hidden_states = tt_lib.operations.primary.matmul(
+                x,
+                self.dense_h_to_4h_weights,
+                program_config=prog_cfg,
+                output_mem_config=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_MEMCFG"],
+                output_dtype=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
+                compute_kernel_config=compute_kernel_cfg,
+            )
+            print("WIIIIIIIIIIIIN!!!")
         else:
             hidden_states = tt_lib.tensor.falcon_dense_h_to_4h_matmul(
                 x,
