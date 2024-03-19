@@ -21,7 +21,12 @@ struct db_cb_config_t {
 };
 static constexpr uint32_t l1_db_cb_addr_offset = sizeof(db_cb_config_t);
 
-static constexpr uint32_t CQ_DISPATCHER_CB_CONFIG_BASE = CQ_CONSUMER_CB_BASE + l1_db_cb_addr_offset;
+// remove these
+static constexpr uint32_t CQ_DISPATCHER_CB_CONFIG_BASE = 0; //CQ_CONSUMER_CB_BASE + l1_db_cb_addr_offset;
+static constexpr uint32_t CQ_ISSUE_READ_PTR = 0;
+static constexpr uint32_t CQ_ISSUE_WRITE_PTR = 0;
+static constexpr uint32_t COMMAND_PTR_SHARD_IDX = 0;
+static constexpr uint32_t CQ_CONSUMER_CB_BASE = 0;
 
 template <uint32_t cmd_base_address, uint32_t data_buffer_size>
 FORCE_INLINE uint32_t get_command_slot_addr(bool db_buf_switch) {
