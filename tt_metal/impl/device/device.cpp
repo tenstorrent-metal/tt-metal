@@ -384,7 +384,7 @@ void Device::compile_command_queue_programs() {
                     "tt_metal/impl/dispatch/kernels/cq_prefetch_hd.cpp", // update this for remote device
                     prefetcher_location,
                     tt::tt_metal::DataMovementConfig {
-                        .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+                        .processor = tt::tt_metal::DataMovementProcessor::RISCV_1,
                         .noc = tt::tt_metal::NOC::RISCV_0_default,
                         .compile_args = prefetch_compile_args,
                         .defines = defines});
@@ -405,7 +405,7 @@ void Device::compile_command_queue_programs() {
                         "tt_metal/impl/dispatch/kernels/cq_dispatch.cpp",
                         dispatch_location,
                         tt::tt_metal::DataMovementConfig {
-                            .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
+                            .processor = tt::tt_metal::DataMovementProcessor::RISCV_1,
                             .noc = tt::tt_metal::NOC::RISCV_0_default,
                             .compile_args = dispatch_compile_args,
                             .defines = defines});
