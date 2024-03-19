@@ -469,7 +469,7 @@ HWCommandQueue::~HWCommandQueue() {
         this->completion_queue_thread.join();  // We errored out already prior
     } else {
         TT_ASSERT(
-            this->issued_completion_q_reads.empty() == 0,
+            this->issued_completion_q_reads.empty(),
             "There should be no reads in flight after closing our completion queue thread");
         TT_ASSERT(
             this->num_entries_in_completion_q == this->num_completed_completion_q_reads,
@@ -1029,7 +1029,6 @@ void EnqueueReadBufferImpl(CommandQueue& cq, std::variant<std::reference_wrapper
 void EnqueueWriteBuffer(CommandQueue& cq, std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer> > buffer,
                                           HostDataType src, bool blocking) {
     detail::DispatchStateCheck(true);
-    TT_THROW("EnqueueWriteBuffer currently unsupported in FD2.0");
     cq.run_command(CommandInterface{
         .type = EnqueueCommandType::ENQUEUE_WRITE_BUFFER,
         .blocking = blocking,
