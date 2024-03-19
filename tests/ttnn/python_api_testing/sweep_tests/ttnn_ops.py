@@ -2595,3 +2595,56 @@ def rotary_embedding(
     t2 = ttnn.transformer.rotary_embedding(t0, cost, sint, None, memory_config=memory_config_to_ttnn(output_mem_config))
 
     return ttnn_tensor_to_torch(t2)
+
+def nextafter(
+    x,
+    y,
+    *args,
+    device,
+    dtype,
+    layout,
+    input_mem_config,
+    output_mem_config,
+    **kwargs,
+):
+    t0 = setup_ttnn_tensor(x, device, layout[0], input_mem_config[0], dtype[0])
+    t1 = setup_ttnn_tensor(y, device, layout[1], input_mem_config[1], dtype[1])
+
+    t2 = ttnn.nextafter(t0, t1, memory_config=memory_config_to_ttnn(output_mem_config))
+
+    return ttnn_tensor_to_torch(t2)
+
+
+def max(
+    x,
+    y,
+    *args,
+    device,
+    dtype,
+    layout,
+    input_mem_config,
+    output_mem_config,
+    **kwargs,
+):
+    t0 = setup_ttnn_tensor(x, device, layout[0], input_mem_config[0], dtype[0])
+    t1 = setup_ttnn_tensor(y, device, layout[1], input_mem_config[1], dtype[1])
+
+    t2 = ttnn.maximum(t0, t1, memory_config=memory_config_to_ttnn(output_mem_config))
+
+    return ttnn_tensor_to_torch(t2)
+
+
+def empty(
+    x,
+    *args,
+    device,
+    dtype,
+    layout,
+    input_mem_config,
+    output_mem_config,
+    **kwargs,
+):
+    t1 = ttnn.empty(x.shape, device, memory_config=memory_config_to_ttnn(output_mem_config))
+
+    result = ttnn_tensor_to_torch(t1)
+    return torch.ones(result.shape)

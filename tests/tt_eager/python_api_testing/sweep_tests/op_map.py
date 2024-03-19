@@ -1676,4 +1676,17 @@ op_map = {
         "tt_lib_op": ttnn_ops.rotary_embedding,
         "pytorch_op": pytorch_ops.rotary_embedding,
     },
+    "ttnn-nextafter": {
+        "tt_lib_op": ttnn_ops.nextafter,
+        "pytorch_op": pytorch_ops.nextafter,
+    },
+    "ttnn-max": {
+        "tt_lib_op": ttnn_ops.max,
+        "pytorch_op": pytorch_ops.max,
+    },
+    "ttnn-empty": {
+        "tt_lib_op": ttnn_ops.empty,
+        "pytorch_op": pytorch_ops.ttnn_empty,
+    },    
 }
+
