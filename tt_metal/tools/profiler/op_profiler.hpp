@@ -80,9 +80,9 @@ namespace op_profiler {
             }
 
             vector<string> tensorStrs = {
-                shape_to_str(tensor.shape()),
-                fmt::format("{}", magic_enum::enum_name(tensor.layout())),
-                fmt::format("{}", magic_enum::enum_name(tensor.dtype())),
+                shape_to_str(tensor.get_legacy_shape()),
+                fmt::format("{}", magic_enum::enum_name(tensor.get_layout())),
+                fmt::format("{}", magic_enum::enum_name(tensor.get_dtype())),
                 tensorStorageStr
             };
 
@@ -119,6 +119,8 @@ namespace op_profiler {
 
             string parlStrategy = "";
             string preferredName = "";
+
+            operation::OpPerformanceModel perf_model;
 
             OpType type;
 
@@ -216,7 +218,11 @@ namespace op_profiler {
                     additionalFields.push_back({"Preferred Name", opData.preferredName});
                     additionalFields.push_back({"Meta Data", join_vector(opData.metaDataVector)});
                     additionalFields.push_back({"Type", fmt::format("{}",magic_enum::enum_name(opData.type))});
-
+                    additionalFields.push_back({"PM Ideal ns", fmt::format("{}", opData.perf_model.get_ideal_ns())});
+                    additionalFields.push_back({"PM Compute ns", fmt::format("{}", opData.perf_model.get_compute_ns())});
+                    additionalFields.push_back({"PM Bandwidth ns", fmt::format("{}", opData.perf_model.get_bandwidth_ns())});
+                    additionalFields.push_back({"PM Req I BW", fmt::format("{}",fmt::join(opData.perf_model.get_input_bws(), "|"))});
+                    additionalFields.push_back({"PM Req O BW", fmt::format("{}",fmt::join(opData.perf_model.get_output_bws(), "|"))});
                     return additionalFields;
                 }
 
@@ -342,6 +348,12 @@ namespace op_profiler {
 #endif
                 }
 
+                void set_perf_model (const operation::OpPerformanceModel& m) {
+#if defined(PROFILER)
+                    get_op_data().perf_model = m;
+#endif
+                }
+
                 void set_profiler_location(const string& folder)
                 {
 #if defined(PROFILER)
@@ -433,6 +445,18 @@ namespace op_profiler {
 #endif
         return callStackWasEmpty;
 
+    }
+
+    static void tracy_message(const string& source, uint32_t color = 0xf0f8ff) {
+#if defined(TRACY_ENABLE)
+        TracyMessageC(source.c_str(), source.size(), color);
+#endif
+    }
+
+    static void tracy_frame() {
+#if defined(TRACY_ENABLE)
+        FrameMark;
+#endif
     }
 
     static bool get_profiler_flag ()
@@ -533,9 +557,15 @@ namespace op_profiler {
     {
 #if defined(PROFILER)
         for (size_t kernel_id = 0; kernel_id < program.num_kernels(); kernel_id++) {
-            Kernel * kernel = tt::tt_metal::detail::GetKernel(program, kernel_id);
-            detail::operationProfiler.append_kernel_info(kernel);
+            auto kernel = tt::tt_metal::detail::GetKernel(program, kernel_id);
+            detail::operationProfiler.append_kernel_info(kernel.get());
         }
+#endif
+    }
+
+    static void set_perf_model(const operation::OpPerformanceModel& m) {
+#if defined(PROFILER)
+        detail::operationProfiler.set_perf_model(m);
 #endif
     }
 

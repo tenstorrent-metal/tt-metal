@@ -1,43 +1,47 @@
-name: "[post-commit] Slow Dispatch unit tests"
+name: "[internal] Slow Dispatch unit tests impl"
 
 on:
-  workflow_dispatch:
-  push:
-    branches: ["main"]
   workflow_call:
 
 jobs:
   unit-tests-slow-dispatch:
+    name: ${{ matrix.runner-info.arch }} ${{ matrix.runner-info.name }}
+
     strategy:
       # Do not fail-fast because we need to ensure all tests go to completion
       # so we try not to get hanging machines
       fail-fast: false
       matrix:
         runner-info: [
-          {arch: grayskull, runs-on: ["grayskull"]},
+          {arch: grayskull, runs-on: ["grayskull"], name: E150},
           # N150
-          {arch: wormhole_b0, runs-on: ["wormhole_b0", "multi-chip-num-pcie-1", "multi-chip-num-chips-1"]},
+          {arch: wormhole_b0, runs-on: ["wormhole_b0", "multi-chip-num-pcie-1", "multi-chip-num-chips-1"], name: N150},
           # N300
-          {arch: wormhole_b0, runs-on: ["wormhole_b0", "multi-chip-num-pcie-1", "multi-chip-num-chips-2"]},
+          {arch: wormhole_b0, runs-on: ["wormhole_b0", "multi-chip-num-pcie-1", "multi-chip-num-chips-2"], name: N300},
         ]
     env:
       TT_METAL_ENV: ${{ vars.TT_METAL_ENV }}
       ARCH_NAME: ${{ matrix.runner-info.arch }}
       CONFIG: ci
       TT_METAL_SLOW_DISPATCH_MODE: 1
-    environment: dev
+      LOGURU_LEVEL: INFO
+      LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
     runs-on: ${{ matrix.runner-info.runs-on }}
     steps:
       - uses: tenstorrent-metal/metal-workflows/.github/actions/checkout-with-submodule-lfs@v2.0.0
       - name: Set up dynamic env vars for build
         run: |
           echo "TT_METAL_HOME=$(pwd)" >> $GITHUB_ENV
-      - name: Build tt-metal and libs
-        run: make build
-      - name: Build tt-metal CPP tests
-        run: make tests
+      - uses: actions/download-artifact@v4
+        with:
+          name: TTMetal_build_${{ matrix.runner-info.arch }}
+      - name: Extract files
+        run: tar -xvf ttm_${{ matrix.runner-info.arch }}.tar
+      - name: Build python env
+        run: |
+          make python_env/dev PYTHON_ENV=$HOME/python_env -B
       - name: Run pre/post regression tests
         timeout-minutes: 15
         run: |
-          source build/python_env/bin/activate
+          source $HOME/python_env/bin/activate
           ./tests/scripts/run_tests.sh --tt-arch $ARCH_NAME --pipeline-type post_commit --dispatch-mode slow

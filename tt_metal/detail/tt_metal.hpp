@@ -117,7 +117,7 @@ namespace tt::tt_metal{
         // - Loads all kernel binaries into L1s of assigned Tensix cores
         // - Configures circular buffers (inits regs with buffer data)
         // - Takes the device out of reset
-        bool ConfigureDeviceWithProgram(Device *device, Program &program);
+        bool ConfigureDeviceWithProgram(Device *device, Program &program, bool fd_bootloader_mode = false);
 
 
         /**
@@ -287,6 +287,12 @@ namespace tt::tt_metal{
             LAZY_COMMAND_QUEUE_MODE = lazy;
         }
 
+        void AllocateBuffer(Buffer* buffer, bool bottom_up);
+
+        void DeallocateBuffer(Buffer *buffer);
+
+        void GetBufferAddress(const Buffer* Buffer, uint32_t* address_on_host);
+
         inline void DeallocateBuffers(Device * device)
         {
             device->deallocate_buffers();
@@ -382,7 +388,7 @@ namespace tt::tt_metal{
             for (const auto &core_range : core_ranges.ranges()) {
                 for (auto x = core_range.start.x; x <= core_range.end.x; x++) {
                     for (auto y = core_range.start.y; y <= core_range.end.y; y++) {
-                        const KernelGroup * kernel_group = program.kernels_on_core(CoreCoord(x, y));
+                        const KernelGroup * kernel_group = program.kernels_on_core(CoreCoord(x, y), CoreType::WORKER);
                         if (kernel_group != nullptr) {
                             bool local_noc0_in_use = false; bool local_noc1_in_use = false;
                             if (kernel_group->riscv0_id.has_value()) {

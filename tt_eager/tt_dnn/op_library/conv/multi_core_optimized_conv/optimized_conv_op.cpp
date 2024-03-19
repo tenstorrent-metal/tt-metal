@@ -146,12 +146,12 @@ tuple<CBHandle, CBHandle> create_CBs(tt_metal::Program &program,
 operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, const Tensor &b, const Shape& ashape, std::optional<const Tensor> bias, vector<int> conv_params, uint32_t output_channels, bool untilize_out, bool has_bias, bool fuse_relu, const MathFidelity math_fidelity, const OptimizedConvParallelizationConfig& parallelization_config, const OptimizedConvBlockConfig& block_config, uint32_t extra_padding_for_32B_alignment, Tensor &output) {
     bool pass = true;
     tt_metal::Device *device = a.device();
-    TT_ASSERT(a.layout() == Layout::ROW_MAJOR, "Conv activation should be in row major layout");
-    TT_ASSERT(output_channels <= b.shape()[3], "Invalid weight shape. Incorrect weight tensor.");
+    TT_ASSERT(a.get_layout() == Layout::ROW_MAJOR, "Conv activation should be in row major layout");
+    TT_ASSERT(output_channels <= b.get_legacy_shape()[3], "Invalid weight shape. Incorrect weight tensor.");
     uint32_t act_block_h_ntiles = block_config.act_block_h_ntiles;
     uint32_t act_block_w_ntiles = block_config.act_block_w_ntiles;
-    uint32_t weight_block_w_ntiles = block_config.weight_block_w_ntiles;
-    uint32_t out_block_h_ntiles = block_config.out_block_h_ntiles;
+    uint32_t weight_block_w_ntiles = parallelization_config.per_core_out_matrix_width_ntiles;
+    uint32_t out_block_h_ntiles = parallelization_config.per_core_out_matrix_height_ntiles;
     uint32_t out_subblock_h_ntiles = block_config.out_subblock_h_ntiles;
     uint32_t out_subblock_w_ntiles = block_config.out_subblock_w_ntiles;
     //assert(out_block_h_ntiles == act_block_h_ntiles); // TODO: fix output block sizing
@@ -162,7 +162,6 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
     // TODO: Only updated variables which is affected, but there may be more that needs to account for this
     // TODO: Loop naming in reader, writer, and compute kernels could also be cleaned up
     // TODO: Can conv_act_c_blocks be same as num_blocks_act_w?
-    uint32_t conv_act_c_blocks = block_config.act_c_num_blocks;
 
     uint32_t conv_act_size_h = ashape[1];
     uint32_t conv_act_size_w = ashape[2];
@@ -187,17 +186,17 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
     uint32_t act_matrix_width_unpadded = (uint32_t) act_matrix_shape_unpadded[2];
 
     // Tensor b has weights and it should be tiled layout after converting conv weights into weight matrix
-    TT_ASSERT(b.layout() == Layout::TILE, "Conv weights should be in tiled layout");
-    TT_ASSERT(b.shape()[0] == 1, "Conv weight matrix shape is invalid");
-    TT_ASSERT(b.shape()[1] == 1, "Conv weight matrix shape is invalid");
-    uint32_t weight_matrix_height = b.shape()[2];
-    uint32_t weight_matrix_width = b.shape()[3];
+    TT_ASSERT(b.get_layout() == Layout::TILE, "Conv weights should be in tiled layout");
+    TT_ASSERT(b.get_legacy_shape()[0] == 1, "Conv weight matrix shape is invalid");
+    TT_ASSERT(b.get_legacy_shape()[1] == 1, "Conv weight matrix shape is invalid");
+    uint32_t weight_matrix_height = b.get_legacy_shape()[2];
+    uint32_t weight_matrix_width = b.get_legacy_shape()[3];
 
     if (has_bias) {
         // Tensor bias is of shape {output_channels}
         TT_ASSERT(bias.has_value());
         TT_ASSERT(bias.value().buffer() != nullptr);
-        auto bias_shape_without_padding = bias.value().shape().without_padding();
+        auto bias_shape_without_padding = bias.value().get_legacy_shape().without_padding();
         TT_ASSERT(bias_shape_without_padding[0] == 1, "Bias should have batch == 1");
         // TT_ASSERT(bias_shape_without_padding[1] == 1 && bias_shape_without_padding[2] == 1, "Bias should have H == W == 1");
         TT_ASSERT(bias_shape_without_padding[3] == output_channels, "Bias should have output_channels");
@@ -234,6 +233,7 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
     assert(weight_matrix_width_ntiles % weight_block_w_ntiles == 0);
     assert(act_matrix_height_ntiles % out_block_h_ntiles == 0);
 
+    uint32_t conv_act_c_blocks = 1;  // input is HS
     uint32_t num_blocks_act_h = act_matrix_height_ntiles / act_block_h_ntiles;
     uint32_t num_blocks_out_h = act_matrix_height_ntiles / out_block_h_ntiles;
     uint32_t num_blocks_act_w = act_matrix_width_ntiles / act_block_w_ntiles;
@@ -272,10 +272,10 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
     //CoreCoord core_coord = {0, 0};      // TODO: avoid another var here. Find a way to use core range instead.
     //CoreRange core = {{0, 0}, {0, 0}};
 
-    DataFormat act_df = tt_metal::datatype_to_dataformat_converter(a.dtype());
-    DataFormat weight_df = tt_metal::datatype_to_dataformat_converter(b.dtype());
-    DataFormat out_df = tt_metal::datatype_to_dataformat_converter(output.dtype());
-    DataFormat bias_df = has_bias ? tt_metal::datatype_to_dataformat_converter(bias.value().dtype()) : DataFormat::Float16_b;
+    DataFormat act_df = tt_metal::datatype_to_dataformat_converter(a.get_dtype());
+    DataFormat weight_df = tt_metal::datatype_to_dataformat_converter(b.get_dtype());
+    DataFormat out_df = tt_metal::datatype_to_dataformat_converter(output.get_dtype());
+    DataFormat bias_df = has_bias ? tt_metal::datatype_to_dataformat_converter(bias.value().get_dtype()) : DataFormat::Float16_b;
     DataFormat tilized_act_df = out_df;
 
     tt_metal::Buffer *src0_dram_buffer = a.buffer();
@@ -316,7 +316,7 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
     if (has_bias) {
         bias_buffer = bias.value().buffer();
         bias_dram_addr = bias_buffer->address();
-        bias_ntiles = bias.value().shape()[3] / constants::TILE_WIDTH;  // TODO: support non tile multiple sizes
+        bias_ntiles = bias.value().get_legacy_shape()[3] / constants::TILE_WIDTH;  // TODO: support non tile multiple sizes
     }
 
     //uint32_t conv_output_size_h = ((conv_act_size_h - weight_size_h + (2 * pad_h)) / stride_h) + 1;
@@ -393,21 +393,21 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
     assert(num_cores_x < 13);
     assert(num_cores_y < 10);
     uint32_t per_core_out_matrix_height_ntiles = p_config.per_core_out_matrix_height_ntiles;
-    uint32_t per_core_weight_matrix_width_ntiles = p_config.per_core_weight_matrix_width_ntiles;
+    uint32_t per_core_out_matrix_width_ntiles = p_config.per_core_out_matrix_width_ntiles;
     //cout << "per_core_weight_matrix_width_ntiles=" << per_core_weight_matrix_width_ntiles << endl;
     // cout << "total_num_cores=" << total_num_cores << endl;
     // cout << "per_core_out_matrix_height_ntiles=" << per_core_out_matrix_height_ntiles << endl;
     // cout << "act_matrix_height_ntiles=" << act_matrix_height_ntiles << endl;
     // cout << "act_block_h_datums=" << act_block_h_datums << endl;
     // cout << "num_blocks_act_h=" << num_blocks_act_h << endl;
-    bool weight_width_sliced = per_core_weight_matrix_width_ntiles < weight_matrix_width_ntiles;
-    assert(weight_matrix_width_ntiles % per_core_weight_matrix_width_ntiles == 0);
-    assert(per_core_weight_matrix_width_ntiles % weight_block_w_ntiles == 0);
-    uint32_t num_blocks_weight_w_per_core = per_core_weight_matrix_width_ntiles / weight_block_w_ntiles;
+    bool weight_width_sliced = per_core_out_matrix_width_ntiles < weight_matrix_width_ntiles;
+    assert(weight_matrix_width_ntiles % per_core_out_matrix_width_ntiles == 0);
+    assert(per_core_out_matrix_width_ntiles % weight_block_w_ntiles == 0);
+    uint32_t num_blocks_weight_w_per_core = per_core_out_matrix_width_ntiles / weight_block_w_ntiles;
     if (not weight_width_sliced) {
         assert(num_blocks_weight_w_per_core == num_blocks_weight_w);
     }
-    uint32_t num_weight_slices_width = weight_matrix_width_ntiles / per_core_weight_matrix_width_ntiles;
+    uint32_t num_weight_slices_width = weight_matrix_width_ntiles / per_core_out_matrix_width_ntiles;
     assert(num_cores_y % num_weight_slices_width == 0);
     uint32_t num_cores_y_per_weight_slice_width = num_cores_y / num_weight_slices_width;
     uint32_t total_num_cores_per_weight_slice = num_cores_y_per_weight_slice_width * num_cores_x;
@@ -537,7 +537,7 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
     }
     uint32_t num_cb0_tilized_tiles = num_act_cb_tiles;
 
-    if (per_core_weight_matrix_width_ntiles < 8) {
+    if (per_core_out_matrix_width_ntiles < 8) {
         num_weight_cb_tiles = num_weight_cb_tiles * 2;
     }
     if (rn50_first_conv) {
@@ -806,10 +806,10 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_(const Tensor& a, cons
         uint32_t out_w_start = matrix_h_start % conv_output_size_w;
         uint32_t in_h_start = (n_start * conv_act_size_h) + out_h_start * stride_h;
         uint32_t last_start_in_h_curr_image = 222 + (n_start * conv_act_size_h);
-        uint32_t out_start_tile_id = (act_slice_i * per_core_out_matrix_height_ntiles * weight_matrix_width_ntiles) + (weight_slice_i * per_core_weight_matrix_width_ntiles);
+        uint32_t out_start_tile_id = (act_slice_i * per_core_out_matrix_height_ntiles * weight_matrix_width_ntiles) + (weight_slice_i * per_core_out_matrix_width_ntiles);
         uint32_t out_start_tile_id_h = act_slice_i * per_core_out_matrix_height_ntiles;
-        uint32_t out_start_tile_id_w = weight_slice_i * per_core_weight_matrix_width_ntiles;
-        uint32_t bias_tile_offset = weight_slice_i * per_core_weight_matrix_width_ntiles;
+        uint32_t out_start_tile_id_w = weight_slice_i * per_core_out_matrix_width_ntiles;
+        uint32_t bias_tile_offset = weight_slice_i * per_core_out_matrix_width_ntiles;
         if (has_bias) {
             assert(bias_tile_offset < bias_ntiles);
         }

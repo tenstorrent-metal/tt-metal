@@ -28,13 +28,13 @@ Buffer<T> create(std::size_t size) {
 template<typename T>
 void validate_datatype(const Tensor& tensor) {
     if constexpr (std::is_same_v<T, uint32_t>) {
-        TT_FATAL(tensor.dtype() == DataType::UINT32 or tensor.dtype() == DataType::BFLOAT8_B);
+        TT_FATAL(tensor.get_dtype() == DataType::UINT32 or tensor.get_dtype() == DataType::BFLOAT8_B or tensor.get_dtype() == DataType::BFLOAT4_B);
     } else if constexpr (std::is_same_v<T, float>) {
-        TT_FATAL(tensor.dtype() == DataType::FLOAT32);
+        TT_FATAL(tensor.get_dtype() == DataType::FLOAT32);
     } else if constexpr (std::is_same_v<T, bfloat16>) {
-        TT_FATAL(tensor.dtype() == DataType::BFLOAT16);
+        TT_FATAL(tensor.get_dtype() == DataType::BFLOAT16);
     } else if constexpr (std::is_same_v<T, uint16_t>) {
-        TT_FATAL(tensor.dtype() == DataType::UINT16);
+        TT_FATAL(tensor.get_dtype() == DataType::UINT16);
     } else {
         static_assert(tt::stl::concepts::always_false_v<T>, "Unsupported DataType");
     }
@@ -54,7 +54,7 @@ template<typename T>
 Buffer<T> get_as(Tensor& tensor) {
     validate_datatype<T>(tensor);
     return std::visit(
-        [] (auto&& storage) -> Buffer<T> {
+        [](auto&& storage) -> Buffer<T> {
             using StorageType = std::decay_t<decltype(storage)>;
             if constexpr (std::is_same_v<StorageType, OwnedStorage>) {
                 return get_as<T>(storage.buffer);
@@ -62,15 +62,14 @@ Buffer<T> get_as(Tensor& tensor) {
                 TT_THROW("Tensor must have OwnedStorage");
             }
         },
-        tensor.storage()
-    );
+        tensor.get_storage());
 }
 
 template<typename T>
 const Buffer<T> get_as(const Tensor& tensor) {
     validate_datatype<T>(tensor);
     return std::visit(
-        [] (auto&& storage) -> Buffer<T> {
+        [](auto&& storage) -> Buffer<T> {
             using StorageType = std::decay_t<decltype(storage)>;
             if constexpr (std::is_same_v<StorageType, OwnedStorage>) {
                 return get_as<T>(storage.buffer);
@@ -78,8 +77,7 @@ const Buffer<T> get_as(const Tensor& tensor) {
                 TT_THROW("Tensor must have OwnedStorage");
             }
         },
-        tensor.storage()
-    );
+        tensor.get_storage());
 }
 
 }  // namespace owned_buffer

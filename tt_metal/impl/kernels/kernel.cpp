@@ -93,6 +93,7 @@ void ComputeKernel::process_defines(const std::function<void (const string& defi
 }
 
 void EthernetKernel::process_defines(const std::function<void (const string& define, const string &value)>callback) const {
+    Kernel::process_defines(callback);
     callback("NOC_INDEX", std::to_string(this->config_.noc));
 }
 
@@ -173,8 +174,7 @@ std::pair<uint64_t, uint64_t> DataMovementKernel::get_runtime_args_range() const
 }
 
 std::pair<uint64_t, uint64_t> EthernetKernel::get_runtime_args_range() const {
-    // TODO: get this from eth l1 map
-    std::pair<uint64_t, uint64_t> arg_base_to_result_base = {eth_l1_mem::address_map::ERISC_L1_ARG_BASE, eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE};
+    std::pair<uint64_t, uint64_t> arg_base_to_result_base = {eth_l1_mem::address_map::ERISC_L1_ARG_BASE, eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE};
     return arg_base_to_result_base;
 }
 
@@ -187,7 +187,7 @@ void Kernel::set_runtime_args(const CoreCoord &logical_core, const std::vector<u
     auto validate_runtime_args_size = [&]() {
         uint32_t runtime_args_size = runtime_args.size() * sizeof(uint32_t);
         auto[l1_arg_base, result_base] = this->get_runtime_args_range();
-        if (l1_arg_base + runtime_args_size >= result_base) {
+        if (l1_arg_base + runtime_args_size > result_base) {
             TT_THROW(std::to_string(runtime_args_size / 1024) + "KB runtime args targeting kernel " + this->name() + " on " + logical_core.str() + " are too large.\
                 Cannot be written as they will run into memory region reserved for result. Max allowable size is " + std::to_string((result_base - l1_arg_base)/1024) + " KB.");
         }
@@ -294,7 +294,7 @@ void ComputeKernel::read_binaries(Device *device) {
         const JitBuildState& build_state = device->build_kernel_state(JitBuildProcessorType::COMPUTE, trisc_id);
         ll_api::memory binary_mem = llrt::get_risc_binary(build_state.get_target_out_path(this->kernel_full_name_));
         this->binary_size16_ = llrt::get_binary_code_size16(binary_mem, trisc_id + 2);
-        log_debug("RISC {} kernel binary size: {} in bytes", trisc_id + 2, this->binary_size16_ * 16);
+        log_debug(LogLoader, "RISC {} kernel binary size: {} in bytes", trisc_id + 2, this->binary_size16_ * 16);
         binaries.push_back(binary_mem);
     }
     this->set_binaries(device->id(), std::move(binaries));

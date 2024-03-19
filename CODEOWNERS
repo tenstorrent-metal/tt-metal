@@ -34,6 +34,7 @@ tests/scripts/run_pre_post_commit_regressions.sh @tt-rkim
 tests/scripts/run_tests.sh @tt-rkim
 tests/scripts/run_pre_post_commit_regressions_multi_device.sh @tt-rkim @aliuTT @tt-aho @TT-BrianLiu
 tests/scripts/run_pre_post_commit_regressions_fast_dispatch.sh @tt-rkim @TT-billteng @ttmchiou
+tests/scripts/run_temporary_frequent_api_tests.sh @tt-rkim @aliuTT
 
 # metal - base
 # tt_metal/tt_metal.cpp @abhullar-tt @TT-billteng
@@ -70,11 +71,11 @@ tt_metal/hw/inc/wormhole/eth_l1_address_map.h @aliuTT
 tt_metal/third_party/tt_llk_* @rtawfik01 @acejkov
 
 # metal - profiler
-# tt_metal/**/profiler/ @mo-tenstorrent @TT-billteng
-# tt_metal/**/profiler/**/module.mk @tt-rkim @mo-tenstorrent @TT-billteng
-# tests/tt_metal/tools/profiler/ @mo-tenstorrent @TT-billteng
-# tt_metal/hostdevcommon/profiler_common.h @mo-tenstorrent @TT-billteng
-# docs/source/performance_measurement_tools/profiler.rst @mo-tenstorrent @TT-billteng
+tt_metal/**/profiler/ @mo-tenstorrent
+tt_metal/**/profiler/**/module.mk @tt-rkim @mo-tenstorrent
+tests/tt_metal/tools/profiler/ @mo-tenstorrent
+tt_metal/hostdevcommon/profiler_common.h @mo-tenstorrent
+docs/source/performance_measurement_tools/profiler.rst @mo-tenstorrent
 tt-metal/tt_metal/programming_examples/profiler @mo-tenstorrent
 
 # test scripts

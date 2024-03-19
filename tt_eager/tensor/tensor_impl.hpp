@@ -208,12 +208,27 @@ inline void read_data_from_device_buffer(DeviceBuffer device_buffer, vector<T>& 
 
 template <typename T, template <typename> typename BufferType>
 inline void write_data_to_device_buffer(
-    CommandQueue& cq, const BufferType<T>& host_buffer, DeviceBuffer device_buffer) {
+    CommandQueue & cq, const BufferType<T>& host_buffer, DeviceBuffer device_buffer) {
     ZoneScoped;
     // TODO(arakhmati): can we use generators in this function to go from `data_to_write` to `uint32_data`?
     // And effectively get rid of any additional allocation
-
-    EnqueueWriteBuffer(cq, device_buffer, host_buffer.data(), false);
+    if (CommandQueue::default_mode() == CommandQueue::CommandQueueMode::ASYNC) {
+        if constexpr (std::is_same_v<BufferType<T>, borrowed_buffer::Buffer<T>>) {
+            // When writing borrowed storage asynchronously, we have no control over when host memory is deallocated by the main thread.
+            // To ensure that worker threads enqueues the correct buffer, make a copy and caputre it in an owned buffer.
+            uint32_t borrowed_buf_size_words = device_buffer->num_pages() * device_buffer->page_size() / sizeof(uint32_t);
+            const uint32_t* borrowed_buf_base = static_cast<const uint32_t*>(host_buffer.data());
+            std::vector<uint32_t> owned_copy_vec(borrowed_buf_base, borrowed_buf_base + borrowed_buf_size_words);
+            owned_buffer::Buffer<uint32_t> owned_copy(std::make_shared<std::vector<uint32_t>>(owned_copy_vec));
+            EnqueueWriteBuffer( cq, device_buffer, owned_copy.get_ptr(), false);
+        }
+        else if constexpr (std::is_same_v<BufferType<T>, owned_buffer::Buffer<T>>) {
+            EnqueueWriteBuffer( cq, device_buffer, host_buffer.get_ptr(), false);
+        }
+    }
+    else {
+        EnqueueWriteBuffer(cq, device_buffer, host_buffer.data(), false);
+    }
 }
 
 template <typename T, template <typename> typename BufferType>
@@ -225,6 +240,7 @@ inline void write_data_to_device_buffer(const BufferType<T>& host_buffer, Buffer
     auto uint32_data = pack_vec_into_uint32_vec<T>(host_buffer);
     ::detail::WriteToBuffer(device_buffer, uint32_data);
 }
+
 
 template <typename T, template <typename> typename BufferType>
 inline DeviceBuffer initialize_data_on_device(
@@ -249,7 +265,6 @@ inline DeviceBuffer initialize_data_on_device(
     } else {
         write_data_to_device_buffer<T>(data_to_write, *device_buffer);
     }
-
     return device_buffer;
 }
 
@@ -284,7 +299,8 @@ inline DeviceBuffer to_device_buffer(
                 }
                 return initialize_data_on_device<T>(
                     data_to_write, device, shape, data_type, layout, memory_config, shard_spec);
-            } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
+            }
+            else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage doesn't support to_device_buffer");
             } else if constexpr (std::is_same_v<StorageType, BorrowedStorage>) {
                 if constexpr (
@@ -304,9 +320,14 @@ inline DeviceBuffer to_device_buffer(
                     }
                     return initialize_data_on_device<T>(
                         data_to_write, device, shape, data_type, layout, memory_config, shard_spec);
+
                 } else {
                     TT_THROW("Borrowed storage doesn't support this data type");
                 }
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("MultiHostStorage storage doesn't support to_device_buffer");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
+                TT_THROW("MultiDeviceStorage doesn't support to_device_buffer");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
@@ -335,9 +356,8 @@ inline Tensor to_host(const Tensor& tensor, bool blocking = true) {
     } else {
         read_data_from_device_buffer<T>(device_buffer, data_vec);
     }
-
     auto output_buffer = owned_buffer::create<T>(std::move(data_vec));
-    return Tensor(OwnedStorage{output_buffer}, tensor.shape(), tensor.dtype(), tensor.layout());
+    return Tensor(OwnedStorage{output_buffer}, tensor.get_legacy_shape(), tensor.get_dtype(), tensor.get_layout());
 }
 
 template <typename T>
@@ -355,7 +375,7 @@ inline Tensor to_host_sharded(const Tensor& tensor) {
     ::detail::ReadFromBuffer(*device_buffer, device_data, true);
     auto data_vec = unpack_uint32_vec<T>(device_data);
     auto output_buffer = owned_buffer::create<T>(std::move(data_vec));
-    return Tensor(OwnedStorage{output_buffer}, tensor.shape(), tensor.dtype(), tensor.layout());
+    return Tensor(OwnedStorage{output_buffer}, tensor.get_legacy_shape(), tensor.get_dtype(), tensor.get_layout());
 }
 
 template <typename T>
@@ -371,9 +391,9 @@ inline Tensor to_device(
     TT_ASSERT(target_device != nullptr && "Need target device in order to move tensor to device!");
     TT_ASSERT(tensor.is_allocated() && "Need data to exist in order to move it to device");
 
-    auto shape = tensor.shape();
-    auto data_type = tensor.dtype();
-    auto layout = tensor.layout();
+    auto shape = tensor.get_legacy_shape();
+    auto data_type = tensor.get_dtype();
+    auto layout = tensor.get_layout();
 
     std::optional<ShardSpecBuffer> shard_spec_buffer_opt = std::nullopt;
     if (memory_config.is_sharded()) {
@@ -384,18 +404,18 @@ inline Tensor to_device(
     }
 
     auto device_buffer = tensor_impl::to_device_buffer<T>(
-        tensor.storage(), target_device, shape, data_type, layout, memory_config, shard_spec_buffer_opt, queue);
+        tensor.get_storage(), target_device, shape, data_type, layout, memory_config, shard_spec_buffer_opt, queue);
     return Tensor(DeviceStorage{device_buffer}, shape, data_type, layout);
 }
 
 template <typename T>
 inline Tensor to_layout(const Tensor& tensor, Layout target_layout) {
-    if (tensor.layout() == target_layout) {
+    if (tensor.get_layout() == target_layout) {
         return tensor;
     }
 
-    auto shape = tensor.shape();
-    auto source_layout = tensor.layout();
+    auto shape = tensor.get_legacy_shape();
+    auto source_layout = tensor.get_layout();
     auto convert = [&shape, source_layout, target_layout](const auto& input_data) -> std::vector<T> {
         switch (source_layout) {
             case Layout::ROW_MAJOR:
@@ -416,28 +436,53 @@ inline Tensor to_layout(const Tensor& tensor, Layout target_layout) {
         }
     };
 
-    auto output_data = std::visit(
-        [&convert](auto&& storage) -> std::vector<T> {
+    auto output_storage = std::visit(
+        [&convert](auto&& storage) -> std::variant<OwnedStorage, MultiDeviceHostStorage> {
             using StorageType = std::decay_t<decltype(storage)>;
             if constexpr (std::is_same_v<StorageType, OwnedStorage>) {
                 const auto input_data = owned_buffer::get_as<T>(storage.buffer);
-                return convert(input_data);
+                auto output_buffer = owned_buffer::create<T>(std::move(convert(input_data)));
+                return OwnedStorage{output_buffer};
             } else if constexpr (std::is_same_v<StorageType, BorrowedStorage>) {
                 const auto input_data = borrowed_buffer::get_as<T>(storage.buffer);
-                return convert(input_data);
+                auto output_buffer = owned_buffer::create<T>(std::move(convert(input_data)));
+                return OwnedStorage{output_buffer};
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
+                std::vector<OwnedBuffer> output_buffers;
+                std::vector<Shape> output_shapes;
+                for (int i = 0; i < storage.buffers.size(); i++) {
+                    const auto input_data = owned_buffer::get_as<T>(storage.buffers[i]);
+                    auto output_buffer = owned_buffer::create<T>(std::move(convert(input_data)));
+                    output_buffers.push_back(output_buffer);
+                    output_shapes.push_back(storage.shapes[i]);
+                }
+                return MultiDeviceHostStorage{output_buffers, output_shapes};
             } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("On-device layout conversion for tensor with MultiDeviceStorage is not supported.");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
         },
-        tensor.storage());
+        tensor.get_storage());
 
-    auto output_buffer = owned_buffer::create<T>(std::move(output_data));
-    return Tensor(OwnedStorage{output_buffer}, tensor.shape(), tensor.dtype(), target_layout);
+
+    return std::visit(
+        [&tensor, &target_layout](auto&& storage) -> Tensor {
+            using StorageType = std::decay_t<decltype(storage)>;
+            if constexpr (std::is_same_v<StorageType, OwnedStorage>) {
+                return Tensor(storage, tensor.get_legacy_shape(), tensor.get_dtype(), target_layout);
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
+                return Tensor(storage, tensor.get_legacy_shape(), tensor.get_dtype(), target_layout);
+            } else {
+                raise_unsupported_storage<StorageType>();
+            }
+        }, output_storage);
 }
 
 Tensor to_layout_bfloat8_b(const Tensor& tensor, Layout target_layout);
+Tensor to_layout_bfloat4_b(const Tensor& tensor, Layout target_layout);
 
 // ======================================================================================
 //                                  .pad() and .unpad()
@@ -446,9 +491,9 @@ template <typename T>
 inline Tensor pad(
     const Tensor& tensor, const Shape& output_tensor_shape, const Shape& input_tensor_start, float pad_value) {
     auto pad_value_ = static_cast<T>(pad_value);
-    const auto input_tensor_shape = tensor.shape();
+    const auto input_tensor_shape = tensor.get_legacy_shape();
     const auto input_tensor_strides = tensor.strides();
-    const auto input_tensor_data_type = tensor.dtype();
+    const auto input_tensor_data_type = tensor.get_dtype();
 
     auto pad = [&input_tensor_shape,
                 &input_tensor_strides,
@@ -526,20 +571,26 @@ inline Tensor pad(
                 return pad(input_data);
             } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
+                TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
         },
-        tensor.storage());
-    return Tensor(OwnedStorage{output_buffer}, output_tensor_shape, tensor.dtype(), tensor.layout());
+        tensor.get_storage());
+    return Tensor(OwnedStorage{output_buffer}, output_tensor_shape, tensor.get_dtype(), tensor.get_layout());
 }
 
 Tensor pad_bfloat8_b(
     const Tensor& tensor, const Shape& output_tensor_shape, const Shape& input_tensor_start, float pad_value);
+Tensor pad_bfloat4_b(
+    const Tensor& tensor, const Shape& output_tensor_shape, const Shape& input_tensor_start, float pad_value);
 
 template <typename T>
 inline Tensor unpad(const Tensor& tensor, const Shape& output_tensor_start, const Shape& output_tensor_end) {
-    const auto input_tensor_shape = tensor.shape();
+    const auto input_tensor_shape = tensor.get_legacy_shape();
     const auto input_tensor_strides = tensor.strides();
 
     // Check if tensor start and end indices are within input tensor shape
@@ -596,15 +647,20 @@ inline Tensor unpad(const Tensor& tensor, const Shape& output_tensor_start, cons
                 return unpad(input_data);
             } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
+                TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
         },
-        tensor.storage());
-    return Tensor(OwnedStorage{output_buffer}, output_tensor_shape, tensor.dtype(), tensor.layout());
+        tensor.get_storage());
+    return Tensor(OwnedStorage{output_buffer}, output_tensor_shape, tensor.get_dtype(), tensor.get_layout());
 }
 
 Tensor unpad_bfloat8_b(const Tensor& tensor, const Shape& output_tensor_start, const Shape& output_tensor_end);
+Tensor unpad_bfloat4_b(const Tensor& tensor, const Shape& output_tensor_start, const Shape& output_tensor_end);
 
 // ======================================================================================
 //                                         Print
@@ -665,8 +721,10 @@ inline void print_datum(std::ostream& ss, bfloat16 datum) {
     print_datum(ss, datum.to_float());
 }
 
+inline constexpr int constexpr_strlen(const char* str) { return *str ? 1 + constexpr_strlen(str + 1) : 0; }
+
 constexpr auto TENSOR_TYPE_STRING = "ttnn.Tensor";
-constexpr auto TENSOR_TYPE_STRING_PLUS_OPEN_PARENTHESIS_LENGTH = std::strlen(TENSOR_TYPE_STRING) + 1;
+constexpr auto TENSOR_TYPE_STRING_PLUS_OPEN_PARENTHESIS_LENGTH = constexpr_strlen(TENSOR_TYPE_STRING) + 1;
 
 static constexpr auto TAB = "    ";
 static constexpr auto TAB_MINUS_1 = "   ";
@@ -780,9 +838,9 @@ std::string to_string(const BufferType& buffer, const Shape& shape, DataType dty
 
 template <typename T>
 inline std::string to_string(const Tensor& tensor, std::optional<DataType> original_dtype = std::nullopt) {
-    const auto shape = tensor.shape();
-    const auto dtype = original_dtype.value_or(tensor.dtype());
-    const auto layout = tensor.layout();
+    const auto shape = tensor.get_legacy_shape();
+    const auto dtype = original_dtype.value_or(tensor.get_dtype());
+    const auto layout = tensor.get_layout();
 
     if (not tensor.is_allocated()) {
         return fmt::format(
@@ -803,12 +861,22 @@ inline std::string to_string(const Tensor& tensor, std::optional<DataType> origi
         auto input_float_data = unpack_bfp8_tiles_into_float_vec(input_packed_data, /*row_major_output=*/false, /*is_exp_a=*/false);
         auto input_float_buffer = owned_buffer::create<float>(std::move(input_float_data));
         auto float_tensor =
-            Tensor(OwnedStorage{input_float_buffer}, tensor.shape(), DataType::FLOAT32, tensor.layout());
-        return to_string<float>(float_tensor, tensor.dtype());
+            Tensor(OwnedStorage{input_float_buffer}, tensor.get_legacy_shape(), DataType::FLOAT32, tensor.get_layout());
+        return to_string<float>(float_tensor, tensor.get_dtype());
+    }
+
+    if (dtype == DataType::BFLOAT4_B and original_dtype == std::nullopt) {
+        // Convert to FLOAT32 tensor before printing
+        auto input_packed_data = owned_buffer::get_as<uint32_t>(tensor).get();
+        auto input_float_data = unpack_bfp4_tiles_into_float_vec(input_packed_data, /*row_major_output=*/false, /*is_exp_a=*/false);
+        auto input_float_buffer = owned_buffer::create<float>(std::move(input_float_data));
+        auto float_tensor =
+            Tensor(OwnedStorage{input_float_buffer}, tensor.get_legacy_shape(), DataType::FLOAT32, tensor.get_layout());
+        return to_string<float>(float_tensor, tensor.get_dtype());
     }
 
     return std::visit(
-        [&] (auto&& storage) -> std::string {
+        [&](auto&& storage) -> std::string {
             using StorageType = std::decay_t<decltype(storage)>;
             if constexpr (std::is_same_v<StorageType, OwnedStorage>) {
                 const auto buffer = owned_buffer::get_as<T>(storage.buffer);
@@ -820,12 +888,15 @@ inline std::string to_string(const Tensor& tensor, std::optional<DataType> origi
             }
             else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Cannot print a device tensor!");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
+                TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
         },
-        tensor.storage()
-    );
+        tensor.get_storage());
 }
 
 template <typename T>
@@ -841,7 +912,7 @@ Tensor extract_shard(const Tensor & tensor, const uint32_t & core_id){
 
     auto unpacked_data = tensor_impl::unpack_uint32_vec<T>(device_data);
     auto output_buffer = owned_buffer::create<T>(std::move(unpacked_data));
-    return Tensor(OwnedStorage{output_buffer}, shard_shape, tensor.dtype(), tensor.layout());
+    return Tensor(OwnedStorage{output_buffer}, shard_shape, tensor.get_dtype(), tensor.get_layout());
 
 }
 
@@ -864,11 +935,15 @@ void* get_raw_host_data_ptr(const Tensor& tensor) {
                 }
             } else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            } else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
+                TT_THROW("Device storage isn't supported");
             } else {
                 raise_unsupported_storage<StorageType>();
             }
         },
-        tensor.storage());
+        tensor.get_storage());
 }
 
 }  // namespace tensor_impl

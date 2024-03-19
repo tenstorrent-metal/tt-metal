@@ -74,23 +74,20 @@ def register_ttl_math_op_function_unary(name, ttl_math_op_function, op_name):
     ) -> ttnn.Tensor:
         original_shape = input_tensor.shape
         input_tensor = ttnn.unsqueeze_to_4D(input_tensor)
-        ttl_input_tensor = input_tensor.value
 
         if not isinstance(input_tensor, ttnn.Tensor):
             raise TypeError("Expected first argument to be a ttnn.Tensor")
 
-        if not ttnn.has_storage_type_of(input_tensor, ttnn.DEVICE_STORAGE_TYPE):
+        if not ttnn.is_tensor_storage_on_device(input_tensor):
             raise RuntimeError("input_tensor must be on device!")
-        ttl_input_tensor = input_tensor.value
 
-        ttl_output_tensor = ttl_math_op_function(ttl_input_tensor, output_mem_config=memory_config)
+        output_tensor = ttl_math_op_function(input_tensor, output_mem_config=memory_config)
 
-        output_tensor = ttnn.Tensor(ttl_output_tensor)
         output_tensor = ttnn.reshape(output_tensor, original_shape)
         return output_tensor
 
     math_op_function.__name__ = f"ttnn.{(name)}"
-    math_op_function.__doc__ = f"""{(name)}(input_tensor: ttnn.Tensor, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
+    math_op_function.decorated_function.__doc__ = f"""{(name)}(input_tensor: ttnn.Tensor, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
 
         Applies the {op_name} function to the elements of the input tensor :attr:`input_tensor`.
 
@@ -219,31 +216,20 @@ def register_ttl_math_binary_function(name, ttl_math_binary_function, op_name):
         if not isinstance(input_tensor_a, ttnn.Tensor) or not isinstance(input_tensor_b, ttnn.Tensor):
             raise TypeError("Expected both arguments to be a ttnn.Tensor")
 
-        if not ttnn.has_storage_type_of(input_tensor_a, ttnn.DEVICE_STORAGE_TYPE) or not ttnn.has_storage_type_of(
-            input_tensor_b, ttnn.DEVICE_STORAGE_TYPE
-        ):
+        if not ttnn.is_tensor_storage_on_device(input_tensor_a) or not ttnn.is_tensor_storage_on_device(input_tensor_b):
             raise RuntimeError("input_tensors must be on device!")
 
         original_shape = input_tensor_a.shape
 
         input_tensor_a = ttnn.unsqueeze_to_4D(input_tensor_a)
-        ttl_input_tensor_a = input_tensor_a.value
-
         input_tensor_b = ttnn.unsqueeze_to_4D(input_tensor_b)
-        ttl_input_tensor_b = input_tensor_b.value
 
-        ttl_output_tensor = ttl_math_binary_function(
-            ttl_input_tensor_a, ttl_input_tensor_b, output_mem_config=memory_config
-        )
-
-        ttl_input_tensor_a = input_tensor_a.value
-        ttl_input_tensor_b = input_tensor_b.value
-        output_tensor = ttnn.Tensor(ttl_output_tensor)
+        output_tensor = ttl_math_binary_function(input_tensor_a, input_tensor_b, output_mem_config=memory_config)
         output_tensor = ttnn.reshape(output_tensor, original_shape)
         return output_tensor
 
     math_binary_function.__name__ = f"ttnn.{name}"
-    math_binary_function.__doc__ = f"""{name}(input_tensor_a: ttnn.Tensor, input_tensor_b: ttnn.Tensor, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
+    math_binary_function.decorated_function.__doc__ = f"""{name}(input_tensor_a: ttnn.Tensor, input_tensor_b: ttnn.Tensor, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
 
         Performs eltwise-binary {op_name} operation on two tensors :attr:`input_a` and :attr:`input_b`.
 
@@ -352,42 +338,30 @@ def register_ttl_lerp_function(name, ttl_lerp_function, op_name):
         if not isinstance(input_tensor_a, ttnn.Tensor) or not isinstance(input_tensor_b, ttnn.Tensor):
             raise TypeError("Expected both arguments to be a ttnn.Tensor")
 
-        if not ttnn.has_storage_type_of(input_tensor_a, ttnn.DEVICE_STORAGE_TYPE) or not ttnn.has_storage_type_of(
-            input_tensor_b, ttnn.DEVICE_STORAGE_TYPE
-        ):
+        if not ttnn.is_tensor_storage_on_device(input_tensor_a) or not ttnn.is_tensor_storage_on_device(input_tensor_b):
             raise RuntimeError("input_tensors must be on device!")
 
         if isinstance(weight, ttnn.Tensor) and not (input_tensor_a.shape == weight.shape):
             raise RuntimeError("weight tensor must be of same size!")
 
-        if isinstance(weight, ttnn.Tensor) and not ttnn.has_storage_type_of(weight, ttnn.DEVICE_STORAGE_TYPE):
+        if isinstance(weight, ttnn.Tensor) and not ttnn.is_tensor_storage_on_device(weight):
             raise RuntimeError("weight tensor must be on device!")
 
         original_shape = input_tensor_a.shape
-        ttl_weight = weight
 
         input_tensor_a = ttnn.unsqueeze_to_4D(input_tensor_a)
-        ttl_input_tensor_a = input_tensor_a.value
-
         input_tensor_b = ttnn.unsqueeze_to_4D(input_tensor_b)
-        ttl_input_tensor_b = input_tensor_b.value
 
         if isinstance(weight, ttnn.Tensor):
             weight = ttnn.unsqueeze_to_4D(weight)
-            ttl_weight = weight.value
 
-        ttl_output_tensor = ttl_lerp_function(
-            ttl_input_tensor_a, ttl_input_tensor_b, ttl_weight, output_mem_config=memory_config
-        )
+        output_tensor = ttl_lerp_function(input_tensor_a, input_tensor_b, weight, output_mem_config=memory_config)
 
-        ttl_input_tensor_a = input_tensor_a.value
-        ttl_input_tensor_b = input_tensor_b.value
-        output_tensor = ttnn.Tensor(ttl_output_tensor)
         output_tensor = ttnn.reshape(output_tensor, original_shape)
         return output_tensor
 
     lerp_function.__name__ = f"ttnn.{name}"
-    lerp_function.__doc__ = f"""{name}(input_tensor_a: ttnn.Tensor, input_tensor_b: ttnn.Tensor, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
+    lerp_function.decorated_function.__doc__ = f"""{name}(input_tensor_a: ttnn.Tensor, input_tensor_b: ttnn.Tensor, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
 
         Performs eltwise-binary {op_name} operation on two tensors :attr:`input_a` and :attr:`input_b`.
 
@@ -456,7 +430,6 @@ def register_ttl_math_unary_function_with_float(name, ttl_math_unary_function, o
     ) -> ttnn.Tensor:
         original_shape = input_tensor.shape
         input_tensor = ttnn.unsqueeze_to_4D(input_tensor)
-        ttl_input_tensor = input_tensor.value
 
         if not isinstance(input_tensor, ttnn.Tensor):
             raise TypeError("Expected first argument to be a ttnn.Tensor")
@@ -464,18 +437,15 @@ def register_ttl_math_unary_function_with_float(name, ttl_math_unary_function, o
         if not _is_scalar(parameter):
             raise TypeError("Expected second argument to be a scalar")
 
-        if not ttnn.has_storage_type_of(input_tensor, ttnn.DEVICE_STORAGE_TYPE):
+        if not ttnn.is_tensor_storage_on_device(input_tensor):
             raise RuntimeError("input_tensor must be on device!")
-        ttl_input_tensor = input_tensor.value
 
-        ttl_output_tensor = ttl_math_unary_function(ttl_input_tensor, parameter, output_mem_config=memory_config)
-
-        output_tensor = ttnn.Tensor(ttl_output_tensor)
+        output_tensor = ttl_math_unary_function(input_tensor, parameter, output_mem_config=memory_config)
         output_tensor = ttnn.reshape(output_tensor, original_shape)
         return output_tensor
 
     math_unary_function.__name__ = f"ttnn.{(name)}"
-    math_unary_function.__doc__ = f"""{(name)}(input_tensor: ttnn.Tensor, parameter, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
+    math_unary_function.decorated_function.__doc__ = f"""{(name)}(input_tensor: ttnn.Tensor, parameter, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
 
         Applies the {op_name} function to the elements of the input tensor :attr:`input_tensor` with :attr:`{param}` parameter.
 

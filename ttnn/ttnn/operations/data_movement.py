@@ -12,19 +12,15 @@ import ttnn
 def _torch_pad(input_tensor: ttnn.Tensor, padding, value):
     import torch
 
-    input_tensor = ttnn.from_device(input_tensor)
-    input_tensor = ttnn.to_layout(input_tensor, ttnn.ROW_MAJOR_LAYOUT)
     input_tensor = ttnn.to_torch(input_tensor)
-
     torch_padding = []
     for dimension in reversed(padding):
         torch_padding.append(dimension[0])
         torch_padding.append(dimension[1])
-
     return torch.nn.functional.pad(input_tensor, pad=torch_padding, mode="constant", value=value)
 
 
-def _fallback_pad(input_tensor: ttnn.Tensor, padding, value):
+def _fallback_pad(input_tensor: ttnn.Tensor, padding, value, *, memory_config=ttnn.DRAM_MEMORY_CONFIG):
     if len(padding) != len(input_tensor.shape):
         raise RuntimeError("ttnn.pad: padding must be the same length as the input tensor rank")
 
@@ -50,10 +46,14 @@ def _fallback_pad(input_tensor: ttnn.Tensor, padding, value):
 
     output_tensor = _torch_pad(input_tensor, padding, value)
     output_tensor = ttnn.from_torch(
-        output_tensor, dtype=input_tensor.dtype, device=input_tensor.device, layout=input_tensor.layout
+        output_tensor,
+        dtype=input_tensor.dtype,
+        device=input_tensor.device(),
+        layout=input_tensor.layout,
+        memory_config=memory_config,
     )
 
-    # Padding always turn the intended shape to the shape with tile padding. For simplicity of the operation
+    # Padding always turns the intended shape to the shape with tile padding. For simplicity of the operation
     output_tensor = ttnn.reshape(output_tensor, shape=output_tensor.shape.with_tile_padding())
     return output_tensor
 
@@ -131,12 +131,10 @@ def pad(
 
     padded_shape = tuple(dim + end for dim, end in zip(input_shape_with_tile_padding, pad_end))
 
-    ttl_input_tensor = input_tensor.value
-    ttl_output_tensor = ttl.tensor.pad(
-        ttl_input_tensor, padded_shape, pad_start, value, output_mem_config=memory_config, use_multicore=True
+    output_tensor = ttl.tensor.pad(
+        input_tensor, padded_shape, pad_start, value, output_mem_config=memory_config, use_multicore=True
     )
 
-    output_tensor = ttnn.Tensor(ttl_output_tensor)
     while len(output_tensor.shape) > original_rank:
         output_tensor = ttnn.squeeze(output_tensor, dim=0)
 
@@ -172,6 +170,7 @@ def _permute_validate_input_tensors(operation_name, input_tensor, *args, **kwarg
     name="ttnn.permute",
     validate_input_tensors=_permute_validate_input_tensors,
     torch_function=_torch_permute,
+    # TODO(arakhmati): add proper fallback
 )
 def permute(input_tensor: ttnn.Tensor, order: Tuple[int, ...]) -> ttnn.Tensor:
     r"""
@@ -199,15 +198,14 @@ def permute(input_tensor: ttnn.Tensor, order: Tuple[int, ...]) -> ttnn.Tensor:
             "The number of dimensions in the tensor input does not match the length of the desired ordering"
         )
 
-    on_device = ttnn.has_storage_type_of(input_tensor, ttnn.DEVICE_STORAGE_TYPE)
-    device = input_tensor.device
+    on_device = ttnn.is_tensor_storage_on_device(input_tensor)
+    device = input_tensor.device()
     layout = input_tensor.layout
     dtype = input_tensor.dtype
     rank = len(input_tensor.shape)
 
     if len(input_tensor.shape) < 4:
         input_tensor = ttnn.unsqueeze_to_4D(input_tensor)
-        ttl_input_tensor = input_tensor.value
         adjusted_order_for_4D_tensor = order
         while len(adjusted_order_for_4D_tensor) < 4:
             adjusted_order_for_4D_tensor = (0,) + tuple(x + 1 for x in adjusted_order_for_4D_tensor)
@@ -216,10 +214,8 @@ def permute(input_tensor: ttnn.Tensor, order: Tuple[int, ...]) -> ttnn.Tensor:
     if ttnn.has_tile_padding(input_tensor):
         input_tensor = ttnn.to_layout(input_tensor, ttnn.ROW_MAJOR_LAYOUT)
 
-    ttl_input_tensor = input_tensor.value
-
-    if ttnn.has_storage_type_of(input_tensor, ttl.tensor.StorageType.DEVICE) and len(input_tensor.shape) == 4:
-        output_tensor = ttnn.Tensor(ttl.tensor.permute(ttl_input_tensor, order))
+    if ttnn.is_tensor_storage_on_device(input_tensor) and len(input_tensor.shape) == 4:
+        output_tensor = ttl.tensor.permute(input_tensor, order)
         output_tensor = ttnn.to_layout(output_tensor, layout)
         rank_should_be_updated = len(output_tensor.shape) > rank
         while rank_should_be_updated:
@@ -227,7 +223,7 @@ def permute(input_tensor: ttnn.Tensor, order: Tuple[int, ...]) -> ttnn.Tensor:
             output_tensor = ttnn.squeeze(output_tensor, dim=0)
             rank_should_be_updated = prior_rank != len(output_tensor.shape) and len(output_tensor.shape) > rank
 
-        if on_device and not ttnn.has_storage_type_of(output_tensor, ttnn.DEVICE_STORAGE_TYPE):
+        if on_device and not ttnn.is_tensor_storage_on_device(output_tensor):
             output_tensor = ttnn.to_device(output_tensor, device)
         return output_tensor
     else:
@@ -248,6 +244,14 @@ def _torch_concat(tensors, dim=0, **_):
     return torch.concat(torch_tensors, dim)
 
 
+def _fallback_concat(tensors, dim=0, *, memory_config=ttnn.DRAM_MEMORY_CONFIG):
+    dtype = tensors[0].dtype
+    device = tensors[0].device()
+    layout = tensors[0].layout
+    output_tensor = _torch_concat(tensors, dim=dim)
+    return ttnn.from_torch(output_tensor, dtype=dtype, device=device, layout=layout, memory_config=memory_config)
+
+
 def _concat_validate_input_tensors(operation_name, tensors, dim, *args, **kwargs):
     for input_tensor in tensors:
         ttnn.validate_input_tensor(
@@ -255,7 +259,7 @@ def _concat_validate_input_tensors(operation_name, tensors, dim, *args, **kwargs
             input_tensor,
             ranks=(2, 3, 4),
             dtypes=(ttnn.bfloat16, ttnn.bfloat8_b, ttnn.uint16, ttnn.uint32),
-            layouts=(ttnn.TILE_LAYOUT,),
+            layouts=(ttnn.ROW_MAJOR_LAYOUT, ttnn.TILE_LAYOUT),
             can_be_on_device=True,
             can_be_on_cpu=False,
         )
@@ -265,14 +269,16 @@ def _concat_validate_input_tensors(operation_name, tensors, dim, *args, **kwargs
     name="ttnn.concat",
     validate_input_tensors=_concat_validate_input_tensors,
     torch_function=_torch_concat,
+    fallback=_fallback_concat,
 )
 def concat(
     tensors: List[ttnn.Tensor],
     dim: int = 0,
+    *,
     memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG,
 ) -> ttnn.Tensor:
     r"""
-    concat(tensors: List[ttnn.Tensor], dim: int = 0) -> ttnn.Tensor
+    concat(tensors: List[ttnn.Tensor], dim: int = 0, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
 
     Concats :attr:`tensors` in the given :attr:`dim`.
 
@@ -280,26 +286,38 @@ def concat(
         * :attr:`tensors`: the tensors to be concatenated.
         * :attr:`dim`: the concatenating dimension.
 
+    Keyword Args:
+        * :attr:`memory_config`: the memory configuration to use for the operation
+
     Example::
 
         >>> tensor = ttnn.concat(ttnn.from_torch(torch.zeros((1, 1, 64, 32), ttnn.from_torch(torch.zeros((1, 1, 64, 32), dim=3)), device)
 
         >>> tensor1 = ttnn.from_torch(torch.zeros((1, 1, 64, 32), dtype=torch.bfloat16), device=device)
         >>> tensor2 = ttnn.from_torch(torch.zeros((1, 1, 64, 32), dtype=torch.bfloat16), device=device)
-        >>> output = ttnn.concat(tensor1, tensor2, dim=4)
+        >>> output = ttnn.concat([tensor1, tensor2], dim=4)
         >>> print(output.shape)
         [1, 1, 32, 64]
 
     """
-    if len(tensors) < 2:
-        raise RuntimeError("You must have at least two tensors to concat!")
+    if len(tensors) < 1:
+        raise RuntimeError("ttnn.concat: expected a non-empty list of Tensors!")
+
+    if len(tensors) == 1:
+        return ttnn.to_memory_config(tensors[0], memory_config)
 
     first_tensor = tensors[0]
     first_tensor_shape = first_tensor.shape
     for tensor in tensors:
         shape = tensor.shape
-        if len(shape) != len(first_tensor_shape) or any(
-            shape[i] != first_tensor_shape[i] for i in range(len(shape)) if i != dim
+        if (
+            len(shape) != len(first_tensor_shape)
+            or any(shape[i] != first_tensor_shape[i] for i in range(len(shape)) if i != dim)
+            or any(
+                shape.with_tile_padding()[i] != first_tensor_shape.with_tile_padding()[i]
+                for i in range(len(shape))
+                if i != dim
+            )
         ):
             raise ValueError(
                 "All dimensions must be the same size except for the dimension along which the contenation is taking place."
@@ -316,46 +334,25 @@ def concat(
 
     rank = len(tensors[0].shape)
 
-    dtype = tensors[0].dtype
-    device = tensors[0].device
-    layout = tensors[0].layout
-    rank = len(tensors[0].shape)
-
-    all_tensors_are_tile_layout_without_padding = not any(
-        tensor.layout != ttnn.TILE_LAYOUT or ttnn.has_tile_padding(tensor) for tensor in tensors
+    all_tensors_are_tile_layout_without_padding = all(
+        tensor.layout == ttnn.TILE_LAYOUT and not ttnn.has_tile_padding(tensor) for tensor in tensors
     )
 
-    if rank < 4 and all_tensors_are_tile_layout_without_padding:
-        any_tensor_has_tile_padding = any(ttnn.has_tile_padding(tensor) for tensor in tensors)
-
-        def convert_to_ttl_tensor(tensor):
-            if any_tensor_has_tile_padding:
-                tensor = ttnn.to_layout(tensor, ttnn.ROW_MAJOR_LAYOUT)
-            return ttnn.unsqueeze_to_4D(tensor).value
-
-        ttl_tensors = [convert_to_ttl_tensor(tensor) for tensor in tensors]
+    if rank <= 4 and all_tensors_are_tile_layout_without_padding:
+        tensors_4d = [ttnn.unsqueeze_to_4D(tensor) for tensor in tensors]
         dim = dim + 4 - rank
-        output_tensor = ttnn.Tensor(ttl.tensor.concat(ttl_tensors, dim=dim, output_mem_config=memory_config))
-        output_tensor = ttnn.to_layout(output_tensor, layout)
-        rank_should_be_updated = len(output_tensor.shape) > rank
-        while rank_should_be_updated:
-            prior_rank = len(output_tensor.shape)
+        output_tensor = ttl.tensor.concat(tensors_4d, dim=dim, output_mem_config=memory_config)
+        while len(output_tensor.shape) > rank:
             output_tensor = ttnn.squeeze(output_tensor, dim=0)
-            rank_should_be_updated = prior_rank != len(output_tensor.shape) and len(output_tensor.shape) > rank
         return output_tensor
     else:
-        output_tensor = _torch_concat(tensors, dim=dim)
-
-        return ttnn.from_torch(output_tensor, dtype=dtype, device=device, layout=layout)
+        raise NotImplementedError
 
 
 def _torch_split(input_tensor: ttnn.Tensor, split_size, dim):
     import torch
 
-    input_tensor = ttnn.from_device(input_tensor)
-    input_tensor = ttnn.to_layout(input_tensor, ttnn.ROW_MAJOR_LAYOUT)
     input_tensor = ttnn.to_torch(input_tensor)
-
     return torch.split(input_tensor, split_size, dim=dim)
 
 
@@ -375,6 +372,7 @@ def _split_validate_input_tensors(operation_name, input_tensor, *args, **kwargs)
     name="ttnn.split",
     validate_input_tensors=_split_validate_input_tensors,
     torch_function=_torch_split,
+    # TODO(arakhmati): add proper fallback
 )
 def split(input_tensor: ttnn.Tensor, split_size: int, dim: int) -> ttnn.Tensor:
     r"""
@@ -390,7 +388,9 @@ def split(input_tensor: ttnn.Tensor, split_size: int, dim: int) -> ttnn.Tensor:
 
     output_tensors = _torch_split(input_tensor, split_size, dim)
     output_tensors = tuple(
-        ttnn.from_torch(output_tensor, device=input_tensor.device, dtype=input_tensor.dtype, layout=input_tensor.layout)
+        ttnn.from_torch(
+            output_tensor, device=input_tensor.device(), dtype=input_tensor.dtype, layout=input_tensor.layout
+        )
         for output_tensor in output_tensors
     )
     return output_tensors
@@ -401,7 +401,6 @@ def _torch_repeat_interleave(tensor, repeats, dim=0, **_):
 
     if isinstance(repeats, ttnn.Tensor):
         repeats = ttnn.to_torch(repeats)
-
     return torch.repeat_interleave(ttnn.to_torch(tensor), repeats, dim=dim)
 
 
@@ -421,6 +420,7 @@ def _repeat_interleave_validate_input_tensors(operation_name, input_tensor, *arg
     name="ttnn.repeat_interleave",
     validate_input_tensors=_repeat_interleave_validate_input_tensors,
     torch_function=_torch_repeat_interleave,
+    # TODO(arakhmati): add proper fallback
 )
 def repeat_interleave(input_tensor: ttnn.Tensor, repeats: Union[ttnn.Tensor, int], dim: int = 0) -> ttnn.Tensor:
     r"""
@@ -467,12 +467,11 @@ def repeat_interleave(input_tensor: ttnn.Tensor, repeats: Union[ttnn.Tensor, int
             raise RuntimeError("ttnn: repeats must be 0-dim or 1-dim tensor")
 
     dtype = input_tensor.dtype
-    device = input_tensor.device
+    device = input_tensor.device()
     layout = input_tensor.layout
     rank = len(input_tensor.shape)
     if dtype == ttnn.bfloat16 and rank == 4 and dim != 2 and dim != 3:
-        ttl_input_tensor = input_tensor.value
-        output_tensor = ttnn.Tensor(ttl.tensor.repeat_interleave(ttl_input_tensor, repeats, dim=dim))
+        output_tensor = ttl.tensor.repeat_interleave(input_tensor, repeats, dim=dim)
         *batch, _, _ = output_tensor.shape
         *_, h, w = input_tensor.shape
         *_, padded_h, padded_w = input_tensor.shape.with_tile_padding()
@@ -496,8 +495,6 @@ def repeat_interleave(input_tensor: ttnn.Tensor, repeats: Union[ttnn.Tensor, int
 
 
 def _torch_repeat(tensor, shape, **_):
-    import torch
-
     return ttnn.to_torch(tensor).repeat(shape[0], shape[1], shape[2], shape[3])
 
 
@@ -517,6 +514,7 @@ def _repeat_validate_input_tensors(operation_name, input_tensor, *args, **kwargs
     name="ttnn.repeat",
     validate_input_tensors=_repeat_validate_input_tensors,
     torch_function=_torch_repeat,
+    # TODO(arakhmati): add proper fallback
 )
 def repeat(
     input_tensor: ttnn.Tensor,
@@ -547,12 +545,11 @@ def repeat(
         raise RuntimeError("ttnn: Expected shape to be a ttnn.Shape")
 
     dtype = input_tensor.dtype
-    device = input_tensor.device
+    device = input_tensor.device()
     layout = input_tensor.layout
     rank = len(input_tensor.shape)
     if dtype == ttnn.bfloat16 and rank == 4:
-        ttl_input_tensor = input_tensor.value
-        output_tensor = ttnn.Tensor(ttl.tensor.repeat(ttl_input_tensor, shape))
+        output_tensor = ttl.tensor.repeat(input_tensor, shape)
         *batch, _, _ = output_tensor.shape
         *_, h, w = input_tensor.shape
         *_, padded_h, padded_w = input_tensor.shape.with_tile_padding()

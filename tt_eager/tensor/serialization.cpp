@@ -40,6 +40,19 @@ void dump_borrowed_storage(ofstream& output_stream, const BorrowedStorage& stora
     );
 }
 
+void dump_multi_device_host_storage(ofstream& output_stream, const MultiDeviceHostStorage& storage) {
+    for (const auto& buffer : storage.buffers) {
+        std::visit(
+            [&output_stream]<typename T>(const owned_buffer::Buffer<T>& generic_buffer) {
+                const auto buffer = owned_buffer::get_as<T>(generic_buffer);
+                auto size = buffer.size();
+                output_stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
+                output_stream.write(reinterpret_cast<const char*>(buffer.begin()), sizeof(T) * size);
+            }, buffer
+        );
+    }
+}
+
 template<typename T>
 OwnedStorage load_owned_storage(ifstream& input_stream) {
     std::size_t size = 0;
@@ -76,16 +89,16 @@ void dump_tensor(const std::string& file_name, const Tensor& tensor) {
         throw std::runtime_error(fmt::format("Cannot open \"{}\"", file_name));
     }
 
-    auto shape = tensor.shape();
-    auto data_type = tensor.dtype();
-    auto layout = tensor.layout();
+    auto shape = tensor.get_legacy_shape();
+    auto data_type = tensor.get_dtype();
+    auto layout = tensor.get_layout();
 
     output_stream.write(reinterpret_cast<const char*>(&shape), sizeof(Shape));
     output_stream.write(reinterpret_cast<const char*>(&data_type), sizeof(DataType));
     output_stream.write(reinterpret_cast<const char*>(&layout), sizeof(Layout));
 
     std::visit(
-        [&output_stream] (const auto& storage) {
+        [&output_stream](const auto& storage) {
 
             using StorageType = std::decay_t<decltype(storage)>;
             if constexpr (std::is_same_v<StorageType, OwnedStorage>) {
@@ -97,12 +110,17 @@ void dump_tensor(const std::string& file_name, const Tensor& tensor) {
             else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_THROW("Device storage isn't supported");
             }
+            else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                TT_THROW("Device storage isn't supported");
+            }
+            else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
+                detail::dump_multi_device_host_storage(output_stream, storage);
+            }
             else {
                 raise_unsupported_storage<StorageType>();
             }
         },
-        tensor.storage()
-    );
+        tensor.get_storage());
 }
 
 Tensor load_tensor(const std::string& file_name) {

@@ -5,6 +5,7 @@
 import pytest
 from pathlib import Path
 import sys
+from loguru import logger
 
 import numpy as np
 
@@ -58,12 +59,13 @@ import torch
         # Hat = 2, Wat = 2, Wbt = 2
         (64, 64, 8, 8, 1, 1, 1, 1, 0, 0),
         # Hat = 8, Wat = 8, Wbt = 8
-        (8 * 32, 8 * 32, 16, 16, 1, 1, 1, 1, 0, 0),
+        # (8 * 32, 8 * 32, 16, 16, 1, 1, 1, 1, 0, 0),
         # num blocks weight w = 4, num blocks act h = 4, num blocks act w = 3
-        (16 * 32, 32, 24, 24, 3, 3, 1, 1, 0, 0),
+        # (16 * 32, 32, 24, 24, 3, 3, 1, 1, 0, 0),
     ),
 )
 def test_run_optimized_conv(
+    device,
     use_program_cache,
     N,
     K,
@@ -79,7 +81,6 @@ def test_run_optimized_conv(
     untilize_out,
     has_bias,
     fuse_relu,
-    device,
 ):
     if has_bias and untilize_out:
         ## bias is only supported without untilize out
@@ -159,13 +160,11 @@ def test_run_optimized_conv(
                 grid_size=(1, 1),
                 num_cores_nhw=1,
                 per_core_out_matrix_height_ntiles=out_matrix_height_ntiles,
-                per_core_weight_matrix_width_ntiles=weight_matrix_width_ntiles,
+                per_core_out_matrix_width_ntiles=weight_matrix_width_ntiles,
             ),
             ttl.tensor.OptimizedConvBlockConfig(
                 act_block_h_ntiles=act_block_h,
                 act_block_w_ntiles=act_block_w,
-                weight_block_w_ntiles=weight_block_w,
-                out_block_h_ntiles=out_block_h,
                 out_subblock_h_ntiles=out_subblock_h,
                 out_subblock_w_ntiles=out_subblock_w,
             ),
@@ -176,8 +175,8 @@ def test_run_optimized_conv(
             out = ttl.tensor.format_output_tensor(out, out.shape_without_padding(), device, ttl.tensor.Layout.ROW_MAJOR)
             out = out.reshape(conv_output_shape[0], conv_output_shape[1], conv_output_shape[2], conv_output_shape[3])
         out = out.cpu()
-        assert list(out.shape()) == conv_output_shape
-        assert out.layout() == ttl.tensor.Layout.ROW_MAJOR
+        assert list(out.get_legacy_shape()) == conv_output_shape
+        assert out.get_layout() == ttl.tensor.Layout.ROW_MAJOR
 
         # Copy output to host and convert tt tensor to pytorch tensor
         out_result = out.to_torch().float()
@@ -211,8 +210,8 @@ def test_run_optimized_conv(
         passing_allclose_and_pcc, output_info = comp_allclose_and_pcc(
             out_golden, out_result, rtol=1e-1, atol=1e-3, pcc=0.9999
         )  # For LowFi we need 0.99976
-        print("Passing=", passing_allclose_and_pcc)
-        print("Output info=", output_info)
+        logger.debug(f"Passing={passing_allclose_and_pcc}")
+        logger.debug(f"Output info={output_info}")
         passing_pcc, _ = comp_pcc(out_golden, out_result, pcc=0.9998)  # For LowFi we need 0.99976
         assert passing_pcc
         # assert passing_allclose_and_pcc

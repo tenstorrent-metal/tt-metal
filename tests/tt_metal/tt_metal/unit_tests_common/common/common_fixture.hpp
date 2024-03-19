@@ -49,10 +49,10 @@ protected:
         // Skip for slow dispatch for now
         auto slow_dispatch = getenv("TT_METAL_SLOW_DISPATCH_MODE");
         if (slow_dispatch) {
-            tt::log_info(tt::LogTest, "Running test using Slow Dispatch");
+            tt::log_debug(tt::LogTest, "Running test using Slow Dispatch");
             slow_dispatch_ = true;
         } else {
-            tt::log_info(tt::LogTest, "Running test using Fast Dispatch");
+            tt::log_debug(tt::LogTest, "Running test using Fast Dispatch");
             slow_dispatch_ = false;
         }
         // Set up all available devices
@@ -82,16 +82,6 @@ protected:
     }
 
     bool SkipTest(unsigned int device_id) {
-        // Skip condition is fast dispatch for remote devices
-        if (this->has_remote_devices_ && !this->slow_dispatch_ && device_id != 0) {
-            log_info(
-                tt::LogTest,
-                "Skipping test on device {} due to fast dispatch unsupported on remote devices.",
-                device_id
-            );
-            return true;
-        }
-
         // Also skip all devices after device 0 for grayskull. This to match all other tests
         // targetting device 0 by default (and to not cause issues with BMs that have E300s).
         // TODO: when we can detect only supported devices, this check can be removed.

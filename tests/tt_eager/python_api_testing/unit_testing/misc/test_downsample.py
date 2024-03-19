@@ -41,6 +41,7 @@ import torch
 )
 @pytest.mark.parametrize("dtype", [ttl.tensor.DataType.BFLOAT16, ttl.tensor.DataType.BFLOAT8_B])
 def test_run_downsample(
+    device,
     use_program_cache,
     batch_size,
     output_channels,
@@ -53,7 +54,6 @@ def test_run_downsample(
     grid_size,
     height_sharded,
     dtype,
-    device,
 ):
     if batch_size > 8 and dtype != ttl.tensor.DataType.BFLOAT8_B:
         pytest.skip("Batch > 8 must be run fully bfp8")
@@ -100,17 +100,17 @@ def test_run_downsample(
             buffer_type=ttl.tensor.BufferType.L1,
         ),
     )
-    assert A_interleaved.shape()[0] == 1 and A_interleaved.shape()[1] == 1
+    assert A_interleaved.get_legacy_shape()[0] == 1 and A_interleaved.get_legacy_shape()[1] == 1
 
     # image flattened params
-    input_2d_height = A_interleaved.shape()[2]
-    input_2d_width = A_interleaved.shape()[3]
+    input_2d_height = A_interleaved.get_legacy_shape()[2]
+    input_2d_width = A_interleaved.get_legacy_shape()[3]
     input_2d_height_padded = _nearest_y(input_2d_height, num_cores_height_slices * 32)
     input_shard_height = (int)(input_2d_height_padded / num_cores_height_slices)
     output_2d_height_padded = _nearest_y(batch_size * output_height * output_width, num_cores_height_slices * 32)
     output_shard_height = (int)(output_2d_height_padded / num_cores_height_slices)
-    logger.info(f"input_2d_height={input_2d_height}")
-    logger.info(f"input_2d_width={input_2d_width}")
+    logger.debug(f"input_2d_height={input_2d_height}")
+    logger.debug(f"input_2d_width={input_2d_width}")
     sharded_memory_layout = (
         ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED if height_sharded else ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED
     )
@@ -118,9 +118,9 @@ def test_run_downsample(
         ttl.tensor.ShardOrientation.ROW_MAJOR if height_sharded else ttl.tensor.ShardOrientation.COL_MAJOR
     )
     input_shard_width = input_2d_width if height_sharded else ((int)(input_2d_width / grid_size[1]))
-    logger.info(f"grid_size={grid_size}")
-    logger.info(f"shard_memory_layout={sharded_memory_layout}")
-    logger.info(f"input_shard_height={input_shard_height}, input_shard_width={input_shard_width}")
+    logger.debug(f"grid_size={grid_size}")
+    logger.debug(f"shard_memory_layout={sharded_memory_layout}")
+    logger.debug(f"input_shard_height={input_shard_height}, input_shard_width={input_shard_width}")
 
     A_sharded = ttl.tensor.interleaved_to_sharded(
         A_interleaved,
@@ -151,7 +151,7 @@ def test_run_downsample(
     )
     out = A_downsampled
     out_shape = [1, 1, _nearest_y(batch_size * output_height * output_width, 32), input_channels]
-    assert out_shape == list(out.shape())
+    assert out_shape == list(out.get_legacy_shape())
     out_shape_unpadded = [1, 1, batch_size * output_height * output_width, input_channels]
     assert out_shape_unpadded == list(out.shape_without_padding())
     out = ttl.tensor.format_output_tensor(out, out.shape_without_padding(), device, ttl.tensor.Layout.ROW_MAJOR)
@@ -195,7 +195,7 @@ def test_run_downsample(
     logger.debug(f"Num errors: {num_errors}")
 
     out = out.reshape(batch_size, output_height, output_width, input_channels)
-    assert out.layout() == ttl.tensor.Layout.ROW_MAJOR
+    assert out.get_layout() == ttl.tensor.Layout.ROW_MAJOR
 
     # Copy output to host and convert tt tensor to pytorch tensor
     out_result = out.to_torch().float()
@@ -211,6 +211,4 @@ def test_run_downsample(
         )  # For LowFi we need 0.99976
     else:
         passing, output_info = comp_equal(out_golden, out_result)
-    logger.info(f"Passing={passing}")
-    logger.info(f"Output info={output_info}")
     assert passing

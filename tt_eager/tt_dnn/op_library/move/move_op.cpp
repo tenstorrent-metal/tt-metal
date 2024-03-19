@@ -13,8 +13,7 @@ using namespace tt::tt_metal;
 
 bool can_deallocate(const Tensor &input_tensor) {
     return std::visit(
-        [](auto&& storage)
-        {
+        [](auto &&storage) {
             using T = std::decay_t<decltype(storage)>;
             if constexpr (std::is_same_v<T, DeviceStorage>) {
                 return storage.buffer.use_count() == 1;
@@ -22,8 +21,7 @@ bool can_deallocate(const Tensor &input_tensor) {
                 return false;
             }
         },
-        input_tensor.storage()
-    );
+        input_tensor.get_storage());
 }
 
 } // namespace move_op_utils
@@ -38,7 +36,7 @@ void Move::validate(const std::vector<Tensor> &input_tensors) const {
 
 std::vector<Shape> Move::compute_output_shapes(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor = input_tensors.at(0);
-    return {input_tensor.shape()};
+    return {input_tensor.get_legacy_shape()};
 }
 
 std::vector<Tensor> Move::create_output_tensors(const std::vector<Tensor> &input_tensors) const {

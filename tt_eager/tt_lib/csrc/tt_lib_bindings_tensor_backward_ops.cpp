@@ -27,6 +27,22 @@ namespace tt::tt_metal::detail{
                 "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
         )doc");
 
+    m_tensor.def("conj_bw", &tt::tt_metal::conj_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for conjugate for complex tensor ``input`` with given ``grad``
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
     m_tensor.def("unary_mul_bw", &tt::tt_metal::unary_mul_bw,
             py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("scalar") = 1.0f, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
                 Performs backward operations for multiplication with given ``grad`` and ``scalar``
@@ -317,7 +333,7 @@ namespace tt::tt_metal::detail{
             )doc");
 
     m_tensor.def("unary_div_bw", &tt::tt_metal::unary_div_bw,
-            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("scalar") = 1.0f, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("scalar") = 1.0f, py::arg("round_mode") = "None", py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
             Performs backward operations for division with given ``grad`` and ``scalar``.
 
             Input tensors must have BFLOAT16 data type.
@@ -334,7 +350,7 @@ namespace tt::tt_metal::detail{
         )doc");
 
     m_tensor.def("div_bw", &tt::tt_metal::div_bw,
-            py::arg("grad").noconvert(), py::arg("input_a").noconvert(), py::arg("input_b").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            py::arg("grad").noconvert(), py::arg("input_a").noconvert(), py::arg("input_b").noconvert(), py::arg("round_mode") = "None", py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
             Performs backward operations for division of ``input_b`` with given ``grad``.
 
             Input tensor must have BFLOAT16 data type.
@@ -347,6 +363,23 @@ namespace tt::tt_metal::detail{
                 "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
                 "input_a", "Tensor div is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
                 "input_b", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("rdiv_bw", &tt::tt_metal::rdiv_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("scalar") = 1.0f, py::arg("round_mode") = "None", py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for division for ``input`` tensor and ``scalar`` with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "scalar", "Scalar value", "float", "default to 1.0f", "No"
                 "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
         )doc");
 
@@ -466,7 +499,7 @@ namespace tt::tt_metal::detail{
                 :header: "Argument", "Description", "Data type", "Valid range", "Required"
 
                 "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
-                "input", "Tensor add is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
                 "other", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
                 "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
         )doc");
@@ -756,6 +789,23 @@ namespace tt::tt_metal::detail{
                 "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
         )doc");
 
+    m_tensor.def("softshrink_bw", &tt::tt_metal::softshrink_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("lambd") = 0.5f, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for softshrink to the elements of the input tensor ``{input}`` between limits ``-{lambd}`` low and the ``+{lambd}`` high limits with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor softshrink_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "lambd", "lambda value", "float", "float value >= 0", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
     m_tensor.def("hypot_bw", &tt::tt_metal::hypot_bw,
             py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("other").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
             Performs backward operations for hypotenuse of ``input`` and ``other`` tensors with given ``grad``.
@@ -873,6 +923,24 @@ namespace tt::tt_metal::detail{
 
                 "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
                 "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("softplus_bw", &tt::tt_metal::softplus_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("beta")=1.0f, py::arg("threshold") = 20.0f, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for softplus_bw of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "beta", "Beta value", "float", "default to 1.0f", "No"
+                "threshold", "Threshold value", "float", "default to 20.0f", "No"
                 "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
         )doc");
 
@@ -1271,5 +1339,629 @@ namespace tt::tt_metal::detail{
                 "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
         )doc");
 
+
+    m_tensor.def("subalpha_bw", &tt::tt_metal::subalpha_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("other").noconvert(), py::arg("alpha") = 1.0f, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+
+            Performs backward operations for subraction of ``other`` and ``input`` tensors with alpha for the given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "other", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "alpha", "Alpha value", "float", "default to 1.0f", "No"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+
+    m_tensor.def("log10_bw", &tt::tt_metal::log10_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for log10 of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+
+    m_tensor.def("log1p_bw", &tt::tt_metal::log1p_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for log1p of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("binary_ne_bw", &tt::tt_metal::binary_ne_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Returns an tensor of zeros like ``grad`` tensor and ``input`` tensor.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+     m_tensor.def("erf_bw", &tt::tt_metal::erf_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for erf of ``input`` tensor with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+     m_tensor.def("erfc_bw", &tt::tt_metal::erfc_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for erfc of ``input`` tensor with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("digamma_bw", &tt::tt_metal::digamma_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for digamma for the ``input`` with given ``grad``
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("deg2rad_bw", &tt::tt_metal::deg2rad_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+                Performs backward operations for deg2rad for the ``input`` with given ``grad``
+
+                Input tensors must have BFLOAT16 data type.
+
+                Output tensor will have BFLOAT16 data type.
+
+                .. csv-table::
+                    :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                    "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                    "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                    "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+            )doc");
+
+    m_tensor.def("rad2deg_bw", &tt::tt_metal::rad2deg_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+                Performs backward operations for rad2deg for the ``input`` with given ``grad``
+
+                Input tensors must have BFLOAT16 data type.
+
+                Output tensor will have BFLOAT16 data type.
+
+                .. csv-table::
+                    :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                    "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                    "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                    "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+            )doc");
+
+    m_tensor.def("reciprocal_bw", &tt::tt_metal::reciprocal_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for reciprocal for the ``input`` with given ``grad``
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+            )doc");
+
+     m_tensor.def("relu6_bw", &tt::tt_metal::relu6_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Returns an tensor of backward operation of relu6 for ``input`` tensor and ``grad`` tensor.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor relu6 is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("rpow_bw", &tt::tt_metal::rpow_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("exponent").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for rpow for the ``input`` and ``exponent`` with given ``grad``
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "exponent", "exponent", "float", ">0.0", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+            )doc");
+
+    m_tensor.def("silu_bw", &tt::tt_metal::silu_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for silu sin of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor silu_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+
+    m_tensor.def("selu_bw", &tt::tt_metal::selu_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for selu sin of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor selu_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("binary_ge_bw", &tt::tt_metal::binary_ge_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Returns an tensor of zeros like ``grad`` tensor and ``input`` tensor.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("binary_eq_bw", &tt::tt_metal::binary_eq_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Returns an tensor of zeros like ``grad`` tensor and ``input`` tensor.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("binary_gt_bw", &tt::tt_metal::binary_gt_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Returns an tensor of zeros like ``grad`` tensor and ``input`` tensor.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("square_bw", &tt::tt_metal::square_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward square operations on ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor square_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("lgamma_bw", &tt::tt_metal::lgamma_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for lgamma of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor lgamma is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("frac_bw", &tt::tt_metal::frac_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for frac of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor frac is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("trunc_bw", &tt::tt_metal::trunc_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for trunc of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor trunc is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("log_sigmoid_bw", &tt::tt_metal::log_sigmoid_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for log_sigmoid ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor log_sigmoid is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("tanhshrink_bw", &tt::tt_metal::tanhshrink_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward tanhshrink operations on ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor tanhshrink_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("threshold_bw", &tt::tt_metal::threshold_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("threshold"), py::arg("value"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward threshold operation on ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor threshold_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "threshold", "Value to threshold at", "float", "", "Yes"
+                "value", "Value to replace with", "float", "", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("unary_eq_bw", &tt::tt_metal::unary_eq_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("other"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Returns an tensor of zeros like ``grad`` tensor.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "other", "Value to compare", "float", "", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("logit_bw", &tt::tt_metal::logit_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for logit of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+
+   m_tensor.def("logiteps_bw", &tt::tt_metal::logiteps_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("eps") = 0.0f, py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for logit of ``input`` tensors with `eps` for the given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "eps", "eps value", "float", "default to 0.0f", "No"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("softsign_bw", &tt::tt_metal::softsign_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward softsign operations on ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor softsign_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("sign_bw", &tt::tt_metal::sign_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward sign operations on ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor sign_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("ceil_bw", &tt::tt_metal::ceil_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward ceil operations on ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor ceil_bw is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("log2_bw", &tt::tt_metal::log2_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for log2 of ``input`` tensors with given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("ge_bw", &tt::tt_metal::ge_bw,
+            py::arg("grad").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Returns an tensor of zeros like ``grad`` tensor
+
+            Input tensor must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("le_bw", &tt::tt_metal::le_bw,
+            py::arg("grad").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Returns an tensor of zeros like ``grad`` tensor
+
+            Input tensor must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+   m_tensor.def("unary_fmod_bw", &tt::tt_metal::unary_fmod_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("scalar"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for fmod of ``input`` tensors with `scalar` for the given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "scalar", "scalar value", "float", "float", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+   m_tensor.def("unary_remainder_bw", &tt::tt_metal::unary_remainder_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("scalar"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for ramainder of ``input`` tensors with `scalar` for the given ``grad``.
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "scalar", "scalar value", "float", "float", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("imag_bw", &tt::tt_metal::imag_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for imaginary part of complex tensor ``input`` with given ``grad``
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("real_bw", &tt::tt_metal::real_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for real part of complex tensor ``input`` with given ``grad``
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensor will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "input", "Input Tensor", "Tensor", "Tensor of complex shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
+
+    m_tensor.def("multigammaln_bw", &tt::tt_metal::multigammaln_bw,
+            py::arg("grad").noconvert(), py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            Performs backward operations for multigammaln of ``input`` tensors with given ``grad`` and value of P is taken as 4.
+
+            mvlgamma is refered as multigammaln.
+
+            Input value must be greater than 2.5f
+
+            Input tensors must have BFLOAT16 data type.
+
+            Output tensors will have BFLOAT16 data type.
+
+            .. csv-table::
+                :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+                "grad", "Gradient tensor", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "input", "Tensor mvlgamma is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+                "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+        )doc");
     }
 }

@@ -50,7 +50,9 @@ def register_ttl_binary_function(name, ttl_binary_function, doc):
         return output_tensor
 
     binary_function.__name__ = f"ttnn.{name}"
-    binary_function.__doc__ = doc + (binary_function.__doc__ if binary_function.__doc__ is not None else "")
+    binary_function.decorated_function.__doc__ = doc + (
+        binary_function.__doc__ if binary_function.__doc__ is not None else ""
+    )
 
     setattr(THIS_MODULE, name, binary_function)
 
@@ -349,20 +351,17 @@ def mul(
 
     original_shape = input_tensor_a.shape
     input_tensor_a = ttnn.unsqueeze_to_4D(input_tensor_a)
-    ttl_input_tensor_a = input_tensor_a.value
 
     if not isinstance(input_tensor_a, ttnn.Tensor):
         raise TypeError("Expected first argument to be a ttnn.Tensor")
 
-    ttl_input_tensor_a = input_tensor_a.value
-
-    if not ttnn.has_storage_type_of(input_tensor_a, ttnn.experimental.tensor.StorageType.DEVICE):
+    if not ttnn.is_tensor_storage_on_device(input_tensor_a):
         raise RuntimeError("input_tensor_a must be on device!")
 
     if _is_scalar(input_tensor_b):
         return ttnn.reshape(
             ttnn.experimental.tensor.mul_unary(
-                ttl_input_tensor_a,
+                input_tensor_a,
                 input_tensor_b,
                 output_mem_config=memory_config,
             ),
@@ -380,13 +379,12 @@ def mul(
         *_, height_b, width_b = input_shape_b
 
     input_tensor_b = ttnn.unsqueeze_to_4D(input_tensor_b)
-    ttl_input_tensor_b = input_tensor_b.value
 
     if height_b == 1 and width_b == 1:
         return ttnn.reshape(
             ttnn.experimental.tensor.bcast(
-                ttl_input_tensor_a,
-                ttl_input_tensor_b,
+                input_tensor_a,
+                input_tensor_b,
                 ttnn.experimental.tensor.BcastOpMath.MUL,
                 ttnn.experimental.tensor.BcastOpDim.HW,
                 output_mem_config=memory_config,
@@ -396,8 +394,8 @@ def mul(
     elif height_b == 1:
         return ttnn.reshape(
             ttnn.experimental.tensor.bcast(
-                ttl_input_tensor_a,
-                ttl_input_tensor_b,
+                input_tensor_a,
+                input_tensor_b,
                 ttnn.experimental.tensor.BcastOpMath.MUL,
                 ttnn.experimental.tensor.BcastOpDim.H,
                 output_mem_config=memory_config,
@@ -407,8 +405,8 @@ def mul(
     elif width_b == 1:
         return ttnn.reshape(
             ttnn.experimental.tensor.bcast(
-                ttl_input_tensor_a,
-                ttl_input_tensor_b,
+                input_tensor_a,
+                input_tensor_b,
                 ttnn.experimental.tensor.BcastOpMath.MUL,
                 ttnn.experimental.tensor.BcastOpDim.W,
                 output_mem_config=memory_config,
@@ -417,7 +415,7 @@ def mul(
         )
 
     return ttnn.reshape(
-        ttnn.experimental.tensor.mul(ttl_input_tensor_a, ttl_input_tensor_b, output_mem_config=memory_config),
+        ttnn.experimental.tensor.mul(input_tensor_a, input_tensor_b, output_mem_config=memory_config),
         original_shape,
     )
 
@@ -425,11 +423,11 @@ def mul(
 subtract = sub
 multiply = mul
 
-ttnn.Tensor.__add__ = add
-ttnn.Tensor.__radd__ = add
-ttnn.Tensor.__sub__ = sub
-ttnn.Tensor.__mul__ = mul
-ttnn.Tensor.__rmul__ = mul
+ttnn.Tensor.__add__ = lambda self, *args, **kwargs: add(self, *args, **kwargs)
+ttnn.Tensor.__radd__ = lambda self, *args, **kwargs: add(self, *args, **kwargs)
+ttnn.Tensor.__sub__ = lambda self, *args, **kwargs: sub(self, *args, **kwargs)
+ttnn.Tensor.__mul__ = lambda self, *args, **kwargs: mul(self, *args, **kwargs)
+ttnn.Tensor.__rmul__ = lambda self, *args, **kwargs: mul(self, *args, **kwargs)
 
 
 def _add_and_apply_activation_validate_input_tensors(operation_name, input_tensor_a, input_tensor_b, *args, **kwargs):
@@ -510,9 +508,7 @@ def add_and_apply_activation(
         }
         fused_activations = activations_map[activation]
 
-    input_tensor_a = input_tensor_a.value
-    input_tensor_b = input_tensor_b.value
-    output = ttnn.experimental.tensor.add_without_autoformat(
+    output = ttnn.experimental.operations.primary.add(
         input_tensor_a,
         input_tensor_b,
         fused_activations=fused_activations,
@@ -563,7 +559,7 @@ def add_and_apply_activation_(
         }
         fused_activations = activations_map[activation]
 
-    output = ttnn.experimental.tensor.add_without_autoformat(
+    output = ttnn.experimental.operations.primary.add(
         input_tensor_a,
         input_tensor_b,
         fused_activations=fused_activations,
@@ -643,31 +639,21 @@ def register_ttl_elt_binary_function(name, ttl_elt_binary_function, op_name):
         if not isinstance(input_tensor_a, ttnn.Tensor) or not isinstance(input_tensor_b, ttnn.Tensor):
             raise TypeError("Expected both arguments to be a ttnn.Tensor")
 
-        if not ttnn.has_storage_type_of(input_tensor_a, ttnn.DEVICE_STORAGE_TYPE) or not ttnn.has_storage_type_of(
-            input_tensor_b, ttnn.DEVICE_STORAGE_TYPE
-        ):
+        if not ttnn.is_tensor_storage_on_device(input_tensor_a) or not ttnn.is_tensor_storage_on_device(input_tensor_b):
             raise RuntimeError("input_tensors must be on device!")
 
         original_shape = input_tensor_a.shape
 
         input_tensor_a = ttnn.unsqueeze_to_4D(input_tensor_a)
-        ttl_input_tensor_a = input_tensor_a.value
-
         input_tensor_b = ttnn.unsqueeze_to_4D(input_tensor_b)
-        ttl_input_tensor_b = input_tensor_b.value
 
-        ttl_output_tensor = ttl_elt_binary_function(
-            ttl_input_tensor_a, ttl_input_tensor_b, output_mem_config=memory_config
-        )
+        output_tensor = ttl_elt_binary_function(input_tensor_a, input_tensor_b, output_mem_config=memory_config)
 
-        ttl_input_tensor_a = input_tensor_a.value
-        ttl_input_tensor_b = input_tensor_b.value
-        output_tensor = ttnn.Tensor(ttl_output_tensor)
         output_tensor = ttnn.reshape(output_tensor, original_shape)
         return output_tensor
 
     elt_binary_function.__name__ = f"ttnn.{name}"
-    elt_binary_function.__doc__ = f"""{name}(input_tensor_a: ttnn.Tensor, input_tensor_b: ttnn.Tensor, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
+    elt_binary_function.decorated_function.__doc__ = f"""{name}(input_tensor_a: ttnn.Tensor, input_tensor_b: ttnn.Tensor, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_MEMORY_CONFIG) -> ttnn.Tensor
 
         Performs eltwise-binary {op_name} operation on two tensors :attr:`input_a` and :attr:`input_b`.
 

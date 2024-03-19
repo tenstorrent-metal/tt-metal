@@ -80,7 +80,7 @@ std::vector<Device*> get_device_ring(std::vector<tt::tt_metal::Device*> devices)
     std::vector<std::vector<int>> adj(devices.size(), std::vector<int>(devices.size(), 0));
     for (uint32_t i = 0; i < devices.size(); ++i) {
         const auto& device = devices[i];
-        for (const auto& [connected_device_id, cores] : device->get_ethernet_cores_grouped_by_connected_chips()) {
+        for (const auto &connected_device_id : device->get_ethernet_connected_device_ids()) {
             for (uint32_t j = 0; j < devices.size(); ++j) {
                 if (devices[j]->id() == connected_device_id) {
                     adj[i][j] = 1;
@@ -108,7 +108,7 @@ std::vector<std::tuple<Device*, Device*, CoreCoord, CoreCoord>> get_sender_recei
         const auto& first_device = device_ring[0];
         const auto& second_device = device_ring[1];
         uint32_t i = 0;
-        for (const auto& first_eth_core : first_device->get_active_ethernet_cores()) {
+        for (const auto& first_eth_core : first_device->get_active_ethernet_cores(true)) {
             auto [device_id, second_eth_core] = first_device->get_connected_ethernet_core(first_eth_core);
             if (second_device->id() == device_id) {
                 Device *sender_device, *receiver_device;
@@ -138,7 +138,7 @@ std::vector<std::tuple<Device*, Device*, CoreCoord, CoreCoord>> get_sender_recei
         for (uint32_t i = 0; i < device_ring.size() - 1; ++i) {
             const auto& sender_device = device_ring[i];
             const auto& receiver_device = device_ring[i + 1];
-            for (const auto& sender_eth_core : sender_device->get_active_ethernet_cores()) {
+            for (const auto& sender_eth_core : sender_device->get_active_ethernet_cores(true)) {
                 auto [device_id, receiver_eth_core] = sender_device->get_connected_ethernet_core(sender_eth_core);
                 if (receiver_device->id() == device_id) {
                     sender_receivers.push_back({sender_device, receiver_device, sender_eth_core, receiver_eth_core});

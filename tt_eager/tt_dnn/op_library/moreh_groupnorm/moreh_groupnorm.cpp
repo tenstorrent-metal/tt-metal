@@ -43,11 +43,11 @@ operation::ProgramWithCallbacks moreh_groupnorm_impl(
     const Tensor &input,
     uint32_t num_groups,
     float eps,
-    Tensor &output,
-    Tensor &mean,
-    Tensor &rstd,
     const std::optional<const Tensor> gamma,
-    const std::optional<const Tensor> beta) {
+    const std::optional<const Tensor> beta,
+    Tensor &output,
+    const std::optional<const Tensor> mean,
+    const std::optional<const Tensor> rstd) {
     ////////////////////////////////////////////////////////////////////////////
     //                      Device Setup
     ////////////////////////////////////////////////////////////////////////////
@@ -57,7 +57,7 @@ operation::ProgramWithCallbacks moreh_groupnorm_impl(
     ////////////////////////////////////////////////////////////////////////////
     //                         Parameters Setup
     ////////////////////////////////////////////////////////////////////////////
-    const auto input_shape = input.shape();
+    const auto input_shape = input.get_legacy_shape();
 
     const auto n = input_shape[0];
     const auto c = input_shape[1];
@@ -92,8 +92,8 @@ operation::ProgramWithCallbacks moreh_groupnorm_impl(
 
     const bool gamma_has_value = gamma.has_value();
     const bool beta_has_value = beta.has_value();
-    const bool mean_has_value = true;
-    const bool rstd_has_value = true;
+    const bool mean_has_value = mean.has_value();
+    const bool rstd_has_value = rstd.has_value();
 
     constexpr uint32_t MAX_BLOCK_SIZE = 8;
     const uint32_t block_size = get_block_size(num_inner_tiles, MAX_BLOCK_SIZE);
@@ -113,10 +113,10 @@ operation::ProgramWithCallbacks moreh_groupnorm_impl(
          num_rows_per_core_group_1,
          num_rows_per_core_group_2] = tt_metal::split_work_to_cores(core_grid_coord, num_rows);
 
-    log_info(LogTest, fmt::format("num_cores_to_be_used: {}", num_cores_to_be_used).c_str());
-    log_info(LogTest, fmt::format("num_rows_per_core_group_1: {}", num_rows_per_core_group_1).c_str());
-    log_info(LogTest, fmt::format("num_rows_per_core_group_2: {}", num_rows_per_core_group_2).c_str());
-    log_info(LogTest, fmt::format("block_size: {}", block_size).c_str());
+    log_debug(LogTest, fmt::format("num_cores_to_be_used: {}", num_cores_to_be_used).c_str());
+    log_debug(LogTest, fmt::format("num_rows_per_core_group_1: {}", num_rows_per_core_group_1).c_str());
+    log_debug(LogTest, fmt::format("num_rows_per_core_group_2: {}", num_rows_per_core_group_2).c_str());
+    log_debug(LogTest, fmt::format("block_size: {}", block_size).c_str());
 
     ////////////////////////////////////////////////////////////////////////////
     //                         CircularBuffer Setup
@@ -142,7 +142,7 @@ operation::ProgramWithCallbacks moreh_groupnorm_impl(
     const uint32_t im6_t = (gamma_has_value || beta_has_value) ? 2 * block_size : 0;  // x * gamm + beta
     const uint32_t im7_t = 2;                                                         // Sum[x]
 
-    const auto cb_data_format = tt_metal::datatype_to_dataformat_converter(input.dtype());
+    const auto cb_data_format = tt_metal::datatype_to_dataformat_converter(input.get_dtype());
     const auto single_tile_size = tt_metal::detail::TileSize(cb_data_format);
 
     const auto cb_usage = (in0_t + in1_t + in2_t + in3_t + in4_t + in5_t + in6_t + out0_t + out1_t + out2_t + im0_t +
@@ -253,8 +253,8 @@ operation::ProgramWithCallbacks moreh_groupnorm_impl(
     const auto input_addr = input.buffer()->address();
 
     const auto output_addr = output.buffer()->address();
-    const auto mean_addr = mean.buffer()->address();
-    const auto rstd_addr = rstd.buffer()->address();
+    const auto mean_addr = mean_has_value ? mean.value().buffer()->address() : 0;
+    const auto rstd_addr = rstd_has_value ? rstd.value().buffer()->address() : 0;
 
     const auto gamma_addr = gamma_has_value ? gamma.value().buffer()->address() : 0;
     const auto beta_addr = beta_has_value ? beta.value().buffer()->address() : 0;

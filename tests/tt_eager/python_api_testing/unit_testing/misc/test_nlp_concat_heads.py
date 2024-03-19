@@ -27,10 +27,10 @@ def run_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_con
     # Check memory of inputs and outputs
     assert in0_t.memory_config().buffer_type == in0_mem_config.buffer_type
     assert out.memory_config().buffer_type == out_mem_config.buffer_type
-    logger.debug(f"in0: {in0_t.memory_config().buffer_type} and {in0_t.dtype()}")
-    logger.debug(f"out: {out.memory_config().buffer_type} and {out.dtype()}")
+    logger.debug(f"in0: {in0_t.memory_config().buffer_type} and {in0_t.get_dtype()}")
+    logger.debug(f"out: {out.memory_config().buffer_type} and {out.get_dtype()}")
 
-    assert list(out.shape()) == [batch, 1, seq_len, num_heads * head_dim]
+    assert list(out.get_legacy_shape()) == [batch, 1, seq_len, num_heads * head_dim]
 
     pyt_got_back_rm_out = tt2torch_tensor(out)
 
@@ -42,8 +42,8 @@ def run_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_con
         pcc = 1.0
 
     passing_pcc, output_pcc = comp_pcc(pyt_got_back_rm_out, ref_out, pcc)
-    logger.info(f"passing={passing_pcc}")
-    logger.info(f"output pcc={output_pcc}")
+    logger.debug(f"passing={passing_pcc}")
+    logger.debug(f"output pcc={output_pcc}")
     assert passing_pcc
 
 
@@ -82,7 +82,7 @@ def test_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_co
     run_nlp_concat_heads_test(batch, seq_len, dtype, in0_mem_config, out_mem_config, device)
 
 
-def test_nlp_concat_heads_with_program_cache(use_program_cache, device):
+def test_nlp_concat_heads_with_program_cache(device, use_program_cache):
     dtype = ttl.tensor.DataType.BFLOAT8_B
     mem_config = ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM)
     for _ in range(2):
@@ -98,4 +98,4 @@ def test_nlp_concat_heads_with_program_cache(use_program_cache, device):
         py_dummy_tensor = torch.randn(dummy_shape)
         tt_dummy_tensor = ttl.tensor.Tensor(py_dummy_tensor, dtype).to(ttl.tensor.Layout.TILE).to(device, mem_config)
 
-    assert ttl.program_cache.num_entries() == 2
+    assert device.num_program_cache_entries() == 2

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-
+from loguru import logger
 import numpy as np
 
 import tt_lib as ttl
@@ -65,6 +65,7 @@ import torch
     ),
 )
 def test_run_generic_conv(
+    device,
     use_program_cache,
     run_conv_with_address_map,
     K,
@@ -80,7 +81,6 @@ def test_run_generic_conv(
     untilize_out,
     has_bias,
     fuse_relu,
-    device,
 ):
     if run_conv_with_address_map and has_bias:
         ## bias is only supported without address map
@@ -188,8 +188,8 @@ def test_run_generic_conv(
             out = ttl.tensor.format_output_tensor(out, out.shape_without_padding(), device, ttl.tensor.Layout.ROW_MAJOR)
             out = out.reshape(conv_output_shape[0], conv_output_shape[1], conv_output_shape[2], conv_output_shape[3])
         out = out.cpu()
-        assert list(out.shape()) == conv_output_shape
-        assert out.layout() == ttl.tensor.Layout.ROW_MAJOR
+        assert list(out.get_legacy_shape()) == conv_output_shape
+        assert out.get_layout() == ttl.tensor.Layout.ROW_MAJOR
 
         # Copy output to host and convert tt tensor to pytorch tensor
         out_result = out.to_torch().float()
@@ -224,8 +224,8 @@ def test_run_generic_conv(
         passing_allclose_and_pcc, output_info = comp_allclose_and_pcc(
             out_golden, out_result, rtol=1e-1, atol=1e-3, pcc=0.999
         )
-        print("Passing=", passing_allclose_and_pcc)
-        print("Output info=", output_info)
+        logger.debug(f"Passing={passing_allclose_and_pcc}")
+        logger.debug(f"Output info={output_info}")
         passing_pcc, _ = comp_pcc(out_golden, out_result, pcc=0.999)
         assert passing_pcc
         # assert passing_allclose_and_pcc

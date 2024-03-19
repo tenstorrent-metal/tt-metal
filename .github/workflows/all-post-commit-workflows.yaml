@@ -1,19 +1,24 @@
 name: "All post-commit tests"
 
 on:
+  workflow_call:
   workflow_dispatch:
+  push:
+    branches: ["main"]
 
 jobs:
   static-checks:
     uses: ./.github/workflows/all-static-checks.yaml
     secrets: inherit
-  build:
-    uses: ./.github/workflows/build.yaml
+  build-artifact:
+    uses: ./.github/workflows/build-artifact.yaml
     secrets: inherit
   sd-unit-tests:
+    needs: build-artifact
     uses: ./.github/workflows/build-and-unit-tests.yaml
     secrets: inherit
   fd-unit-tests:
+    needs: build-artifact
     uses: ./.github/workflows/fast-dispatch-build-and-unit-tests.yaml
     secrets: inherit
   profiler-regression:
@@ -21,6 +26,9 @@ jobs:
     secrets: inherit
   eager-package-main:
     uses: ./.github/workflows/eager-package-main.yaml
+    secrets: inherit
+  build:
+    uses: ./.github/workflows/build.yaml
     secrets: inherit
   # We used to use this for post-commit, but we didn't have enough runners
   # to support the number of developers running this workflow

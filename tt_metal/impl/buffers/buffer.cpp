@@ -3,13 +3,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tt_metal/impl/buffers/buffer.hpp"
-#include "tt_metal/impl/allocator/allocator.hpp"
-#include "tt_metal/hostdevcommon/common_values.hpp"
-#include "tt_metal/common/math.hpp"
-#include "common/assert.hpp"
-#include "tt_metal/impl/device/device.hpp"
 
+#include "common/assert.hpp"
 #include "llrt/llrt.hpp"
+#include "tt_metal/common/math.hpp"
+#include "tt_metal/detail/tt_metal.hpp"
+#include "tt_metal/hostdevcommon/common_values.hpp"
+#include "tt_metal/impl/allocator/allocator.hpp"
+#include "tt_metal/impl/device/device.hpp"
+#include "tt_metal/tt_stl/stacktrace.hpp"
 
 namespace tt {
 
@@ -147,9 +149,13 @@ Buffer::Buffer(Device *device, uint64_t size, uint64_t page_size, const BufferTy
     this->allocate();
 }
 
-Buffer::Buffer(const Buffer &other)
-    : device_(other.device_), size_(other.size_), page_size_(other.page_size_),
-        buffer_type_(other.buffer_type_) , buffer_layout_(other.buffer_layout_), shard_parameters_(other.shard_parameters_){
+Buffer::Buffer(const Buffer &other) :
+    device_(other.device_),
+    size_(other.size_),
+    page_size_(other.page_size_),
+    buffer_type_(other.buffer_type_),
+    buffer_layout_(other.buffer_layout_),
+    shard_parameters_(other.shard_parameters_) {
     this->allocate();
 }
 
@@ -191,15 +197,8 @@ void Buffer::allocate() {
     TT_ASSERT(this->device_ != nullptr);
     // L1 buffers are allocated top down!
     bool bottom_up = this->buffer_type_ == BufferType::DRAM;
-    if(is_sharded(this->buffer_layout_)){
-        this->address_ = allocator::allocate_buffer(*this->device_->allocator_, this->size_,
-                                                this->page_size_, this->buffer_type_, bottom_up,
-                                                this->num_cores());
-    }
-    else{
-        this->address_ = allocator::allocate_buffer(*this->device_->allocator_, this->size_, this->page_size_, this->buffer_type_, bottom_up, std::nullopt);
-    }
-
+    detail::AllocateBuffer(this, bottom_up);
+    detail::BUFFER_MAP[{this->device_->id(), this->address_}] = this;
 }
 
 uint32_t Buffer::dram_channel_from_bank_id(uint32_t bank_id) const {
@@ -268,9 +267,12 @@ void Buffer::deallocate() {
     if (this->device_ == nullptr or not this->device_->initialized_ or this->size_ == 0) {
         return;
     }
+    // Mark as deallocated
     this->size_ = 0;
     TT_ASSERT(this->device_->allocator_ != nullptr, "Expected allocator to be initialized!");
-    allocator::deallocate_buffer(*this->device_->allocator_, this->address_, this->buffer_type_);
+    // Asynchronously deallocate
+    detail::BUFFER_MAP.erase({this->device_->id(), this->address_});
+    detail::DeallocateBuffer(this);
 }
 
 Buffer::~Buffer() {
@@ -307,5 +309,4 @@ bool operator!=(const ShardSpec& spec_a, const ShardSpec& spec_b) {
 }
 
 }  // namespace tt_metal
-
 }  // namespace tt

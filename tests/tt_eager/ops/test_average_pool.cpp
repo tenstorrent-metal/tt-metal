@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tt_dnn/op_library/pool/average_pool.hpp"
-#include "tt_dnn/op_library/program_cache.hpp"
 #include "tt_dnn/op_library/auto_format.hpp"
 #include "tt_numpy/functions.hpp"
 
@@ -36,8 +35,8 @@ int main () {
     Shape resnet18_shape = {1, 1, 7 * 7, 2048};
     auto result = run_avg_pool_2d_resnet(resnet18_shape, device);
 
-    TT_FATAL(result.shape() == Shape({1, 1, TILE_HEIGHT, 2048}));
-    TT_FATAL(result.shape().without_padding() == Shape({1, 1, 1, 2048}));
+    TT_FATAL(result.get_legacy_shape() == Shape({1, 1, TILE_HEIGHT, 2048}));
+    TT_FATAL(result.get_legacy_shape().without_padding() == Shape({1, 1, 1, 2048}));
 
     TT_FATAL(tt::tt_metal::CloseDevice(device));
     return 0;

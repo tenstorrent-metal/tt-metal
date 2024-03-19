@@ -126,7 +126,7 @@ def test_moreh_sgd(shape, lr, momentum, dampening, weight_decay, nesterov, momen
         momentum_initialized,
     )
 
-    assert dev_param_in.shape() == list(model.weight.shape)
+    assert dev_param_in.get_legacy_shape() == list(model.weight.shape)
 
     # check param_out
     param_result = dev_param_out.cpu().to(ttl.tensor.Layout.ROW_MAJOR).to_torch().to(torch.bfloat16)
@@ -134,8 +134,8 @@ def test_moreh_sgd(shape, lr, momentum, dampening, weight_decay, nesterov, momen
     rtol = atol = 0.05
     passing, out = comp_allclose_and_pcc(model.weight, param_result, pcc=0.99, rtol=rtol, atol=atol)
 
-    logger.info(f"Out passing (param)={passing}")
-    logger.info(f"Output pcc={out}")
+    logger.debug(f"Out passing (param)={passing}")
+    logger.debug(f"Output pcc={out}")
 
     assert passing
 
@@ -146,7 +146,7 @@ def test_moreh_sgd(shape, lr, momentum, dampening, weight_decay, nesterov, momen
         )
 
         passing, out = comp_allclose_and_pcc(cpu_momentum_out, momentum_buffer_result, pcc=0.99, rtol=rtol, atol=atol)
-        logger.info(f"Momentum_out passing (param)={passing}")
-        logger.info(f"Momentum_out pcc={out}")
+        logger.debug(f"Momentum_out passing (param)={passing}")
+        logger.debug(f"Momentum_out pcc={out}")
 
         assert passing

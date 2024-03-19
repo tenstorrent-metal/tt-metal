@@ -24,7 +24,6 @@
 #include "tt_dnn/op_library/embeddings/embeddings_op.hpp"
 #include "tt_dnn/op_library/update_cache/update_cache_op.hpp"
 #include "tt_dnn/op_library/reduce/reduce_op.hpp"
-#include "tt_dnn/op_library/program_cache.hpp"
 #include "tt_dnn/op_library/work_split.hpp"
 #include "tensor/owned_buffer.hpp"
 #include "tensor/borrowed_buffer.hpp"
@@ -322,13 +321,17 @@ void TensorModule(py::module &m_tensor) {
     auto py_borrowed_buffer_for_bfloat16_t = py::class_<borrowed_buffer::Buffer<bfloat16>>(m_tensor, "borrowed_buffer_for_bfloat16_t", py::buffer_protocol());
     detail::implement_buffer_protocol<borrowed_buffer::Buffer<bfloat16>, bfloat16>(py_borrowed_buffer_for_bfloat16_t);
 
+    py::class_<DeviceComputeKernelConfig>(m_tensor, "DeviceComputeKernelConfig");
+
     py::class_<GrayskullComputeKernelConfig>(m_tensor, "GrayskullComputeKernelConfig")
         .def(
             py::init<MathFidelity, bool>(),
             py::kw_only(),
             py::arg("math_fidelity") = MathFidelity::Invalid,
             py::arg("math_approx_mode") = true
-        );
+        )
+        .def_readwrite("math_fidelity", &GrayskullComputeKernelConfig::math_fidelity)
+        .def_readwrite("math_approx_mode", &GrayskullComputeKernelConfig::math_approx_mode);
 
     py::class_<WormholeComputeKernelConfig>(m_tensor, "WormholeComputeKernelConfig")
         .def(
@@ -338,7 +341,11 @@ void TensorModule(py::module &m_tensor) {
             py::arg("math_approx_mode") = true,
             py::arg("fp32_dest_acc_en") = false,
             py::arg("packer_l1_acc") = false
-        );
+        )
+        .def_readwrite("math_fidelity", &WormholeComputeKernelConfig::math_fidelity)
+        .def_readwrite("math_approx_mode", &WormholeComputeKernelConfig::math_approx_mode)
+        .def_readwrite("fp32_dest_acc_en", &WormholeComputeKernelConfig::fp32_dest_acc_en)
+        .def_readwrite("packer_l1_acc", &WormholeComputeKernelConfig::packer_l1_acc);
 
     detail::bind_unary_op(m_tensor, "mean_hw", tt::tt_metal::mean_hw, R"doc(  Returns a new tensor with the variance of the input tensor ``{0}`` on H,W axes.)doc");
     detail::bind_unary_op(m_tensor, "global_mean", tt::tt_metal::global_mean, R"doc(  Returns a new tensor with the mean of the input tensor ``{0}`` on all axes.)doc");
@@ -396,34 +403,24 @@ void TensorModule(py::module &m_tensor) {
             py::arg("grid_size"),
             py::arg("num_cores_nhw"),
             py::arg("per_core_out_matrix_height_ntiles").noconvert(),
-            py::arg("per_core_weight_matrix_width_ntiles").noconvert())
+            py::arg("per_core_out_matrix_width_ntiles").noconvert()
+        )
         .def_property_readonly("grid_size", [](OptimizedConvParallelizationConfig const& c) { return c.grid_size; })
-        .def_property_readonly(
-            "num_cores_nhw", [](OptimizedConvParallelizationConfig const& c) { return c.num_cores_nhw; })
-        .def_property_readonly(
-            "per_core_out_matrix_height_ntiles",
-            [](OptimizedConvParallelizationConfig const& c) { return c.per_core_out_matrix_height_ntiles; })
-        .def_property_readonly("per_core_weight_matrix_width_ntiles", [](OptimizedConvParallelizationConfig const& c) {
-            return c.per_core_weight_matrix_width_ntiles;
-        });
+        .def_property_readonly("num_cores_nhw", [](OptimizedConvParallelizationConfig const& c) { return c.num_cores_nhw; })
+        .def_property_readonly("per_core_out_matrix_height_ntiles", [](OptimizedConvParallelizationConfig const& c) { return c.per_core_out_matrix_height_ntiles; })
+        .def_property_readonly("per_core_out_matrix_width_ntiles", [](OptimizedConvParallelizationConfig const& c) { return c.per_core_out_matrix_width_ntiles; });
 
     py::class_<OptimizedConvBlockConfig>(m_tensor, "OptimizedConvBlockConfig")
         .def(
-            py::init<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t>(),
+            py::init<uint32_t, uint32_t, uint32_t, uint32_t>(),
             py::kw_only(),
             py::arg("act_block_h_ntiles").noconvert(),
             py::arg("act_block_w_ntiles").noconvert(),
-            py::arg("act_c_num_blocks").noconvert() = 1,
-            py::arg("weight_block_w_ntiles").noconvert(),
-            py::arg("out_block_h_ntiles").noconvert(),
             py::arg("out_subblock_h_ntiles").noconvert(),
             py::arg("out_subblock_w_ntiles").noconvert()
         )
         .def_property_readonly("act_block_h_ntiles", [](OptimizedConvBlockConfig const& c) { return c.act_block_h_ntiles; })
         .def_property_readonly("act_block_w_ntiles", [](OptimizedConvBlockConfig const& c) { return c.act_block_w_ntiles; })
-        .def_property_readonly("act_c_num_blocks", [](OptimizedConvBlockConfig const& c) { return c.act_c_num_blocks; })
-        .def_property_readonly("weight_block_w_ntiles", [](OptimizedConvBlockConfig const& c) { return c.weight_block_w_ntiles; })
-        .def_property_readonly("out_block_h_ntiles", [](OptimizedConvBlockConfig const& c) { return c.out_block_h_ntiles; })
         .def_property_readonly("out_subblock_h_ntiles", [](OptimizedConvBlockConfig const& c) { return c.out_subblock_h_ntiles; })
         .def_property_readonly("out_subblock_w_ntiles", [](OptimizedConvBlockConfig const& c) { return c.out_subblock_w_ntiles; });
 
@@ -534,8 +531,8 @@ void TensorModule(py::module &m_tensor) {
         "Fills the cache tensor in place with the values from input at the specified batch_idx.
     )doc");
     m_tensor.def("update_cache", &update_cache,
-         py::arg("cache").noconvert(), py::arg("input").noconvert(), py::arg("update_idx"), R"doc(
-        "Updates the cache tensor in place with the values from input at the specified update_idx.
+         py::arg("cache").noconvert(), py::arg("input").noconvert(), py::arg("update_idx"), py::arg("batch_offset") = 0, R"doc(
+        "Updates the cache tensor in place with the values from input at the specified update_idx. When cache has batch less than 32, input is assumed to have batch padded to 32 and [batch_offset:batch_offset+batch] from dim[-2] of input is used to update the cache.
     )doc");
 
 

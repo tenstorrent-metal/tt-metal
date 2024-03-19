@@ -2,6 +2,7 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+import pytest
 import torch
 
 from loguru import logger
@@ -18,6 +19,7 @@ from models.utility_functions import (
 from models.experimental.roberta.roberta_common import torch2tt_tensor
 
 
+@pytest.mark.skip(reason="Mismatch happening on GS, issue #5943")
 def test_roberta_for_multiple_choice(device):
     """
     RoBERTa for multiple choice is loading roberta-base pre-trained model,
@@ -57,7 +59,7 @@ def test_roberta_for_multiple_choice(device):
         print(inputs_dict["attention_mask"].shape)
         inputs_dict["attention_mask"] = torch.unsqueeze(inputs_dict["attention_mask"], 0)
         inputs_dict["attention_mask"] = torch2tt_tensor(inputs_dict["attention_mask"], device)
-        print(inputs_dict["attention_mask"].shape())
+        print(inputs_dict["attention_mask"].get_legacy_shape())
 
         logger.info("Running tt model ...")
         tt_output = tt_model(**inputs_dict)

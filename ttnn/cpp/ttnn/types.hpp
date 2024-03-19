@@ -20,6 +20,7 @@ static constexpr auto uint32 = DataType::UINT32;
 static constexpr auto float32 = DataType::FLOAT32;
 static constexpr auto bfloat16 = DataType::BFLOAT16;
 static constexpr auto bfloat8_b = DataType::BFLOAT8_B;
+static constexpr auto bfloat4_b = DataType::BFLOAT4_B;
 
 using tt::tt_metal::BufferType;
 using tt::tt_metal::MemoryConfig;
@@ -38,11 +39,6 @@ static constexpr auto TILE_LAYOUT = Layout::TILE;
 using tt::tt_metal::StorageType;
 static constexpr auto DEVICE_STORAGE_TYPE = StorageType::DEVICE;
 
-// Tensor wrapper class for hiding the internal implementation from python
-struct TensorWrapper {
-    ttnn::Tensor value;
-};
-
 struct TensorSchema {
     const std::size_t min_rank;
     const std::size_t max_rank;
@@ -53,6 +49,18 @@ struct TensorSchema {
     const bool can_be_a_scalar;
     const bool is_optional;
 };
+
+struct CoreGrid {
+    std::size_t x;
+    std::size_t y;
+
+    CoreGrid(std::size_t x, std::size_t y) : x(x), y(y) {}
+};
+
+static std::ostream &operator<<(std::ostream &os, const CoreGrid &core_grid) {
+    os << "ttnn.CoreGrid(x=" <<core_grid.x<<", y="<<core_grid.y<<")";
+    return os;
+}
 
 }
 

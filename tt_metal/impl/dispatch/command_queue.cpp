@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 
+#include "allocator/allocator.hpp"
 #include "debug_tools.hpp"
 #include "dev_msgs.h"
 #include "logger.hpp"
@@ -67,8 +68,14 @@ const DeviceCommand EnqueueReadShardedBufferCommand::create_buffer_transfer_inst
 
     uint32_t num_cores = this->buffer.num_cores();
     uint32_t shard_size = this->buffer.shard_spec().size();
-    // TODO: for now all shards are same size of pages
-    vector<uint32_t> num_pages_in_shards(num_cores, shard_size);
+
+    auto core_host_page_indices = this->buffer.core_host_page_indices();
+    vector<uint32_t> num_pages_in_shards;
+    num_pages_in_shards.reserve(num_cores);
+    for(size_t core_id = 0; core_id < num_cores; core_id++) {
+        num_pages_in_shards.push_back(core_host_page_indices[core_id].size());
+    }
+
     vector<uint32_t> core_id_x;
     core_id_x.reserve(num_cores);
     vector<uint32_t> core_id_y;
@@ -104,7 +111,6 @@ const DeviceCommand EnqueueReadInterleavedBufferCommand::create_buffer_transfer_
 
     uint32_t buffer_address = this->buffer.address();
     uint32_t dst_page_index = 0;
-
     command.add_buffer_transfer_interleaved_instruction(
         buffer_address,
         dst_address,
@@ -124,55 +130,69 @@ const DeviceCommand EnqueueReadBufferCommand::assemble_device_command(uint32_t d
     uint32_t num_pages = this->pages_to_read;
     DeviceCommand command = this->create_buffer_transfer_instruction(dst_address, padded_page_size, num_pages);
 
-    // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
-    // Even when targeting fast dispatch on remote device, commands are tunneled through ethernet to consumer tensix cores
-    constexpr bool cmd_consumer_on_ethernet = false;
-    uint32_t consumer_cb_num_pages = (get_consumer_data_buffer_size(cmd_consumer_on_ethernet) / padded_page_size);
+    // Commands are tunneled through ethernet to consumer tensix cores for remote fast dispatch
+    bool route_through_ethernet = not device->is_mmio_capable();
 
-    // Number of pages that are transferred in one shot from producer to consumer
-    uint32_t producer_consumer_tx_num_pages = 1;
-    if (consumer_cb_num_pages >= DeviceCommand::SYNC_NUM_PAGES) {
-        producer_consumer_tx_num_pages = consumer_cb_num_pages / DeviceCommand::SYNC_NUM_PAGES;
-        consumer_cb_num_pages = producer_consumer_tx_num_pages * DeviceCommand::SYNC_NUM_PAGES; // want num pages to be previous multiple of SYNC_NUM_PAGES
+    uint32_t push_and_pull_cb_num_pages;
+
+    if (tt::Cluster::instance().arch() == tt::ARCH::WORMHOLE_B0) {
+        if (route_through_ethernet) {
+            uint32_t router_data_buffer_size = get_cq_data_buffer_size(true);
+            uint32_t router_cb_num_pages = router_data_buffer_size / padded_page_size;
+            uint32_t router_cb_size = router_cb_num_pages * padded_page_size;
+            TT_ASSERT(padded_page_size <= router_cb_size, "Page is too large to fit in consumer buffer");
+
+            uint32_t producer_consumer_multiple = get_cq_data_buffer_size(false) / router_data_buffer_size;
+
+            command.set_router_cb_num_pages(router_cb_num_pages);
+            command.set_router_cb_size(router_cb_size);
+            command.set_router_transfer_num_pages(router_cb_num_pages);
+
+            push_and_pull_cb_num_pages = router_cb_num_pages * producer_consumer_multiple;
+        } else {
+            // pull and relay kernel reads in half of push_and_pull_cb_num_pages and writes are half the number of pages read
+            uint32_t pull_and_push_data_buffer_size = get_cq_data_buffer_size(false);
+            uint32_t num_pages_in_data_buffer = pull_and_push_data_buffer_size / padded_page_size;
+            // make sure push_and_pull_cb_num_pages is multiple of 4 because we read half this number of pages and write a quarter of this number of pages
+            push_and_pull_cb_num_pages = (num_pages_in_data_buffer / 4)* 4;
+        }
+
+        uint32_t push_and_pull_cb_size = push_and_pull_cb_num_pages * padded_page_size;
+        TT_ASSERT(padded_page_size <= push_and_pull_cb_size, "Page is too large to fit in push and pull buffer");
+
+        command.set_pull_and_push_cb_size(push_and_pull_cb_size);
+        command.set_pull_and_push_cb_num_pages(push_and_pull_cb_num_pages);
+    } else {
+        uint32_t consumer_cb_num_pages = (get_consumer_data_buffer_size() / padded_page_size);
+
+        // Number of pages that are transferred in one shot from producer to consumer
+        uint32_t producer_consumer_tx_num_pages = 1;
+        if (consumer_cb_num_pages >= DeviceCommand::SYNC_NUM_PAGES) {
+            producer_consumer_tx_num_pages = consumer_cb_num_pages / DeviceCommand::SYNC_NUM_PAGES;
+            consumer_cb_num_pages = producer_consumer_tx_num_pages * DeviceCommand::SYNC_NUM_PAGES; // want num pages to be previous multiple of SYNC_NUM_PAGES
+        }
+        command.set_producer_consumer_transfer_num_pages(producer_consumer_tx_num_pages);
+
+        uint32_t consumer_cb_size = consumer_cb_num_pages * padded_page_size;
+        TT_ASSERT(padded_page_size <= consumer_cb_size, "Page is too large to fit in consumer buffer");
+
+        uint32_t producer_cb_num_pages = consumer_cb_num_pages * 2;
+        uint32_t producer_cb_size = producer_cb_num_pages * padded_page_size;
+
+        command.set_producer_cb_size(producer_cb_size);
+        command.set_consumer_cb_size(consumer_cb_size);
+        command.set_producer_cb_num_pages(producer_cb_num_pages);
+        command.set_consumer_cb_num_pages(consumer_cb_num_pages);
     }
-    command.set_producer_consumer_transfer_num_pages(producer_consumer_tx_num_pages);
-
-    uint32_t consumer_cb_size = consumer_cb_num_pages * padded_page_size;
-    TT_ASSERT(padded_page_size <= consumer_cb_size, "Page is too large to fit in consumer buffer");
-
-    uint32_t producer_cb_num_pages = consumer_cb_num_pages * 2;
-    uint32_t producer_cb_size = producer_cb_num_pages * padded_page_size;
 
     if (this->stall) {
         command.set_stall();
     }
     command.set_page_size(padded_page_size);
-    command.set_producer_cb_size(producer_cb_size);
-    command.set_consumer_cb_size(consumer_cb_size);
-    command.set_producer_cb_num_pages(producer_cb_num_pages);
-    command.set_consumer_cb_num_pages(consumer_cb_num_pages);
+
     command.set_num_pages(num_pages);
     command.set_completion_data_size(padded_page_size * num_pages + align(EVENT_PADDED_SIZE, 32));
     command.set_event(this->event);
-
-    // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
-    bool route_through_ethernet = not device->is_mmio_capable();
-    if (route_through_ethernet) {
-        uint32_t router_cb_num_pages = get_consumer_data_buffer_size(true) / padded_page_size;
-        uint32_t router_tx_num_pages = 1;
-        if (router_cb_num_pages >= DeviceCommand::SYNC_NUM_PAGES) {
-            router_tx_num_pages = router_cb_num_pages / DeviceCommand::SYNC_NUM_PAGES;
-            router_cb_num_pages = router_tx_num_pages * DeviceCommand::SYNC_NUM_PAGES; // want num pages to be previous multiple of SYNC_NUM_PAGES
-        }
-        command.set_producer_router_transfer_num_pages(router_tx_num_pages);
-        command.set_consumer_router_transfer_num_pages(router_tx_num_pages);
-
-        uint32_t router_cb_size = router_cb_num_pages * padded_page_size;
-        TT_ASSERT(padded_page_size <= router_cb_size, "Page is too large to fit in router buffer");
-
-        command.set_router_cb_size(router_cb_size);
-        command.set_router_cb_num_pages(router_cb_num_pages);
-    }
 
     return command;
 }
@@ -243,8 +263,14 @@ const DeviceCommand EnqueueWriteShardedBufferCommand::create_buffer_transfer_ins
 
     uint32_t num_cores = this->buffer.num_cores();
     uint32_t shard_size = this->buffer.shard_spec().size();
-    // TODO: for now all shards are same size of pages
-    vector<uint32_t> num_pages_in_shards(num_cores, shard_size);
+
+    auto core_host_page_indices = this->buffer.core_host_page_indices();
+    vector<uint32_t> num_pages_in_shards;
+    num_pages_in_shards.reserve(num_cores);
+    for(size_t core_id = 0; core_id < num_cores; core_id++) {
+        num_pages_in_shards.push_back(core_host_page_indices[core_id].size());
+    }
+
     vector<uint32_t> core_id_x;
     core_id_x.reserve(num_cores);
     vector<uint32_t> core_id_y;
@@ -283,49 +309,61 @@ const DeviceCommand EnqueueWriteBufferCommand::assemble_device_command(uint32_t 
 
     DeviceCommand command = this->create_buffer_transfer_instruction(src_address, padded_page_size, num_pages);
 
-    // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
-    // Even when targeting fast dispatch on remote device, commands are tunneled through ethernet to consumer tensix cores
-    constexpr bool cmd_consumer_on_ethernet = false;
-    uint32_t consumer_cb_num_pages = (get_consumer_data_buffer_size(cmd_consumer_on_ethernet) / padded_page_size);
+    if (tt::Cluster::instance().arch() == tt::ARCH::WORMHOLE_B0) {
+        // Commands are tunneled through ethernet to consumer tensix cores for remote fast dispatch
+        bool route_through_ethernet = not device->is_mmio_capable();
+        uint32_t push_and_pull_cb_num_pages;
+        if (route_through_ethernet) {
+            uint32_t router_data_buffer_size = get_cq_data_buffer_size(true);
+            uint32_t router_cb_num_pages = router_data_buffer_size / padded_page_size;
+            uint32_t router_cb_size = router_cb_num_pages * padded_page_size;
+            TT_ASSERT(padded_page_size <= router_cb_size, "Page is too large to fit in consumer buffer");
 
-    uint32_t producer_consumer_tx_num_pages = 1;
-    if (consumer_cb_num_pages >= DeviceCommand::SYNC_NUM_PAGES) {
-        producer_consumer_tx_num_pages = consumer_cb_num_pages / DeviceCommand::SYNC_NUM_PAGES;
-        consumer_cb_num_pages = producer_consumer_tx_num_pages * DeviceCommand::SYNC_NUM_PAGES; // want num pages to be previous multiple of SYNC_NUM_PAGES
+            uint32_t producer_consumer_multiple = get_cq_data_buffer_size(false) / router_data_buffer_size;
+
+            command.set_router_cb_num_pages(router_cb_num_pages);
+            command.set_router_cb_size(router_cb_size);
+            command.set_router_transfer_num_pages(router_cb_num_pages);
+
+            push_and_pull_cb_num_pages = router_cb_num_pages * producer_consumer_multiple;
+        }
+        else {
+            uint32_t pull_and_push_data_buffer_size = get_cq_data_buffer_size(false);
+            uint32_t num_pages_in_data_buffer = pull_and_push_data_buffer_size / padded_page_size;
+            // make sure push_and_pull_cb_num_pages is multiple of 4 because we read half this number of pages and write a quarter of this number of pages
+            push_and_pull_cb_num_pages = (num_pages_in_data_buffer / 4)* 4;
+        }
+
+        uint32_t push_and_pull_cb_size = push_and_pull_cb_num_pages * padded_page_size;
+        TT_ASSERT(padded_page_size <= push_and_pull_cb_size, "Page is too large to fit in push and pull buffer");
+
+        command.set_pull_and_push_cb_size(push_and_pull_cb_size);
+        command.set_pull_and_push_cb_num_pages(push_and_pull_cb_num_pages);
+    } else {
+        uint32_t consumer_cb_num_pages = get_consumer_data_buffer_size() / padded_page_size;
+
+        // Number of pages that are transferred in one shot from producer to consumer
+        uint32_t producer_consumer_tx_num_pages = 1;
+        if (consumer_cb_num_pages >= DeviceCommand::SYNC_NUM_PAGES) {
+            producer_consumer_tx_num_pages = consumer_cb_num_pages / DeviceCommand::SYNC_NUM_PAGES;
+            consumer_cb_num_pages = producer_consumer_tx_num_pages * DeviceCommand::SYNC_NUM_PAGES; // want num pages to be previous multiple of SYNC_NUM_PAGES
+        }
+        command.set_producer_consumer_transfer_num_pages(producer_consumer_tx_num_pages);
+
+        uint32_t consumer_cb_size = consumer_cb_num_pages * padded_page_size;
+        TT_ASSERT(padded_page_size <= consumer_cb_size, "Page is too large to fit in consumer buffer");
+
+        uint32_t producer_cb_num_pages = consumer_cb_num_pages * 2;
+        uint32_t producer_cb_size = producer_cb_num_pages * padded_page_size;
+
+        command.set_producer_cb_size(producer_cb_size);
+        command.set_consumer_cb_size(consumer_cb_size);
+        command.set_producer_cb_num_pages(producer_cb_num_pages);
+        command.set_consumer_cb_num_pages(consumer_cb_num_pages);
     }
-    command.set_producer_consumer_transfer_num_pages(producer_consumer_tx_num_pages);
-
-    uint32_t consumer_cb_size = consumer_cb_num_pages * padded_page_size;
-    TT_ASSERT(padded_page_size <= consumer_cb_size, "Page is too large to fit in consumer buffer");
-    uint32_t producer_cb_num_pages = consumer_cb_num_pages * 2;
-    uint32_t producer_cb_size = producer_cb_num_pages * padded_page_size;
 
     command.set_page_size(padded_page_size);
-    command.set_producer_cb_size(producer_cb_size);
-    command.set_consumer_cb_size(consumer_cb_size);
-    command.set_producer_cb_num_pages(producer_cb_num_pages);
-    command.set_consumer_cb_num_pages(consumer_cb_num_pages);
     command.set_num_pages(num_pages);
-
-    // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
-    bool route_through_ethernet = not device->is_mmio_capable();
-    if (route_through_ethernet) {
-        uint32_t router_cb_num_pages = get_consumer_data_buffer_size(true) / padded_page_size;
-        uint32_t router_tx_num_pages = 1;
-        if (router_cb_num_pages >= DeviceCommand::SYNC_NUM_PAGES) {
-            router_tx_num_pages = router_cb_num_pages / DeviceCommand::SYNC_NUM_PAGES;
-            router_cb_num_pages = router_tx_num_pages * DeviceCommand::SYNC_NUM_PAGES; // want num pages to be previous multiple of SYNC_NUM_PAGES
-        }
-        command.set_producer_router_transfer_num_pages(router_tx_num_pages);
-        command.set_consumer_router_transfer_num_pages(router_tx_num_pages);
-
-        uint32_t router_cb_size = router_cb_num_pages * padded_page_size;
-        TT_ASSERT(padded_page_size <= router_cb_size, "Page is too large to fit in router buffer");
-
-        command.set_router_cb_size(router_cb_size);
-        command.set_router_cb_num_pages(router_cb_num_pages);
-    }
-
     command.set_issue_data_size(padded_page_size * num_pages);
     command.set_completion_data_size(align(EVENT_PADDED_SIZE, 32));
     command.set_event(this->event);
@@ -344,7 +382,6 @@ void EnqueueWriteBufferCommand::process() {
 
     this->manager.cq_write(cmd.data(), DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, write_ptr);
     uint32_t unpadded_src_offset = this->dst_page_index * this->buffer.page_size();
-
     if (this->buffer.page_size() % 32 != 0 and this->buffer.page_size() != this->buffer.size()) {
         // If page size is not 32B-aligned, we cannot do a contiguous write
         uint32_t src_address_offset = unpadded_src_offset;
@@ -361,7 +398,6 @@ void EnqueueWriteBufferCommand::process() {
         this->manager.cq_write(
             (char*)this->src + unpadded_src_offset, data_size_in_bytes, system_memory_temporary_storage_address);
     }
-
     this->manager.issue_queue_push_back(cmd_size, detail::LAZY_COMMAND_QUEUE_MODE, this->command_queue_id);
 }
 
@@ -497,21 +533,47 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
         }
     }
 
-    // TODO (abhullar): deduce whether the producer is on ethernet core rather than hardcoding assuming tensix worker
-    const uint32_t producer_cb_num_pages =
-        (get_producer_data_buffer_size(/*use_eth_l1=*/false) / DeviceCommand::PROGRAM_PAGE_SIZE);
-    const uint32_t producer_cb_size = producer_cb_num_pages * DeviceCommand::PROGRAM_PAGE_SIZE;
+    if (tt::Cluster::instance().arch() == tt::ARCH::WORMHOLE_B0) {
+        uint32_t push_and_pull_cb_num_pages;
+        bool route_through_ethernet = not this->device->is_mmio_capable();
+        if (route_through_ethernet) {
+            uint32_t router_data_buffer_size = get_cq_data_buffer_size(true);
+            uint32_t router_cb_num_pages = router_data_buffer_size / DeviceCommand::PROGRAM_PAGE_SIZE;
 
-    // Targeting fast dispatch on remote device means commands have to be tunneled through ethernet
-    bool cmd_consumer_on_ethernet = not device->is_mmio_capable();
-    const uint32_t consumer_cb_num_pages =
-        (get_consumer_data_buffer_size(cmd_consumer_on_ethernet) / DeviceCommand::PROGRAM_PAGE_SIZE);
-    const uint32_t consumer_cb_size = consumer_cb_num_pages * DeviceCommand::PROGRAM_PAGE_SIZE;
+            uint32_t router_transfer_num_pages = router_cb_num_pages / DeviceCommand::SYNC_NUM_PAGES;
+            router_cb_num_pages = router_transfer_num_pages * DeviceCommand::SYNC_NUM_PAGES; // want num pages to be previous multiple of SYNC_NUM_PAGES
 
-    command.set_producer_cb_size(producer_cb_size);
-    command.set_consumer_cb_size(consumer_cb_size);
-    command.set_producer_cb_num_pages(producer_cb_num_pages);
-    command.set_consumer_cb_num_pages(consumer_cb_num_pages);
+            uint32_t router_cb_size = router_cb_num_pages * DeviceCommand::PROGRAM_PAGE_SIZE;
+
+            uint32_t producer_consumer_multiple = get_cq_data_buffer_size(false) / router_data_buffer_size;
+
+            command.set_router_cb_num_pages(router_cb_num_pages);
+            command.set_router_cb_size(router_cb_size);
+            command.set_router_transfer_num_pages(router_transfer_num_pages);
+
+            push_and_pull_cb_num_pages = router_cb_num_pages * producer_consumer_multiple / 2 * 2;
+        } else {
+            uint32_t pull_and_push_data_buffer_size = get_cq_data_buffer_size(false) / 2 * 2;
+            push_and_pull_cb_num_pages = pull_and_push_data_buffer_size / DeviceCommand::PROGRAM_PAGE_SIZE;
+        }
+
+        const uint32_t push_and_pull_cb_size = push_and_pull_cb_num_pages * DeviceCommand::PROGRAM_PAGE_SIZE;
+
+        command.set_pull_and_push_cb_size(push_and_pull_cb_size);
+        command.set_pull_and_push_cb_num_pages(push_and_pull_cb_num_pages);
+    } else {
+        const uint32_t producer_cb_num_pages = get_cq_data_buffer_size(false) / DeviceCommand::PROGRAM_PAGE_SIZE;
+        const uint32_t producer_cb_size = producer_cb_num_pages * DeviceCommand::PROGRAM_PAGE_SIZE;
+
+        bool cmd_consumer_on_ethernet = not device->is_mmio_capable();
+        const uint32_t consumer_cb_num_pages = get_consumer_data_buffer_size() / DeviceCommand::PROGRAM_PAGE_SIZE;
+        const uint32_t consumer_cb_size = consumer_cb_num_pages * DeviceCommand::PROGRAM_PAGE_SIZE;
+
+        command.set_producer_cb_size(producer_cb_size);
+        command.set_consumer_cb_size(consumer_cb_size);
+        command.set_producer_cb_num_pages(producer_cb_num_pages);
+        command.set_consumer_cb_num_pages(consumer_cb_num_pages);
+    }
 
     // Should only ever be set if we are
     // enqueueing a program immediately
@@ -522,6 +584,7 @@ const DeviceCommand EnqueueProgramCommand::assemble_device_command(uint32_t host
 
     // This needs to be quite small, since programs are small
     command.set_producer_consumer_transfer_num_pages(DeviceCommand::SYNC_NUM_PAGES);
+    command.set_program_transfer_num_pages(DeviceCommand::SYNC_NUM_PAGES);
     command.set_event(this->event);
 
     return command;
@@ -543,13 +606,14 @@ void EnqueueProgramCommand::process() {
     uint32_t start_addr = system_memory_temporary_storage_address;
     constexpr static uint32_t padding_alignment = 16;
     for (size_t kernel_id = 0; kernel_id < this->program.num_kernels(); kernel_id++) {
-        Kernel* kernel = detail::GetKernel(program, kernel_id);
+        std::shared_ptr<Kernel> kernel = detail::GetKernel(program, kernel_id);
         for (const auto& c : kernel->cores_with_runtime_args()) {
             const auto& core_runtime_args = kernel->runtime_args(c);
             this->manager.cq_write(
                 core_runtime_args.data(),
                 core_runtime_args.size() * sizeof(uint32_t),
                 system_memory_temporary_storage_address);
+
             system_memory_temporary_storage_address = align(
                 system_memory_temporary_storage_address + core_runtime_args.size() * sizeof(uint32_t),
                 padding_alignment);
@@ -662,6 +726,9 @@ const DeviceCommand EnqueueRecordEventCommand::assemble_device_command(uint32_t)
     command.set_issue_data_size(0); // No extra data just CMD.
     command.set_completion_data_size(align(EVENT_PADDED_SIZE, 32));
     command.set_event(this->event);
+    if (tt::Cluster::instance().arch() == tt::ARCH::WORMHOLE_B0) {
+        command.set_stall(); // Ensure ordering w/ programs in FD1.3+ prefetcher.
+    }
     return command;
 }
 
@@ -688,7 +755,9 @@ const DeviceCommand EnqueueWaitForEventCommand::assemble_device_command(uint32_t
     command.set_issue_data_size(0); // No extra data just CMD.
     command.set_completion_data_size(align(EVENT_PADDED_SIZE, 32));
     command.set_event(this->event);
-
+    if (tt::Cluster::instance().arch() == tt::ARCH::WORMHOLE_B0) {
+        command.set_stall(); // Ensure ordering w/ programs in FD1.3+ prefetcher.
+    }
     // #5529 - Cross chip sync needs to be implemented. Currently, we only support sync on the same chip.
     TT_ASSERT(this->sync_event.device == this->device,
             "EnqueueWaitForEvent() cross-chip sync not yet supported. Sync event device: {} this device: {}",
@@ -764,7 +833,6 @@ template <typename T>
 void HWCommandQueue::enqueue_command(T& command, bool blocking) {
     command.process();
     this->num_issued_commands++;
-
     if (blocking) {
         this->finish();
     }
@@ -787,13 +855,17 @@ void convert_interleaved_to_sharded_on_host(const void* host, const Buffer& buff
 
     const void* dst = host;
     std::set<uint32_t> pages_seen;
-    for (uint32_t host_page_id = 0; host_page_id < num_pages; host_page_id++) {
-        auto dev_page_id = buffer.get_mapped_page_id(host_page_id);
+    for (uint32_t page_id = 0; page_id < num_pages; page_id++) {
 
-        TT_ASSERT(dev_page_id < num_pages and dev_page_id >= 0);
         if (read) {
+            auto host_page_id = page_id;
+            auto dev_page_id = buffer.get_dev_to_host_mapped_page_id(host_page_id);
+            TT_ASSERT(dev_page_id < num_pages and dev_page_id >= 0);
             memcpy((char*)dst + dev_page_id * page_size, (char*)temp + host_page_id * page_size, page_size);
         } else {
+            auto dev_page_id = page_id;
+            auto host_page_id = buffer.get_host_to_dev_mapped_page_id(dev_page_id);
+            TT_ASSERT(host_page_id < num_pages and host_page_id >= 0);
             memcpy((char*)dst + host_page_id * page_size, (char*)temp + dev_page_id * page_size, page_size);
         }
     }
@@ -865,18 +937,36 @@ void HWCommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blockin
     }
 }
 
-void HWCommandQueue::enqueue_write_buffer(std::shared_ptr<const Buffer> buffer, const void* src, bool blocking) {
-    this->enqueue_write_buffer(*buffer, src, blocking);
+void HWCommandQueue::enqueue_write_buffer(std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<const Buffer>> buffer, HostDataType src, bool blocking) {
+    // Top level API to accept different variants for buffer and src
+    // For shared pointer variants, object lifetime is guaranteed at least till the end of this function
+    std::visit ([this, &buffer, &blocking](auto&& data) {
+        using T = std::decay_t<decltype(data)>;
+        std::visit ([this, &buffer, &blocking, &data](auto&& b) {
+            using type_buf = std::decay_t<decltype(b)>;
+            if constexpr (std::is_same_v<T, const void*>) {
+                if constexpr (std::is_same_v<type_buf, std::shared_ptr<const Buffer>>) {
+                    this->enqueue_write_buffer(*b, data, blocking);
+                } else if constexpr (std::is_same_v<type_buf, std::reference_wrapper<Buffer>>) {
+                    this->enqueue_write_buffer(b.get(), data, blocking);
+                }
+            } else {
+                if constexpr (std::is_same_v<type_buf, std::shared_ptr<const Buffer>>) {
+                    this->enqueue_write_buffer(*b, data.get() -> data(), blocking);
+                } else if constexpr (std::is_same_v<type_buf, std::reference_wrapper<Buffer>>) {
+                    this->enqueue_write_buffer(b.get(), data.get() -> data(), blocking);
+                }
+            }
+        }, buffer);
+    }, src);
 }
 
 void HWCommandQueue::enqueue_write_buffer(const Buffer& buffer, const void* src, bool blocking) {
-
     ZoneScopedN("HWCommandQueue_write_buffer");
-
     // TODO(agrebenisan): Fix these asserts after implementing multi-core CQ
     // TODO (abhullar): Use eth mem l1 size when issue queue interface kernel is on ethernet core
     TT_ASSERT(
-        buffer.page_size() < MEM_L1_SIZE - get_data_section_l1_address(false),
+        buffer.page_size() < get_cq_data_buffer_size(false),
         "Buffer pages must fit within the command queue data section");
 
     if (buffer.buffer_layout() == TensorMemoryLayout::WIDTH_SHARDED or
@@ -946,12 +1036,12 @@ void HWCommandQueue::enqueue_program(
 
     tt::log_debug(tt::LogDispatch, "EnqueueProgram for channel {}", this->id);
     ProgramDeviceMap& program_device_map = program.program_device_map;
-    uint32_t host_data_num_pages = program_device_map.runtime_arg_page_transfers.size() + program_device_map.cb_config_page_transfers.size();
+    uint32_t host_data_num_pages = program_device_map.num_transfers_in_runtime_arg_pages.at(PageTransferType::MULTICAST).size() + program_device_map.num_transfers_in_cb_config_pages.at(PageTransferType::MULTICAST).size();
     uint32_t host_data_and_device_command_size =
         DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + (host_data_num_pages * DeviceCommand::PROGRAM_PAGE_SIZE);
 
     if ((this->manager.get_issue_queue_write_ptr(this->id)) + host_data_and_device_command_size >=
-        this->manager.get_issue_queue_size(this->id)) {
+        this->manager.get_issue_queue_limit(this->id)) {
         TT_FATAL(
             host_data_and_device_command_size <= this->manager.get_issue_queue_size(this->id) - CQ_START,
             "EnqueueProgram command size too large");
@@ -966,22 +1056,21 @@ void HWCommandQueue::enqueue_program(
         this->manager.get_next_event(this->id),
         stall,
         trace);
-
     this->enqueue_command(command, blocking);
     this->manager.next_completion_queue_push_back(align(EVENT_PADDED_SIZE, 32), this->id);
-}
-
-// Populate event struct for caller. This must not occur in enqueue_* function which is "too late" when async
-// queues are enabled, since top level API is non-blocking and enqueue_* runs on child thread.
-void HWCommandQueue::populate_record_event(std::shared_ptr<Event> event) {
-    event->cq_id = this->id;
-    event->event_id = this->manager.get_next_event(this->id);
-    event->device = this->device;
 }
 
 void HWCommandQueue::enqueue_record_event(std::shared_ptr<Event> event) {
     ZoneScopedN("HWCommandQueue_enqueue_record_event");
     uint32_t command_size = DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
+
+    // Populate event struct for caller. When async queues are enabled, this is in child thread, so consumers
+    // of the event must wait for it to be ready (ie. populated) here. Set ready flag last. This couldn't be
+    // in main thread otherwise event_id selection would get out of order due to main/worker thread timing.
+    event->cq_id = this->id;
+    event->event_id = this->manager.get_next_event(this->id);
+    event->device = this->device;
+    event->ready = true;
 
     if ((this->manager.get_issue_queue_write_ptr(this->id)) + command_size >= this->manager.get_issue_queue_limit(this->id)) {
         this->issue_wrap();
@@ -1061,6 +1150,7 @@ void HWCommandQueue::read_completion_queue() {
             uint32_t num_events_to_read = this->num_issued_commands - this->num_completed_commands;
             for (uint32_t i = 0; i < num_events_to_read; i++) {
                 this->manager.completion_queue_wait_front(this->id, this->exit_condition);
+
                 if (this->exit_condition) {  // Early exit
                     return;
                 }
@@ -1092,17 +1182,19 @@ void HWCommandQueue::read_completion_queue() {
 void HWCommandQueue::finish() {
     ZoneScopedN("HWCommandQueue_finish");
     tt::log_debug(tt::LogDispatch, "Finish for command queue {}", this->id);
+
     if (tt::llrt::OptionsG.get_test_mode_enabled()) {
         while (this->num_issued_commands > this->num_completed_commands) {
             if (DPrintServerHangDetected()) {
+                // DPrint Server hang. Mark state and early exit. Assert in main thread.
                 this->exit_condition = true;
-                TT_THROW("Command Queue could not finish: device hang due to unanswered DPRINT WAIT.");
+                this->dprint_server_hang = true;
+                return;
             } else if (tt::watcher_server_killed_due_to_error()) {
+                // Illegal NOC txn killed watcher. Mark state and early exit. Assert in main thread.
                 this->exit_condition = true;
-                TT_THROW(
-                    "Command Queue could not finish: device hang due to illegal NoC transaction. See {} for details.",
-                    tt::watcher_get_log_file_name()
-                );
+                this->illegal_noc_txn_hang = true;
+                return;
             }
         }
     } else {
@@ -1114,7 +1206,7 @@ void HWCommandQueue::issue_wrap() {
     ZoneScopedN("CommandQueue_wrap");
     tt::log_debug(tt::LogDispatch, "EnqueueWrap for channel {}", this->id);
     EnqueueIssueWrapCommand command(this->id, this->device, this->manager);
-    command.process();
+    command.process(); // Not increasing num issued commands
 }
 
 void HWCommandQueue::completion_wrap(uint32_t event) {
@@ -1124,45 +1216,157 @@ void HWCommandQueue::completion_wrap(uint32_t event) {
     this->enqueue_command(command, false);
 }
 
-Trace::Trace() : trace_complete(false), num_data_bytes(0) {
-    this->cq = std::make_unique<CommandQueue>(this);
+volatile bool HWCommandQueue::is_dprint_server_hung() {
+    return dprint_server_hang;
 }
 
-void Trace::record(const TraceNode& trace_node) {
-    TT_FATAL(not this->trace_complete, "Cannot record any more for a completed trace");
-    this->num_data_bytes += trace_node.num_data_bytes;
-    this->history.push_back(trace_node);
+volatile bool HWCommandQueue::is_noc_hung() {
+    return illegal_noc_txn_hang;
 }
 
-void Trace::validate() {
-    for (const auto& cmd : this->queue().worker_queue) {
-        if (cmd.blocking.has_value()) {
-            TT_FATAL(cmd.blocking.value() == false, "Blocking commands are not supported in traces");
+void EnqueueAddBufferToProgram(CommandQueue& cq, std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer>> buffer, std::variant<std::reference_wrapper<Program>, std::shared_ptr<Program>> program, bool blocking) {
+    cq.run_command(CommandInterface{
+        .type = EnqueueCommandType::ADD_BUFFER_TO_PROGRAM,
+        .blocking = blocking,
+        .buffer = buffer,
+        .program = program,
+    });
+}
+
+void EnqueueAddBufferToProgramImpl(const std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer>> buffer, std::variant<std::reference_wrapper<Program>, std::shared_ptr<Program>> program) {
+    std::visit([program] (auto&& b) {
+        using buffer_type = std::decay_t<decltype(b)>;
+        if constexpr (std::is_same_v<buffer_type, std::shared_ptr<Buffer>>) {
+            std::visit([&b] (auto&& p) {
+                using program_type = std::decay_t<decltype(p)>;
+                if constexpr (std::is_same_v<program_type, std::reference_wrapper<Program>>) {
+                    p.get().add_buffer(b);
+                }
+                else {
+                    p->add_buffer(b);
+                }
+            }, program);
         }
+    }, buffer);
+}
+
+void EnqueueUpdateRuntimeArgs(CommandQueue& cq, const std::shared_ptr<Kernel> kernel, const CoreCoord &core_coord, std::vector<uint32_t> &update_idx, std::shared_ptr<RuntimeArgs> runtime_args_ptr, bool blocking) {
+    auto runtime_args_md = RuntimeArgsMetadata {
+            .core_coord = core_coord,
+            .runtime_args_ptr = runtime_args_ptr,
+            .kernel = kernel,
+            .update_idx = update_idx,
+    };
+    cq.run_command( CommandInterface {
+        .type = EnqueueCommandType::UPDATE_RUNTIME_ARGS,
+        .blocking = blocking,
+        .runtime_args_md = runtime_args_md,
+    });
+}
+
+void EnqueueUpdateRuntimeArgsImpl (const RuntimeArgsMetadata& runtime_args_md) {
+    std::vector<uint32_t> resolved_runtime_args = {};
+    resolved_runtime_args.reserve((*runtime_args_md.runtime_args_ptr).size());
+
+    for (const auto& arg : *(runtime_args_md.runtime_args_ptr)) {
+        std::visit([&resolved_runtime_args] (auto&& a) {
+            using T = std::decay_t<decltype(a)>;
+            if constexpr (std::is_same_v<T, Buffer*>) {
+                resolved_runtime_args.push_back(a -> address());
+            } else {
+                resolved_runtime_args.push_back(a);
+            }
+        }, arg);
+    }
+    auto& kernel_runtime_args = runtime_args_md.kernel->runtime_args(runtime_args_md.core_coord);
+    for (const auto& idx : runtime_args_md.update_idx) {
+        kernel_runtime_args[idx] = resolved_runtime_args[idx];
     }
 }
 
-uint32_t Trace::next_trace_id() {
-    static uint32_t global_trace_id = 0;
-    return global_trace_id++;
+void EnqueueSetRuntimeArgs(CommandQueue& cq, const std::shared_ptr<Kernel> kernel, const CoreCoord &core_coord, std::shared_ptr<RuntimeArgs> runtime_args_ptr, bool blocking) {
+    auto runtime_args_md = RuntimeArgsMetadata {
+            .core_coord = core_coord,
+            .runtime_args_ptr = runtime_args_ptr,
+            .kernel = kernel,
+    };
+    cq.run_command( CommandInterface {
+        .type = EnqueueCommandType::SET_RUNTIME_ARGS,
+        .blocking = blocking,
+        .runtime_args_md = runtime_args_md,
+    });
 }
 
-uint32_t Trace::instantiate(CommandQueue& cq) {
-    uint32_t trace_id = next_trace_id();
-    cq.trace_ptr = this;
+void EnqueueSetRuntimeArgsImpl(const RuntimeArgsMetadata& runtime_args_md) {
+    std::vector<uint32_t> resolved_runtime_args = {};
+    resolved_runtime_args.reserve((*runtime_args_md.runtime_args_ptr).size());
 
-    // Stage the trace commands into device DRAM that the command queue will read from
-    // - flatten commands into tightly packed data structure
-    // - allocate the data into a DRAM interleaved buffer using 2KB page size
-    // - commit the DRAM buffer via an enqueue WB command
-    // - map the trace id to the DRAM buffer for later enqueue Trace
-
-    if (trace_instances.count(trace_id)) {
-        TT_THROW("Trace ID " + std::to_string(trace_id) + " already exists");
+    for (const auto& arg : *(runtime_args_md.runtime_args_ptr)) {
+        std::visit([&resolved_runtime_args] (auto&& a) {
+            using T = std::decay_t<decltype(a)>;
+            if constexpr (std::is_same_v<T, Buffer*>) {
+                resolved_runtime_args.push_back(a -> address());
+            } else {
+                resolved_runtime_args.push_back(a);
+            }
+        }, arg);
     }
+    runtime_args_md.kernel -> set_runtime_args(runtime_args_md.core_coord, resolved_runtime_args);
+}
 
-    trace_instances.insert(trace_id);
-    return trace_id;
+void EnqueueGetBufferAddr(CommandQueue& cq, uint32_t* dst_buf_addr, const Buffer* buffer, bool blocking) {
+    cq.run_command( CommandInterface {
+        .type = EnqueueCommandType::GET_BUF_ADDR,
+        .blocking = blocking,
+        .shadow_buffer = buffer,
+        .dst = dst_buf_addr
+    });
+}
+
+void EnqueueGetBufferAddrImpl(void* dst_buf_addr, const Buffer* buffer) {
+    *(static_cast<uint32_t*>(dst_buf_addr)) = buffer -> address();
+}
+void EnqueueAllocateBuffer(CommandQueue& cq, Buffer* buffer, bool bottom_up, bool blocking) {
+    auto alloc_md = AllocBufferMetadata {
+        .buffer = buffer,
+        .allocator = *(buffer->device()->allocator_),
+        .bottom_up = bottom_up,
+    };
+    cq.run_command(CommandInterface {
+        .type = EnqueueCommandType::ALLOCATE_BUFFER,
+        .blocking = blocking,
+        .alloc_md = alloc_md,
+    });
+}
+
+void EnqueueAllocateBufferImpl(AllocBufferMetadata alloc_md) {
+    Buffer* buffer = alloc_md.buffer;
+    uint32_t allocated_addr;
+    if(is_sharded(buffer->buffer_layout())) {
+        allocated_addr = allocator::allocate_buffer(*(buffer->device()->allocator_), buffer->size(), buffer->page_size(), buffer->buffer_type(), alloc_md.bottom_up, buffer->num_cores());
+    }
+    else {
+        allocated_addr = allocator::allocate_buffer(*(buffer->device()->allocator_), buffer->size(), buffer->page_size(), buffer->buffer_type(), alloc_md.bottom_up, std::nullopt);
+    }
+    buffer->set_address(static_cast<uint64_t>(allocated_addr));
+}
+
+void EnqueueDeallocateBuffer(CommandQueue& cq, Allocator& allocator, uint32_t device_address, BufferType buffer_type, bool blocking) {
+    // Need to explictly pass in relevant buffer attributes here, since the Buffer* ptr can be deallocated a this point
+    auto alloc_md = AllocBufferMetadata {
+        .allocator = allocator,
+        .buffer_type = buffer_type,
+        .device_address = device_address,
+    };
+    cq.run_command(CommandInterface{
+        .type = EnqueueCommandType::DEALLOCATE_BUFFER,
+        .blocking = blocking,
+        .alloc_md = alloc_md,
+    });
+}
+
+void EnqueueDeallocateBufferImpl(AllocBufferMetadata alloc_md) {
+    allocator::deallocate_buffer(alloc_md.allocator, alloc_md.device_address, alloc_md.buffer_type);
 }
 
 void EnqueueReadBuffer(CommandQueue& cq, std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer>> buffer, vector<uint32_t>& dst, bool blocking){
@@ -1204,7 +1408,6 @@ void EnqueueReadBuffer(CommandQueue& cq, std::variant<std::reference_wrapper<Buf
 void EnqueueReadBufferImpl(CommandQueue& cq, std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer> > buffer, void* dst, bool blocking) {
     std::visit ( [&cq, dst, blocking](auto&& b) {
         using T = std::decay_t<decltype(b)>;
-        std::shared_future<void> f;
         if constexpr (std::is_same_v<T, std::reference_wrapper<Buffer>> || std::is_same_v<T, std::shared_ptr<Buffer> > ) {
             cq.hw_command_queue().enqueue_read_buffer(b, dst, blocking);
         }
@@ -1212,7 +1415,7 @@ void EnqueueReadBufferImpl(CommandQueue& cq, std::variant<std::reference_wrapper
 }
 
 void EnqueueWriteBuffer(CommandQueue& cq, std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer> > buffer,
-                                          const void* src, bool blocking) {
+                                          HostDataType src, bool blocking) {
     detail::DispatchStateCheck(true);
     cq.run_command(CommandInterface{
         .type = EnqueueCommandType::ENQUEUE_WRITE_BUFFER,
@@ -1223,7 +1426,7 @@ void EnqueueWriteBuffer(CommandQueue& cq, std::variant<std::reference_wrapper<Bu
 }
 
 void EnqueueWriteBufferImpl(CommandQueue& cq, std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer> > buffer,
-                                          const void* src, bool blocking) {
+                                          HostDataType src, bool blocking) {
     std::visit ( [&cq, src, blocking](auto&& b) {
         using T = std::decay_t<decltype(b)>;
         if constexpr (std::is_same_v<T, std::reference_wrapper<Buffer>> || std::is_same_v<T, std::shared_ptr<Buffer>> ) {
@@ -1259,11 +1462,15 @@ void EnqueueProgramImpl(CommandQueue& cq, std::variant < std::reference_wrapper<
             program.get().allocate_circular_buffers();
             detail::ValidateCircularBufferRegion(program, device);
             cq.hw_command_queue().enqueue_program(program, trace, blocking);
+            // Program relinquishes ownership of all global buffers its using, once its been enqueued. Avoid mem leaks on device.
+            program.get().release_buffers();
         } else if constexpr (std::is_same_v<T, std::shared_ptr<Program>>) {
             detail::CompileProgram(device, *program);
             program->allocate_circular_buffers();
             detail::ValidateCircularBufferRegion(*program, device);
             cq.hw_command_queue().enqueue_program(*program, trace, blocking);
+            // Program relinquishes ownership of all global buffers its using, once its been enqueued. Avoid mem leaks on device.
+            program->release_buffers();
         }
     }, program);
 }
@@ -1274,7 +1481,6 @@ void EnqueueRecordEvent(CommandQueue& cq, std::shared_ptr<Event> event) {
     TT_ASSERT(event->cq_id == -1, "EnqueueRecordEvent expected to be given an uninitialized event");
 
     detail::DispatchStateCheck(true);
-    cq.hw_command_queue().populate_record_event(event);
     cq.run_command(CommandInterface{
         .type = EnqueueCommandType::ENQUEUE_RECORD_EVENT,
         .blocking = false,
@@ -1288,11 +1494,6 @@ void EnqueueRecordEventImpl(CommandQueue& cq, std::shared_ptr<Event> event) {
 
 
 void EnqueueWaitForEvent(CommandQueue& cq, std::shared_ptr<Event> event) {
-    TT_ASSERT(event->device != nullptr, "EnqueueWaitForEvent expected to be given Event with initialized device ptr");
-    TT_ASSERT(event->event_id != -1, "EnqueueWaitForEvent expected to be given Event with initialized event_id");
-    TT_ASSERT(event->cq_id != -1, "EnqueueWaitForEvent expected to be given Event with initialized cq_id");
-    log_trace(tt::LogMetal, "EnqueueWaitForEvent() issued on Event(device_id: {} cq_id: {} event_id: {}) from device_id: {} cq_id: {}",
-        event->device->id(), event->cq_id, event->event_id, cq.device()->id(), cq.id());
 
     detail::DispatchStateCheck(true);
     cq.run_command(CommandInterface{
@@ -1303,16 +1504,24 @@ void EnqueueWaitForEvent(CommandQueue& cq, std::shared_ptr<Event> event) {
 }
 
 void EnqueueWaitForEventImpl(CommandQueue& cq, std::shared_ptr<Event> event) {
+    event->wait_until_ready(); // Block until event populated. Worker thread.
+    log_trace(tt::LogMetal, "EnqueueWaitForEvent() issued on Event(device_id: {} cq_id: {} event_id: {}) from device_id: {} cq_id: {}",
+        event->device->id(), event->cq_id, event->event_id, cq.device()->id(), cq.id());
     cq.hw_command_queue().enqueue_wait_for_event(event);
 }
 
 
 void EventSynchronize(std::shared_ptr<Event> event) {
     detail::DispatchStateCheck(true);
+    event->wait_until_ready(); // Block until event populated. Parent thread.
     log_trace(tt::LogMetal, "Issuing host sync on Event(device_id: {} cq_id: {} event_id: {})", event->device->id(), event->cq_id, event->event_id);
 
     while (event->device->sysmem_manager().get_last_completed_event(event->cq_id) < event->event_id) {
-        std::this_thread::sleep_for(std::chrono::microseconds(10));
+        if (tt::llrt::OptionsG.get_test_mode_enabled() && tt::watcher_server_killed_due_to_error()) {
+            TT_ASSERT(false, "Command Queue could not complete EventSynchronize. See {} for details.", tt::watcher_get_log_file_name());
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds(5));
     }
 }
 
@@ -1322,6 +1531,11 @@ void Finish(CommandQueue& cq) {
         .type = EnqueueCommandType::FINISH,
         .blocking = true
     });
+    TT_ASSERT(!(cq.device() -> hw_command_queue(cq.id()).is_dprint_server_hung()),
+              "Command Queue could not finish: device hang due to unanswered DPRINT WAIT.");
+    TT_ASSERT(!(cq.device() -> hw_command_queue(cq.id()).is_noc_hung()),
+              "Command Queue could not finish: device hang due to illegal NoC transaction. See {} for details.",
+               tt::watcher_get_log_file_name());
 }
 
 void FinishImpl(CommandQueue& cq) {
@@ -1374,12 +1588,18 @@ CommandQueue::CommandQueue(Device* device, uint32_t id, CommandQueueMode mode) :
     mode(mode),
     worker_state(CommandQueueState::IDLE) {
     if (this->async_mode()) {
+        num_async_cqs++;
+        // The main program thread launches the Command Queue
+        parent_thread_id = std::hash<std::thread::id>{}(std::this_thread::get_id());
         this->start_worker();
+    } else if (this->passthrough_mode()) {
+        num_passthrough_cqs++;
     }
 }
 
 CommandQueue::CommandQueue(Trace* trace) :
     device_ptr(nullptr),
+    parent_thread_id(0),
     trace_ptr(trace),
     cq_id(-1),
     mode(CommandQueueMode::TRACE),
@@ -1418,12 +1638,23 @@ void CommandQueue::wait_until_empty() {
     log_trace(LogDispatch, "CQ{} WFI complete", this->cq_id);
 }
 
-void CommandQueue::set_mode(const CommandQueueMode& mode_) {
+void CommandQueue::set_mode(const CommandQueueMode& mode) {
     TT_ASSERT(not this->trace_mode(), "Cannot change mode of a trace command queue, copy to a non-trace command queue instead!");
-    this->mode = mode_;
+    if (this->mode == mode) {
+        // Do nothing if requested mode matches current CQ mode.
+        return;
+    }
+    this->mode = mode;
     if (this->async_mode()) {
-        this->start_worker();
-    } else {
+        num_async_cqs++;
+        num_passthrough_cqs--;
+        // Record parent thread-id and start worker.
+        parent_thread_id = std::hash<std::thread::id>{}(std::this_thread::get_id());
+        start_worker();
+    } else if (this->passthrough_mode()) {
+        num_passthrough_cqs++;
+        num_async_cqs--;
+        // Wait for all cmds sent in async mode to complete and stop worker.
         this->wait_until_empty();
         this->stop_worker();
     }
@@ -1450,15 +1681,18 @@ void CommandQueue::stop_worker() {
 
 void CommandQueue::run_worker() {
     // forever loop checking for commands in the worker queue
+    // Track the worker thread id, for cases where a command calls a sub command.
+    // This is to detect cases where commands may be nested.
+    worker_thread_id = std::hash<std::thread::id>{}(std::this_thread::get_id());
     while (true) {
         if (this->worker_queue.empty()) {
             if (this->worker_state == CommandQueueState::TERMINATE) {
                 break;
             }
-            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
         } else {
-            auto command = this->worker_queue.pop();
-            this->run_command_impl(*command);
+            std::shared_ptr<CommandInterface> command(this->worker_queue.pop());
+            run_command_impl(*command);
         }
     }
 }
@@ -1466,10 +1700,19 @@ void CommandQueue::run_worker() {
 void CommandQueue::run_command(const CommandInterface& command) {
     log_trace(LogDispatch, "CQ{} received {} in {} mode", this->cq_id, command.type, this->mode);
     if (not this->passthrough_mode()) {
-        this->worker_queue.push(command);
-        if (command.blocking.has_value() and *command.blocking == true) {
-            TT_ASSERT(not this->trace_mode(), "Blocking commands cannot be traced!");
-            this->wait_until_empty();
+        if (std::hash<std::thread::id>{}(std::this_thread::get_id()) == parent_thread_id or this->trace_mode()) {
+            // Push to worker queue for trace or async mode. In trace mode, store the execution in the queue.
+            // In async mode when parent pushes cmd, feed worker through queue.
+            this->worker_queue.push(command);
+            if (command.blocking.has_value() and *command.blocking == true) {
+                TT_ASSERT(not this->trace_mode(), "Blocking commands cannot be traced!");
+                this->wait_until_empty();
+            }
+        }
+        else {
+            // Handle case where worker pushes command to itself (passthrough)
+            TT_ASSERT(std::hash<std::thread::id>{}(std::this_thread::get_id()) == worker_thread_id, "Only main thread or worker thread can run commands through the SW command queue");
+            run_command_impl(command);
         }
     } else {
         this->run_command_impl(command);
@@ -1490,6 +1733,32 @@ void CommandQueue::run_command_impl(const CommandInterface& command) {
             TT_ASSERT(command.buffer.has_value(), "Must provide a buffer!");
             TT_ASSERT(command.blocking.has_value(), "Must specify blocking value!");
             EnqueueWriteBufferImpl(*this, command.buffer.value(), command.src.value(), command.blocking.value());
+            break;
+        case EnqueueCommandType::ALLOCATE_BUFFER:
+            TT_ASSERT(command.alloc_md.has_value(), "Must provide buffer allocation metdata!");
+            EnqueueAllocateBufferImpl(command.alloc_md.value());
+            break;
+        case EnqueueCommandType::DEALLOCATE_BUFFER:
+            TT_ASSERT(command.alloc_md.has_value(), "Must provide buffer allocation metdata!");
+            EnqueueDeallocateBufferImpl(command.alloc_md.value());
+            break;
+        case EnqueueCommandType::GET_BUF_ADDR:
+            TT_ASSERT(command.dst.has_value(), "Must provide a dst address!");
+            TT_ASSERT(command.shadow_buffer.has_value(), "Must provide a shadow buffer!");
+            EnqueueGetBufferAddrImpl(command.dst.value(), command.shadow_buffer.value());
+            break;
+        case EnqueueCommandType::SET_RUNTIME_ARGS:
+            TT_ASSERT(command.runtime_args_md.has_value(), "Must provide RuntimeArgs Metdata!");
+            EnqueueSetRuntimeArgsImpl(command.runtime_args_md.value());
+            break;
+        case EnqueueCommandType::UPDATE_RUNTIME_ARGS:
+            TT_ASSERT(command.runtime_args_md.has_value(), "Must provide RuntimeArgs Metdata!");
+            EnqueueUpdateRuntimeArgsImpl(command.runtime_args_md.value());
+            break;
+        case EnqueueCommandType::ADD_BUFFER_TO_PROGRAM:
+            TT_ASSERT(command.buffer.has_value(), "Must provide a buffer!");
+            TT_ASSERT(command.program.has_value(), "Must provide a program!");
+            EnqueueAddBufferToProgramImpl(command.buffer.value(), command.program.value());
             break;
         case EnqueueCommandType::ENQUEUE_PROGRAM:
             TT_ASSERT(command.program.has_value(), "Must provide a program!");
@@ -1516,7 +1785,7 @@ void CommandQueue::run_command_impl(const CommandInterface& command) {
         default:
             TT_THROW("Invalid command type");
     }
-    // log_trace(LogDispatch, "CQ{} running {} complete", this->cq_id, command.type);
+    log_trace(LogDispatch, "CQ{} running {} complete", this->cq_id, command.type);
 }
 
 }  // namespace tt::tt_metal

@@ -406,6 +406,7 @@ def run_test_FalconCausalLM_end_to_end(
 )
 @pytest.mark.parametrize("model_config_str", ("BFLOAT16-L1",))
 def test_perf_bare_metal(
+    device,
     use_program_cache,
     model_version,
     llm_mode,
@@ -418,7 +419,6 @@ def test_perf_bare_metal(
     request,
     model_config_str,
     model_location_generator,
-    device,
 ):
     if is_e75(device) and batch == 32:
         pytest.skip("Falcon batch 32 is not supported on E75")
@@ -429,7 +429,7 @@ def test_perf_bare_metal(
     disable_persistent_kernel_cache()
     disable_compilation_reports()
 
-    tt_lib.profiler.set_profiler_location(f"falcon-7b_{request.node.callspec.id}")
+    # tt_lib.profiler.set_profiler_location(f"falcon-7b_{request.node.callspec.id}")
 
     run_test_FalconCausalLM_end_to_end(
         device,
@@ -474,6 +474,7 @@ def test_perf_bare_metal(
 )
 @pytest.mark.parametrize("model_config_str", ("BFLOAT16-L1",))
 def test_perf_virtual_machine(
+    device,
     use_program_cache,
     model_version,
     llm_mode,
@@ -486,7 +487,6 @@ def test_perf_virtual_machine(
     request,
     model_config_str,
     model_location_generator,
-    device,
 ):
     if is_e75(device) and batch == 32:
         pytest.skip("Falcon batch 32 is not supported on E75")

@@ -2,16 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include "tt_metal/impl/dispatch/kernels/command_queue_consumer.hpp"
-
-// The read interface for the issue region is set up on the device, the write interface belongs to host
-// Opposite for completion region where device sets up the write interface and host owns read interface
-void setup_completion_queue_write_interface(const uint32_t completion_region_wr_ptr, const uint32_t completion_region_size) {
-    cq_write_interface.completion_fifo_wr_ptr = completion_region_wr_ptr >> 4;
-    cq_write_interface.completion_fifo_size = completion_region_size >> 4;
-    cq_write_interface.completion_fifo_limit = (completion_region_wr_ptr + completion_region_size) >> 4;
-    cq_write_interface.completion_fifo_wr_toggle = 0;
-}
+#include "tt_metal/impl/dispatch/kernels/cq_prefetcher.hpp"
+#include "tt_metal/impl/dispatch/kernels/cq_dispatcher.hpp"
 
 void kernel_main() {
     bool db_buf_switch = false;
@@ -41,7 +33,6 @@ void kernel_main() {
 
         volatile tt_l1_ptr uint32_t* command_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(command_start_addr);
         volatile tt_l1_ptr CommandHeader* header = (CommandHeader*)command_ptr;
-        uint32_t finish = header->finish;
         uint32_t num_workers = header->num_workers;
         uint32_t num_buffer_transfers = header->num_buffer_transfers;
         uint32_t is_program = header->is_program_buffer;
@@ -56,24 +47,26 @@ void kernel_main() {
         bool is_event_sync = header->is_event_sync;
 
         db_cb_config_t* db_cb_config = get_local_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
-        const db_cb_config_t* remote_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
+        db_cb_config_t* remote_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
         uint32_t completion_data_size = header->completion_data_size;
         completion_queue_reserve_back(completion_data_size);
         write_event(uint32_t(&header->event));
         if ((DeviceCommand::WrapRegion)wrap == DeviceCommand::WrapRegion::COMPLETION) {
             cq_write_interface.completion_fifo_wr_ptr = completion_queue_start_addr >> 4;     // Head to the beginning of the completion region
             cq_write_interface.completion_fifo_wr_toggle = not cq_write_interface.completion_fifo_wr_toggle;
-            notify_host_of_completion_queue_write_pointer<host_completion_queue_write_ptr_addr>();
+            notify_host_of_completion_queue_write_pointer(host_completion_queue_write_ptr_addr);
             noc_async_write_barrier(); // Barrier for now
         } else if (is_program) {
+            uint32_t l1_consumer_fifo_limit = (db_cb_config->rd_ptr_16B << 4) + (db_cb_config->total_size_16B << 4);
+            reset_dispatch_message_addr();
             write_and_launch_program(
                 db_cb_config,
                 remote_db_cb_config,
-                program_transfer_start_addr,
-                num_pages,
-                command_ptr,
+                (CommandHeader*)command_ptr,
+                reinterpret_cast<volatile tt_l1_ptr uint32_t*>(program_transfer_start_addr),
                 producer_noc_encoding,
-                producer_consumer_transfer_num_pages);
+                producer_consumer_transfer_num_pages,
+                l1_consumer_fifo_limit);
             wait_for_program_completion(num_workers);
         } else if (is_event_sync) {
             wait_for_event(header->event_sync_event_id, header->event_sync_core_x, header->event_sync_core_y);
@@ -90,11 +83,7 @@ void kernel_main() {
                 producer_consumer_transfer_num_pages);
         }
 
-        if (finish) {
-            notify_host_complete<host_finish_addr>();
-        }
-
-        completion_queue_push_back<completion_queue_start_addr, host_completion_queue_write_ptr_addr>(completion_data_size);
+        completion_queue_push_back(completion_data_size, completion_queue_start_addr, host_completion_queue_write_ptr_addr);
         record_last_completed_event(header->event);
 
         // notify producer that it has completed a command

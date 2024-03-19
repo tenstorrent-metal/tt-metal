@@ -9,6 +9,7 @@
 #include <tensor/tensor.hpp>
 
 #include "tt_metal/host_api.hpp"
+#include "tt_metal/detail/program.hpp" /* Need this for GetKernel, which is used in CQ Set/Update Runtime Args Functions */
 #include "tt_metal/impl/program/program.hpp"
 #include "tt_stl/concepts.hpp"
 #include "tt_stl/reflection.hpp"
@@ -43,6 +44,113 @@ struct ProgramWithCallbacks {
 
     bool supports_program_cache() const {
         return this->override_addresses_callback.has_value() or this->override_runtime_arguments_callback.has_value();
+    }
+};
+
+struct OpPerformanceModel {
+    int ideal_compute_cycles = 1;
+    int ideal_compute_ns = 1;
+    int ideal_bandwidth_ns = 1;
+    int ideal_ns = 1;
+    std::vector<int> inputs_bytes = {};
+    std::vector<int> outputs_bytes = {};
+
+    OpPerformanceModel(std::vector<Tensor> input_tensors, std::vector<Tensor> output_tensors, int ideal_compute_cycles) {
+
+        const auto& t = input_tensors.at(0);
+        const auto arch = t.storage_type() == StorageType::DEVICE ? t.device()->arch() : ARCH::WORMHOLE_B0;
+
+        this->ideal_compute_cycles = ideal_compute_cycles;
+
+        float clock_rate_ghz = (arch == ARCH::WORMHOLE_B0) ? 1.0 : 1.2;
+        this->ideal_compute_ns = std::ceil(ideal_compute_cycles / clock_rate_ghz);
+
+        // GS L1 Bisection bandwidth
+        // 655 B/cycle = sqrt(108) * 32 B/cycle * 2
+        // 655 * 1.2Ghz = 786 GB/s
+        // GS DRAM bandwidth
+        // 96 GB/s = 12 GB/s * 8 channels
+
+        // WH L1 Bisection bandwidth
+        // 512 B/cycle = sqrt(64) * 32 B/cycle * 2
+        // 512 * 1ghz clk
+        // WH DRAM bandwidth
+        // 258 GB/s = 21.5 GB/s * 6 channels * 2 banks
+
+        float peak_dram_bw = (arch == ARCH::WORMHOLE_B0) ? 6 * 2 * 21.5 : 96.0;
+
+        float noc_l1_bisection_bw = (arch == ARCH::WORMHOLE_B0) ? 512.0 : 786.0;
+
+        auto tensor_ns = [peak_dram_bw, noc_l1_bisection_bw](const Tensor& t) {
+            int size_bytes = t.volume() * t.element_size();
+            if(t.memory_config().buffer_type == BufferType::DRAM) {
+                return size_bytes / peak_dram_bw / 1024 / 1024 / 1024 * 1000 * 1000 * 1000;
+            }
+            else if(t.memory_config().buffer_type == BufferType::L1) {
+                return 1.0f; // TODO: figure out better modelling scheme for L1->L1 Transfers
+                //return size_bytes / noc_l1_bisection_bw / 1024 / 1024 / 1024 * 1000 * 1000 * 1000;
+            }
+            return 0.0f;
+        };
+
+        for(const auto & t: input_tensors) {
+            this->inputs_bytes.push_back(t.volume() * t.element_size());
+            if(tensor_ns(t) > this->ideal_bandwidth_ns) {
+                this->ideal_bandwidth_ns = tensor_ns(t);
+            }
+        }
+
+        for(const auto & t: output_tensors) {
+            this->outputs_bytes.push_back(t.volume() * t.element_size());
+            if(tensor_ns(t) > this->ideal_bandwidth_ns) {
+                this->ideal_bandwidth_ns = tensor_ns(t);
+            }
+        }
+
+        this->ideal_ns = std::max(this->ideal_compute_ns, this->ideal_bandwidth_ns);
+    }
+    OpPerformanceModel() = default;
+    ~OpPerformanceModel() = default;
+
+    int get_compute_ns() const {
+        return this->ideal_compute_ns;
+    }
+    int get_ideal_ns() const {
+        return this->ideal_ns;
+    }
+    int get_bandwidth_ns() const {
+        return this->ideal_bandwidth_ns;
+    }
+    std::vector<float> get_input_bws() const {
+        std::vector<float> input_bws(inputs_bytes.size());
+        TT_ASSERT(this->ideal_ns > 0);
+        std::transform(inputs_bytes.cbegin(), inputs_bytes.cend(), input_bws.begin(),
+                   [this](float c) { return (float)c / this->ideal_ns; });
+        return input_bws;
+    }
+    std::vector<float> get_output_bws() const {
+        std::vector<float> output_bws(outputs_bytes.size());
+        TT_ASSERT(this->ideal_ns > 0);
+        std::transform(outputs_bytes.cbegin(), outputs_bytes.cend(), output_bws.begin(),
+                   [this](float c) { return (float)c / this->ideal_ns; });
+        return output_bws;
+    }
+
+    static int fidelity_multiplier(MathFidelity f) {
+        if (MathFidelity::LoFi == f) {
+            return 1;
+        }
+        else if (MathFidelity::HiFi2 == f) {
+            return 2;
+        }
+        else if (MathFidelity::HiFi3 == f) {
+            return 3;
+        }
+        else if (MathFidelity::HiFi4 == f) {
+            return 4;
+        }
+
+        return 0;
     }
 };
 
@@ -148,6 +256,20 @@ template <class T>
 constexpr bool implements_create_program_with_optional_input_tensors() {
     return std::experimental::is_detected_v<
         has_create_program_with_optional_input_tensors_t,
+        T,
+        const std::vector<Tensor>&,
+        const std::vector<std::optional<const Tensor>>&,
+        std::vector<Tensor>&>;
+}
+
+template <class T, class... Args>
+using has_create_op_performance_model_t =
+    decltype(std::declval<T>().create_op_performance_model(std::declval<Args>()...));
+
+template <class T>
+constexpr bool implements_create_op_performance_model() {
+    return std::experimental::is_detected_v<
+        has_create_op_performance_model_t,
         T,
         const std::vector<Tensor>&,
         const std::vector<std::optional<const Tensor>>&,
@@ -284,6 +406,14 @@ struct DeviceOperation final {
             this->type_erased_storage, input_tensors, optional_input_tensors, output_tensors);
     }
 
+    inline OpPerformanceModel create_op_performance_model(
+        const std::vector<Tensor>& input_tensors,
+        const std::vector<std::optional<const Tensor>>& optional_input_tensors,
+        std::vector<Tensor>& output_tensors) const {
+        return this->create_op_performance_model_impl_(
+            this->type_erased_storage, input_tensors, optional_input_tensors, output_tensors);
+    }
+
     inline void override_runtime_arguments(
         OverrideRuntimeArgumentsCallback& override_runtime_arguments_callback,
         Program& program,
@@ -405,6 +535,18 @@ struct DeviceOperation final {
                     static_assert(tt::stl::concepts::always_false_v<T>, "Operation doesn't implement create_program");
                 }
             }},
+        create_op_performance_model_impl_{
+            [](const storage_t& storage,
+               const std::vector<Tensor>& input_tensors,
+               const std::vector<std::optional<const Tensor>>& optional_input_tensors,
+               std::vector<Tensor>& output_tensors) -> OpPerformanceModel {
+                const auto& operation = *reinterpret_cast<const std::decay_t<T>*>(&storage);
+                if constexpr (detail::implements_create_op_performance_model<T>()) {
+                    return operation.create_op_performance_model(input_tensors, optional_input_tensors, output_tensors);
+                } else {
+                    return OpPerformanceModel(input_tensors, output_tensors, 1); // TODO: account for optional_input_tensors
+                }
+            }},
         override_runtime_arguments_impl_{
             [](const storage_t& storage,
                OverrideRuntimeArgumentsCallback& override_runtime_arguments_callback,
@@ -483,6 +625,11 @@ struct DeviceOperation final {
     const std::vector<Shape> (*compute_output_shapes_impl_)(const storage_t& value, const std::vector<Tensor>&);
     const std::vector<Tensor> (*create_output_tensors_impl_)(const storage_t& value, const std::vector<Tensor>&, const std::vector<std::optional<Tensor>>&);
     ProgramWithCallbacks (*create_program_impl_)(
+        const storage_t& value,
+        const std::vector<Tensor>&,
+        const std::vector<std::optional<const Tensor>>&,
+        std::vector<Tensor>&);
+    OpPerformanceModel (*create_op_performance_model_impl_)(
         const storage_t& value,
         const std::vector<Tensor>&,
         const std::vector<std::optional<const Tensor>>&,

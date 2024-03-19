@@ -47,24 +47,22 @@ int main(int argc, char **argv) {
         ////////////////////////////////////////////////////////////////////////////
         //                      Validation & Teardown
         ////////////////////////////////////////////////////////////////////////////
-        std::cout << "Moving src data to host to validate" << std::endl;
+        log_debug(LogTest, "Moving src data to host to validate");
         Tensor host_a = a.cpu(); // Move tensor a to host to validate
         // TODO: Update when tensor.pad_to_tile() function is added
-        auto padded_shape = a.shape();
+        auto padded_shape = a.get_legacy_shape();
         padded_shape[2] = round_up(padded_shape[2], TILE_HEIGHT);
         padded_shape[3] = round_up(padded_shape[3], TILE_WIDTH);
         Tensor padded_host_a = host_a.pad(padded_shape, {0,0,0,0}, 0);
         Tensor golden = padded_host_a.to(Layout::TILE);
         auto golden_vec =  owned_buffer::get_as<bfloat16>(golden);
         auto result_vec = owned_buffer::get_as<bfloat16>(c);
-        std::cout << "Validating " << std::endl;
-         std::cout << "golden vec size " << golden_vec.size() << std::endl;
-        std::cout << "result vec size " << result_vec.size() << std::endl;
+        log_debug(LogTest, "Validating - golden vec size: {} , result vec size {}", golden_vec.size(), result_vec.size());
         uint32_t num_errors = 0;
         for(uint32_t i = 0; i < result_vec.size() ; i++) {
             if(result_vec[i] != golden_vec[i]) {
                 if(num_errors < 10)
-                    std::cout << "Error at i=" << i << " result=" <<result_vec[i]<< " golden=" <<golden_vec[i] << std::endl;
+                    log_error(LogTest, "Error at i={} result={} golden={}", i, result_vec[i], golden_vec[i]);
                 num_errors++;
             }
         }

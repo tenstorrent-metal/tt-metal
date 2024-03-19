@@ -23,7 +23,7 @@ void Downsample::validate(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor_a = input_tensors.at(0);
     TT_FATAL(input_tensor_a.storage_type() == StorageType::DEVICE, "Operands to downsample need to be on device!");
     TT_FATAL(input_tensor_a.buffer() != nullptr , "Operands to downsample need to be allocated in buffers on device!");
-    TT_FATAL(input_tensor_a.layout() == Layout::TILE, "Can only downsample tile major data");
+    TT_FATAL(input_tensor_a.get_layout() == Layout::TILE, "Can only downsample tile major data");
 
     TT_FATAL(input_tensor_a.volume() % TILE_HW == 0);
     TT_FATAL(input_tensor_a.memory_config().is_sharded());
@@ -47,15 +47,16 @@ std::pair<uint32_t, uint32_t> get_num_cores_height_width_sliced(CoreRangeSet all
 
 std::vector<Shape> Downsample::compute_output_shapes(const std::vector<Tensor> &input_tensors) const {
     const auto& input_tensor_a = input_tensors.at(0);
-    TT_ASSERT(input_tensor_a.shape()[0] == 1 && input_tensor_a.shape()[1] == 1);
-    uint32_t input_height = input_tensor_a.shape()[2];
+    TT_ASSERT(input_tensor_a.get_legacy_shape()[0] == 1 && input_tensor_a.get_legacy_shape()[1] == 1);
+    uint32_t input_height = input_tensor_a.get_legacy_shape()[2];
     auto [img_batch_size, img_height, img_width, img_stride_h, img_stride_w] = this->downsample_params;
     TT_ASSERT(input_height >= img_batch_size * img_height * img_width);
     uint32_t output_height_unpadded = img_batch_size * ceil( (double) img_height / (double) img_stride_h) * ceil( (double) img_width / (double) img_stride_w);
     uint32_t output_height = round_up(output_height_unpadded, TILE_HEIGHT);
-    uint32_t output_width = input_tensor_a.shape()[3];
+    uint32_t output_width = input_tensor_a.get_legacy_shape()[3];
     auto output_padding = Padding({{0, 0}, {0, 0}, {0, (output_height - output_height_unpadded)}, {0, 0}}, Padding::PadValue::Any);
     auto output_tensor_shape = Shape({1, 1, output_height, output_width}, output_padding);
+    log_debug(LogOp, "Downsample output shape: {}", output_tensor_shape);
     return {output_tensor_shape};
 }
 
@@ -79,7 +80,7 @@ operation::ProgramWithCallbacks Downsample::create_program(const std::vector<Ten
 }
 
 Tensor downsample(const Tensor &input_tensor_a, std::array<uint32_t, 5> downsample_params, std::optional<DataType> output_dtype) {
-    return operation::run_without_autoformat(Downsample{downsample_params, output_dtype.value_or(input_tensor_a.dtype())}, {input_tensor_a}).at(0);
+    return operation::run_without_autoformat(Downsample{downsample_params, output_dtype.value_or(input_tensor_a.get_dtype())}, {input_tensor_a}).at(0);
 }
 
 struct DownsampleReadPatternParams {
@@ -362,17 +363,17 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
 
     tt_metal::Program program = tt_metal::CreateProgram();
 
-    tt::DataFormat input_cb_data_format = tt_metal::datatype_to_dataformat_converter(a.dtype());
+    tt::DataFormat input_cb_data_format = tt_metal::datatype_to_dataformat_converter(a.get_dtype());
     uint32_t input_single_tile_size = tt_metal::detail::TileSize(input_cb_data_format);
-    tt::DataFormat output_cb_data_format = tt_metal::datatype_to_dataformat_converter(output.dtype());
+    tt::DataFormat output_cb_data_format = tt_metal::datatype_to_dataformat_converter(output.get_dtype());
     uint32_t output_single_tile_size = tt_metal::detail::TileSize(output_cb_data_format);
     tt::DataFormat untilized_cb_data_format = DataFormat::Float16_b;
     uint32_t untilized_single_tile_size = tt_metal::detail::TileSize(untilized_cb_data_format);
     auto [img_batch_size, img_height, img_width, img_stride_h, img_stride_w] = downsample_params;
     tt_metal::Buffer *src0_buffer = a.buffer();
 
-    TT_ASSERT(a.shape()[0] == 1 && a.shape()[1] == 1);
-    TT_ASSERT(output.shape()[0] == 1 && output.shape()[1] == 1);
+    TT_ASSERT(a.get_legacy_shape()[0] == 1 && a.get_legacy_shape()[1] == 1);
+    TT_ASSERT(output.get_legacy_shape()[0] == 1 && output.get_legacy_shape()[1] == 1);
 
     tt_metal::Device *device = a.device();
 
@@ -405,10 +406,10 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
 
     auto core_range = all_cores;
 
-    uint32_t input_height = a.shape()[2]; // input height == flattened face of input image, multiple images are stacked in H dim
-    uint32_t input_width = a.shape()[3]; // input width == input image # of channels
-    uint32_t output_height = output.shape()[2]; // output height == flattened face of output image, multiple images are stacked in H dim
-    uint32_t output_width = output.shape()[3];
+    uint32_t input_height = a.get_legacy_shape()[2]; // input height == flattened face of input image, multiple images are stacked in H dim
+    uint32_t input_width = a.get_legacy_shape()[3]; // input width == input image # of channels
+    uint32_t output_height = output.get_legacy_shape()[2]; // output height == flattened face of output image, multiple images are stacked in H dim
+    uint32_t output_width = output.get_legacy_shape()[3];
     TT_ASSERT(input_width == output_width);
 
     uint32_t input_height_unpadded = img_batch_size * img_height * img_width;
@@ -455,7 +456,7 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
 		.set_page_size(input_cb_index, input_single_tile_size);
     input_cb_config = input_cb_config.set_globally_allocated_address(*a.buffer());
     auto input_cb = tt_metal::CreateCircularBuffer(program, core_range, input_cb_config);
-    log_debug(LogOp, "CB {}: PS = {} NP = {}", input_cb_index, input_single_tile_size, num_input_tiles);
+    log_debug(LogOp, "CB {}: PS = {} NP = {} :: TOTAL = {}", input_cb_index, input_single_tile_size, num_input_tiles, input_single_tile_size * num_input_tiles);
 
     // CB to store halo data
     // hardcode to store 1 row of tiles
@@ -465,6 +466,7 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
     tt_metal::CircularBufferConfig halo_prev_input_cb_config = tt_metal::CircularBufferConfig(num_halo_prev_cb_input_tiles * input_single_tile_size, {{halo_prev_input_cb_index, input_cb_data_format}})
 		.set_page_size(halo_prev_input_cb_index, input_single_tile_size);
     auto halo_prev_input_cb = tt_metal::CreateCircularBuffer(program, core_range, halo_prev_input_cb_config);
+    log_debug(LogOp, "CB {}: PS = {} NP = {} :: TOTAL = {}", halo_prev_input_cb_index, input_single_tile_size, num_halo_prev_cb_input_tiles, input_single_tile_size * num_halo_prev_cb_input_tiles);
 
     uint32_t halo_next_input_cb_index = CB::c_in2;
     uint32_t halo_next_input_cb_max_rows_of_tiles = 33; // TODO: Remove hardcoding
@@ -472,6 +474,8 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
     tt_metal::CircularBufferConfig halo_next_input_cb_config = tt_metal::CircularBufferConfig(num_halo_next_cb_input_tiles * input_single_tile_size, {{halo_next_input_cb_index, input_cb_data_format}})
 		.set_page_size(halo_next_input_cb_index, input_single_tile_size);
     auto halo_next_input_cb = tt_metal::CreateCircularBuffer(program, core_range, halo_next_input_cb_config);
+    log_debug(LogOp, "CB {}: PS = {} NP = {} :: TOTAL = {}", halo_next_input_cb_index, input_single_tile_size, num_halo_next_cb_input_tiles, input_single_tile_size * num_halo_next_cb_input_tiles);
+
     // CB to store reader pattern array
     // read pattern array size == output_height
     uint32_t reader_pattern_array_size = output_shard_height;
@@ -479,13 +483,15 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
     tt_metal::CircularBufferConfig reader_pattern_array_cb_config = tt_metal::CircularBufferConfig(reader_pattern_array_size * 4, {{reader_pattern_array_cb_index, DataFormat::Float16_b}})
 		.set_page_size(reader_pattern_array_cb_index, 4);
     auto reader_pattern_array_cb = tt_metal::CreateCircularBuffer(program, core_range, reader_pattern_array_cb_config);
+    log_debug(LogOp, "CB {}: PS = {} NP = {} :: TOTAL = {}", reader_pattern_array_cb_index, 4, reader_pattern_array_size, 4 * reader_pattern_array_size);
+
     // untilized CB has size - [32, full width]
     uint32_t untilize_cb_index = CB::c_intermed2;
     uint32_t num_tiles_untilize_cb = num_input_tiles_in_row;
     tt_metal::CircularBufferConfig untilize_cb_config = tt_metal::CircularBufferConfig(num_tiles_untilize_cb * untilized_single_tile_size, {{untilize_cb_index, untilized_cb_data_format}})
 		.set_page_size(untilize_cb_index, untilized_single_tile_size);
     auto untilize_cb = tt_metal::CreateCircularBuffer(program, core_range, untilize_cb_config);
-    log_debug(LogOp, "CB {}: PS = {} NP = {}", untilize_cb_index, untilized_single_tile_size, num_tiles_untilize_cb);
+    log_debug(LogOp, "CB {}: PS = {} NP = {} :: TOTAL = {}", untilize_cb_index, untilized_single_tile_size, num_tiles_untilize_cb, untilized_single_tile_size * num_tiles_untilize_cb);
 
     uint32_t num_output_tiles = num_output_tiles_in_row * num_rows_of_output_tiles;
     uint32_t untilize_downsampled_cb_index = CB::c_intermed3;
@@ -493,6 +499,7 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
     tt_metal::CircularBufferConfig untilize_downsampled_cb_config = tt_metal::CircularBufferConfig(num_tiles_untilize_downsampled_cb * untilized_single_tile_size, {{untilize_downsampled_cb_index, untilized_cb_data_format}})
 		.set_page_size(untilize_downsampled_cb_index, untilized_single_tile_size);
     auto untilize_downsampled_cb = tt_metal::CreateCircularBuffer(program, core_range, untilize_downsampled_cb_config);
+    log_debug(LogOp, "CB {}: PS = {} NP = {} :: TOTAL = {}", untilize_downsampled_cb_index, untilized_single_tile_size, num_tiles_untilize_downsampled_cb, untilized_single_tile_size * num_tiles_untilize_downsampled_cb);
 
     uint32_t final_tilize_output_cb_index = CB::c_out0;
     uint32_t num_tiles_final_tilize_output_cb = num_output_tiles; // final output cb size == output size per core
@@ -500,6 +507,7 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
 		.set_page_size(final_tilize_output_cb_index, output_single_tile_size);
     final_tilize_output_cb_config = final_tilize_output_cb_config.set_globally_allocated_address(*output.buffer());
     auto final_tilize_output_cb = tt_metal::CreateCircularBuffer(program, core_range, final_tilize_output_cb_config);
+    log_debug(LogOp, "CB {}: PS = {} NP = {} :: TOTAL = {}", final_tilize_output_cb_index, output_single_tile_size, num_tiles_final_tilize_output_cb, output_single_tile_size * num_tiles_final_tilize_output_cb);
 
     uint32_t log_base_2_of_conv_act_size_c_bytes = (uint32_t) std::log2((float) input_shard_width_bytes);
     uint32_t stride_h_x_image_width = img_stride_h * img_width;
@@ -663,7 +671,7 @@ operation::ProgramWithCallbacks downsample_single_core(const Tensor &a, std::arr
             halo_next_read_pattern_params = generate_downsample_read_pattern(v, img_height, img_width, img_stride_h, img_stride_w, next_core_input_end_flat_h, output_end_flat_h, false, true);
             TT_ASSERT(v.output_flat_h == 0);
             TT_ASSERT(v.input_flat_h != 0 && v.input_flat_h < input_shard_height);
-            TT_ASSERT(v.input_flat_h <= TILE_HEIGHT * halo_next_input_cb_max_rows_of_tiles); // halo next input cb is hardcoded to store only 5 rows of tiles for now. TODO: allocate bigger CB or read in blocks
+            TT_ASSERT(v.input_flat_h <= TILE_HEIGHT * halo_next_input_cb_max_rows_of_tiles, "v.input_flat_h ({}) should be <= TILE_HEIGHT * halo_next_input_cb_max_rows_of_tiles ({})", v.input_flat_h, halo_next_input_cb_max_rows_of_tiles); // halo next input cb is hardcoded to store only 5 rows of tiles for now. TODO: allocate bigger CB or read in blocks
             uint32_t halo_next_end_tile_id_h = v.input_flat_h / TILE_HEIGHT;
             // get halo size
             halo_next_size_bytes = (halo_next_end_tile_id_h+1) * TILE_HEIGHT * input_shard_width / TILE_HW * input_single_tile_size;

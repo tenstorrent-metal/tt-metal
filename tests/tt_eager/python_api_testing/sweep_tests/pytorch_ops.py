@@ -349,7 +349,9 @@ def log1p(x, *args, **kwargs):
 
 
 def softplus(x, *args, **kwargs):
-    return torch.nn.functional.softplus(x)
+    beta = kwargs.pop("beta")
+    threshold = kwargs.pop("threshold")
+    return torch.nn.functional.softplus(x, beta=beta, threshold=threshold)
 
 
 def add1(x, *args, **kwargs):
@@ -357,7 +359,7 @@ def add1(x, *args, **kwargs):
 
 
 def mish(x, *args, **kwargs):
-    return x * torch.tanh(softplus(x))
+    return x * torch.tanh(softplus(x, beta=1.0, threshold=20.0))
 
 
 def recip(x, *args, **kwargs):
@@ -967,6 +969,18 @@ def squared_difference(x, y, *args, **kwargs):
     return torch.square(t_diff)
 
 
+def add_and_apply_activation(x, y, *args, **kwargs):
+    activation = kwargs.pop("activation")
+    output = torch.add(x, y)
+
+    if activation == "relu":
+        output = torch.relu(output)
+    elif activation == "gelu":
+        output = torch.gelu(output)
+
+    return output
+
+
 def logaddexp(x, y, *args, **kwargs):
     return torch.logaddexp(x, y)
 
@@ -1155,6 +1169,7 @@ def untilize_with_unpadding(x, output_tensor_start, output_tensor_end, *args, **
 #################### Tensor ####################
 ################################################
 def pad(x, *args, output_tensor_shape, input_tensor_start, pad_value, **kwargs):
+    print("PT")
     input_tensor_shape = x.shape
     input_tensor_end = tuple(input_tensor_start[i] + input_tensor_shape[i] for i in range(len(input_tensor_shape)))
     out = torch.full(output_tensor_shape, pad_value, dtype=torch.bfloat16)
@@ -1164,6 +1179,8 @@ def pad(x, *args, output_tensor_shape, input_tensor_start, pad_value, **kwargs):
         input_tensor_start[2] : input_tensor_end[2],
         input_tensor_start[3] : input_tensor_end[3],
     ] = x
+
+    print("PT 2")
 
     return out
 
@@ -1335,7 +1352,6 @@ def pt_embedding_bw(x, y, z, *args, **kwargs):
 def ttnn_embeddings(x, y, *args, **kwargs):
     x = x.int()
     x = torch.clamp(x, min=0, max=y.shape[0] - 1)
-
     z = torch.nn.functional.embedding(x, y)
     return z
 
@@ -1765,4 +1781,64 @@ def ttnn_rmsnorm(x, y, *args, **kwargs):
 def transformer_concatenate_heads(x, *args, **kwargs):
     torch_output_tensor = ttnn.transformer._torch_concatenate_heads(x)
 
+    return torch_output_tensor
+
+
+def ttnn_groupnorm(x, y, z, *args, **kwargs):
+    torch_output_tensor = torch.nn.functional.group_norm(x, num_groups=1, weight=y, bias=z)
+    return torch_output_tensor
+
+
+def global_avg_pool2d(x, *args, **kwargs):
+    output_size = (1, 1)
+    return torch.nn.functional.adaptive_avg_pool2d(x, output_size)
+
+
+def upsample(x, *args, scale_factor, **kwargs):
+    # return torch.nn.functional.upsample(x, scale_factor=2)
+
+    tt_input = x.permute(0, 3, 1, 2)
+
+    m = torch.nn.Upsample(scale_factor=scale_factor, mode="nearest")
+    torch_result = m(tt_input)
+    torch_result = torch_result.permute(0, 2, 3, 1)
+
+    return torch_result
+
+
+def l1_loss(x, y, *args, **kwargs):
+    # return torch.nn.functional.upsample(x, scale_factor=2)
+    torch_output_tensor = torch.nn.L1Loss(reduction="none")(x, y)
+    return torch_output_tensor
+
+
+def l1_loss_sum(x, y, *args, **kwargs):
+    # return torch.nn.functional.upsample(x, scale_factor=2)
+    torch_output_tensor = torch.nn.L1Loss(reduction="sum")(x, y)
+
+    return torch_output_tensor
+
+
+def l1_loss_mean(x, y, *args, **kwargs):
+    # return torch.nn.functional.upsample(x, scale_factor=2)
+    torch_output_tensor = torch.nn.L1Loss(reduction="mean")(x, y)
+    return torch_output_tensor
+
+
+def mse_loss(x, y, *args, **kwargs):
+    # return torch.nn.functional.upsample(x, scale_factor=2)
+    torch_output_tensor = torch.nn.MSELoss(reduction="none")(x, y)
+    return torch_output_tensor
+
+
+def mse_loss_sum(x, y, *args, **kwargs):
+    # return torch.nn.functional.upsample(x, scale_factor=2)
+    torch_output_tensor = torch.nn.MSELoss(reduction="sum")(x, y)
+
+    return torch_output_tensor
+
+
+def mse_loss_mean(x, y, *args, **kwargs):
+    # return torch.nn.functional.upsample(x, scale_factor=2)
+    torch_output_tensor = torch.nn.L1Loss(reduction="mean")(x, y)
     return torch_output_tensor

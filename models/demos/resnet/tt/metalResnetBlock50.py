@@ -8,12 +8,11 @@ import tt_lib
 import torch
 import torch.nn as nn
 import math
-from loguru import logger
 from models.demos.resnet.utils import fold_bn_to_conv_weights_bias
-from models.utility_functions import tt2torch_tensor
+from models.utility_functions import tt2torch_tensor, torch2tt_tensor
 from tt_lib.utils import pad_weight
 
-from models.utility_functions import is_wormhole_b0, is_grayskull
+from models.utility_functions import is_grayskull
 from tt_lib.fused_ops.average_pool import run_avg_pool_on_device_wrapper as TtAvgPool
 from tt_lib.fused_ops.max_pool import run_max_pool_on_device_wrapper as TtMaxPool
 from tt_lib.fused_ops.max_pool import compute_max_pool_shape
@@ -28,7 +27,6 @@ from tt_eager.tt_dnn.op_library.sliding_window_op_infra.tt_py_composite_conv imp
     SlidingWindowOpParamsWithParallelConfig,
 )
 from tt_eager.tt_dnn.op_library.sliding_window_op_infra.tt_py_max_pool import TTPyMaxPool
-from tt_eager.tt_dnn.op_library.sliding_window_op_infra.tt_py_untilize_with_halo import TTPyUntilizeWithHalo
 
 from models.utility_functions import (
     _nearest_32,
@@ -90,15 +88,15 @@ def ResnetLinear(
     Returns a function for linear operation in resnet with bias.
     """
     if bias is not None:
-        assert bias.shape()[-1] == out_features, "bias shape is not as expected"
+        assert bias.get_legacy_shape()[-1] == out_features, "bias shape is not as expected"
         if device is not None:
             bias = bias.to(device)
 
     if transpose:
-        assert weight.shape() == [1, 1, out_features, in_features], "weight does not have the expected shape"
+        assert weight.get_legacy_shape() == [1, 1, out_features, in_features], "weight does not have the expected shape"
         weight_T = tt_lib.tensor.transpose(weight, -2, -1)
     else:
-        assert weight.shape() == [1, 1, in_features, out_features], "weight does not have the expected shape"
+        assert weight.get_legacy_shape() == [1, 1, in_features, out_features], "weight does not have the expected shape"
         weight_T = weight
     if device is not None:
         weight_T = weight_T.to(device)
@@ -148,18 +146,18 @@ def _nearest_y(x, y):
 
 
 def format_tensor(x, target_layout, device, output_mem_config, pad_value=0.0):
-    if x.layout() == target_layout:
+    if x.get_layout() == target_layout:
         return x
-    if x.layout() == tt_lib.tensor.Layout.ROW_MAJOR and target_layout == tt_lib.tensor.Layout.TILE:
-        x_padded_shape = tt_lib.tensor.pad_to_tile_shape(x.shape(), False, False, True, True)
-        if x.shape() != x_padded_shape:
+    if x.get_layout() == tt_lib.tensor.Layout.ROW_MAJOR and target_layout == tt_lib.tensor.Layout.TILE:
+        x_padded_shape = tt_lib.tensor.pad_to_tile_shape(x.get_legacy_shape(), False, False, True, True)
+        if x.get_legacy_shape() != x_padded_shape:
             return tt_lib.tensor.format_input_tensor(
                 x, device, x_padded_shape, pad_value, target_layout, output_mem_config
             )
         else:
             return tt_lib.tensor.tilize(x, output_mem_config, use_multicore=True)
-    elif x.layout() == tt_lib.tensor.Layout.TILE and target_layout == tt_lib.tensor.Layout.ROW_MAJOR:
-        if x.shape() != x.shape_without_padding():
+    elif x.get_layout() == tt_lib.tensor.Layout.TILE and target_layout == tt_lib.tensor.Layout.ROW_MAJOR:
+        if x.get_legacy_shape() != x.shape_without_padding():
             return tt_lib.tensor.format_output_tensor(
                 x, x.shape_without_padding(), device, target_layout, output_mem_config
             )
@@ -171,11 +169,11 @@ def format_tensor(x, target_layout, device, output_mem_config, pad_value=0.0):
 
 # Local copy of unpad_from_zero to always set output to
 def unpad_from_zero(x, desired_shape):
-    if x.shape()[-1] == desired_shape[-1] and x.shape()[-2] == desired_shape[-2]:
+    if x.get_legacy_shape()[-1] == desired_shape[-1] and x.get_legacy_shape()[-2] == desired_shape[-2]:
         x = tt2torch_tensor(x)
     else:
         x = x.cpu()
-        if x.layout() != tt_lib.tensor.Layout.ROW_MAJOR:
+        if x.get_layout() != tt_lib.tensor.Layout.ROW_MAJOR:
             x = x.to(tt_lib.tensor.Layout.ROW_MAJOR)
         x = x.unpad(
             (0, 0, 0, 0), (desired_shape[0] - 1, desired_shape[1] - 1, desired_shape[2] - 1, desired_shape[3] - 1)
@@ -1057,7 +1055,7 @@ class Bottleneck:
         )
         self.bn3.eval()
 
-        self.relu = tt_lib.tensor.relu_without_autoformat
+        self.relu = tt_lib.operations.primary.relu
         self.downsample = downsample
         self.stride = stride
 
@@ -1116,6 +1114,8 @@ class Bottleneck:
                 packer_l1_acc=False,
             )
 
+        untilize_out = False
+
         self.conv1 = resnet50_1x1_conv_as_matmul(
             conv1_weight.reshape(-1).tolist(),
             self.conv1_params,
@@ -1125,8 +1125,9 @@ class Bottleneck:
             fuse_relu=True,
             output_mem_config=self.sharded_memory_config,
             weights_dtype=model_config["WEIGHTS_DTYPE"],
-            output_dtype=model_config["ACTIVATIONS_DTYPE"],
+            output_dtype=tt_lib.tensor.DataType.BFLOAT16 if untilize_out else model_config["ACTIVATIONS_DTYPE"],
             compute_kernel_config=compute_kernel_config,
+            untilize_out=untilize_out,
         )
 
         self.conv2_params = [width, width, 3, 3, stride, stride, 1, 1, dilation, groups]
@@ -1147,6 +1148,7 @@ class Bottleneck:
             per_core_weight_w,
             num_cores_nhw,  # This number is only meaningful for batch 8, 16
         ] = hardcoded_conv_blocking_and_parallelization_config[batch_size][(conv2_output_padded_face_size, width)]
+
         assert per_core_act_h % 32 == 0
         per_core_act_h_ntiles = (int)(per_core_act_h / 32)
         per_core_weight_w_ntiles = (int)(per_core_weight_w / 32)
@@ -1170,16 +1172,17 @@ class Bottleneck:
             config_override = {
                 "act_block_w": act_block_w,
                 "act_block_h": act_block_h,
-                "weight_block_w": weight_block_w,
                 "out_subblock_h": out_subblock_h,
                 "out_subblock_w": out_subblock_w,
-                "out_block_h": out_block_h,
-                "act_c_num_blocks": grid_size[1] if conv_2d else 1,
                 "grid_size": grid_size,
                 "per_core_out_matrix_height": per_core_act_h,
                 "per_core_weight_matrix_width": per_core_weight_w,
                 "num_cores_nhw": num_cores_nhw,
             }
+
+            assert out_block_h == per_core_act_h, "out_block_h != per_core_act_h"
+            assert weight_block_w == per_core_weight_w, "weight_block_w != per_core_weight_w"
+
             move_utwh_output = False
             if self.deallocate and (
                 self.module_input_shape[0] == 20
@@ -1219,6 +1222,7 @@ class Bottleneck:
                 math_fidelity=model_config["MATH_FIDELITY"],
                 move_utwh_output=move_utwh_output,
                 deallocate_activation=True,
+                compute_kernel_config=compute_kernel_config,
             )
         else:
             self.conv2 = resnet50_optimized_conv(
@@ -1240,6 +1244,7 @@ class Bottleneck:
                 output_dtype=model_config["ACTIVATIONS_DTYPE"],
                 math_fidelity=model_config["MATH_FIDELITY"],
                 act_c_num_blocks=1,
+                compute_kernel_config=compute_kernel_config,
             )
 
         self.conv3_params = [planes * self.expansion, width, 1, 1, 1, 1, 0, 0, dilation, groups]
@@ -1316,7 +1321,7 @@ class Bottleneck:
         fused_activations = [tt_lib.tensor.FusibleActivation.RELU]
 
         # logger.info("Running eltwise add")
-        out = tt_lib.tensor.add_without_autoformat(
+        out = tt_lib.operations.primary.add(
             out,
             ds_out,
             fused_activations,
@@ -1456,6 +1461,33 @@ class ResNet(nn.Module):
 
         self.first_conv_num_cores_nhw = 98
         if sharded:
+            self.fold_grid = tt_lib.tensor.CoreRangeSet(
+                {
+                    tt_lib.tensor.CoreRange(
+                        tt_lib.tensor.CoreCoord(0, 0),
+                        tt_lib.tensor.CoreCoord(10, 7),
+                    ),
+                    tt_lib.tensor.CoreRange(
+                        tt_lib.tensor.CoreCoord(0, 8),
+                        tt_lib.tensor.CoreCoord(3, 8),
+                    ),
+                }
+            )
+            self.n_fold_cores = 92
+
+            self.shard_grid = tt_lib.tensor.CoreRangeSet(
+                {
+                    tt_lib.tensor.CoreRange(
+                        tt_lib.tensor.CoreCoord(0, 0),
+                        tt_lib.tensor.CoreCoord(11, 7),
+                    ),
+                    tt_lib.tensor.CoreRange(
+                        tt_lib.tensor.CoreCoord(0, 8),
+                        tt_lib.tensor.CoreCoord(1, 8),
+                    ),
+                }
+            )
+
             self.folded_conv1_params = [self.inplanes, 16, 4, 4, 1, 1, 0, 0, 1, groups]
             first_conv_output_padded_nhw_size = _nearest_y(112 * 112 * batch_size, 98 * 32)
             first_conv_output_channels = 64
@@ -1499,16 +1531,16 @@ class ResNet(nn.Module):
             config_override = {
                 "act_block_w": act_block_w,
                 "act_block_h": act_block_h,
-                "weight_block_w": weight_block_w,
                 "out_subblock_h": out_subblock_h,
                 "out_subblock_w": out_subblock_w,
-                "out_block_h": out_block_h,
-                "act_c_num_blocks": 1,
                 "grid_size": grid_size,
                 "per_core_out_matrix_height": per_core_act_h,
                 "per_core_weight_matrix_width": per_core_weight_w,
                 "num_cores_nhw": self.first_conv_num_cores_nhw,
             }
+
+            assert out_block_h == per_core_act_h, "out_block_h != per_core_act_h"
+            assert weight_block_w == per_core_weight_w, "weight_block_w != per_core_weight_w"
 
             tt_tensor_conv_weight = tt_lib.tensor.Tensor(
                 conv1_weight.reshape(-1).tolist(),
@@ -1526,6 +1558,18 @@ class ResNet(nn.Module):
                 else tt_lib.tensor.DataType.FLOAT32,
                 tt_lib.tensor.Layout.ROW_MAJOR,
             )
+            if is_grayskull():
+                compute_kernel_config = tt_lib.tensor.GrayskullComputeKernelConfig(
+                    math_fidelity=model_config["MATH_FIDELITY"],
+                    math_approx_mode=True,
+                )
+            else:
+                compute_kernel_config = tt_lib.tensor.WormholeComputeKernelConfig(
+                    math_fidelity=model_config["MATH_FIDELITY"],
+                    math_approx_mode=True,
+                    fp32_dest_acc_en=False,
+                    packer_l1_acc=False,
+                )
             self.conv1 = TTPyCompositeConv(
                 sliding_window_op_params,
                 tt_tensor_conv_weight,
@@ -1543,6 +1587,7 @@ class ResNet(nn.Module):
                 use_shallow_conv_variant=True,
                 deallocate_activation=True,
                 padded_input_channels=16,
+                compute_kernel_config=compute_kernel_config,
             )
             self.first_conv_op_params = sliding_window_op_params
         else:
@@ -1568,7 +1613,7 @@ class ResNet(nn.Module):
             self.conv1_params,
             [batch_size, self.conv_input_face_shape_hw[0], self.conv_input_face_shape_hw[1], self.inplanes],
         )
-        self.relu = tt_lib.tensor.relu_without_autoformat
+        self.relu = tt_lib.operations.primary.relu
 
         self.maxpool_config_params = {"kernel_size": 3, "stride": 2, "pad": 1, "dilation": 1}
         self.max_pool_reader_patterns_cache = {}
@@ -1812,6 +1857,20 @@ class ResNet(nn.Module):
                 * self.downsample_conv_output_shape[2]
             )
             matmul_config = None
+
+            if is_grayskull():
+                compute_kernel_config = tt_lib.tensor.GrayskullComputeKernelConfig(
+                    math_fidelity=model_config["MATH_FIDELITY"],
+                    math_approx_mode=True,
+                )
+            else:
+                compute_kernel_config = tt_lib.tensor.WormholeComputeKernelConfig(
+                    math_fidelity=model_config["MATH_FIDELITY"],
+                    math_approx_mode=True,
+                    fp32_dest_acc_en=False,
+                    packer_l1_acc=False,
+                )
+
             if is_downsample_1x1_conv:
                 assert (
                     downsample_output_padded_face_size,
@@ -1822,19 +1881,6 @@ class ResNet(nn.Module):
                 matmul_config = hardcoded_matmul_config_conv[batch_size][
                     (downsample_output_padded_face_size, self.inplanes, downsample_output_channels)
                 ]
-                if is_grayskull():
-                    compute_kernel_config = tt_lib.tensor.GrayskullComputeKernelConfig(
-                        math_fidelity=model_config["MATH_FIDELITY"],
-                        math_approx_mode=True,
-                    )
-                else:
-                    compute_kernel_config = tt_lib.tensor.WormholeComputeKernelConfig(
-                        math_fidelity=model_config["MATH_FIDELITY"],
-                        math_approx_mode=True,
-                        fp32_dest_acc_en=False,
-                        packer_l1_acc=False,
-                    )
-
                 self.downsample_conv_on_tt = resnet50_1x1_conv_as_matmul(
                     downsample_conv_weight.reshape(-1).tolist(),
                     self.downsample_params,
@@ -1858,18 +1904,6 @@ class ResNet(nn.Module):
                 assert stride == 2
                 downsample_op_params = [batch_size, layer_input_shape[1], layer_input_shape[2], stride, stride]
                 # logger.info("Calling ds op and matmul op, input shape - ", layer_input_shape)
-                if is_grayskull():
-                    compute_kernel_config = tt_lib.tensor.GrayskullComputeKernelConfig(
-                        math_fidelity=model_config["MATH_FIDELITY"],
-                        math_approx_mode=True,
-                    )
-                else:
-                    compute_kernel_config = tt_lib.tensor.WormholeComputeKernelConfig(
-                        math_fidelity=model_config["MATH_FIDELITY"],
-                        math_approx_mode=True,
-                        fp32_dest_acc_en=False,
-                        packer_l1_acc=False,
-                    )
 
                 self.downsample_conv_on_tt = resnet50_1x1_conv_s2_as_downsample_and_matmul(
                     downsample_conv_weight.reshape(-1).tolist(),
@@ -1922,6 +1956,7 @@ class ResNet(nn.Module):
                     weights_dtype=model_config["WEIGHTS_DTYPE"],
                     output_dtype=model_config["ACTIVATIONS_DTYPE"],
                     math_fidelity=model_config["MATH_FIDELITY"],
+                    compute_kernel_config=compute_kernel_config,
                 )
             self.norm_layer_after_downsample_conv_on_tt = nl
 
@@ -2005,39 +2040,70 @@ class ResNet(nn.Module):
             x = tt_lib.tensor.Tensor(x, tt_lib.tensor.DataType.BFLOAT16)
         return x
 
+    def preprocessing_with_fold(self, x: torch.Tensor) -> tt_lib.tensor:
+        if not self.sharded:
+            raise ValueError("Preprocessing is only supported for sharded model")
+
+        stride_h = 2
+        stride_w = 2
+
+        # NCWH -> NWHC
+        x = torch.permute(x, (0, 2, 3, 1))
+
+        # pad to 230x230x4
+        C = _nearest_y(x.shape[3], 4)
+        x = torch.nn.functional.pad(x, (0, C - x.shape[3], 3, 3, 3, 3))
+
+        # reshape to [N, H, W / stride_w, C * stride_w]. It's a no-op in torch, and this way we only need to fold on height.
+        x = x.reshape(x.shape[0], x.shape[1], x.shape[2] // stride_w, x.shape[3] * stride_w)
+
+        NHW = x.shape[0] * x.shape[1] * x.shape[2]
+        NHW_even = _nearest_y(NHW // stride_h, self.first_conv_num_cores_nhw * 32)
+
+        shard_spec = tt_lib.tensor.ShardSpec(
+            self.fold_grid, [NHW // self.n_fold_cores, x.shape[3]], tt_lib.tensor.ShardOrientation.ROW_MAJOR, False
+        )
+        x = torch2tt_tensor(
+            x,
+            self.device,
+            tt_layout=tt_lib.tensor.Layout.ROW_MAJOR,
+            tt_memory_config=tt_lib.tensor.MemoryConfig(
+                tt_lib.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+                tt_lib.tensor.BufferType.L1,
+                shard_spec,
+            ),
+        )
+
+        # fold for unity stride on device
+        x = tt_lib.tensor.fold(x, stride_h=stride_h, stride_w=1)
+
+        shard_shape = [
+            NHW_even // self.first_conv_num_cores_nhw,
+            x.get_legacy_shape()[3],
+        ]
+
+        x = tt_lib.tensor.reshard(
+            x,
+            tt_lib.tensor.MemoryConfig(
+                tt_lib.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+                tt_lib.tensor.BufferType.L1,
+                tt_lib.tensor.ShardSpec(
+                    self.shard_grid,
+                    shard_shape,
+                    tt_lib.tensor.ShardOrientation.ROW_MAJOR,
+                    False,
+                ),
+            ),
+        )
+
+        return x
+
     def forward(self, x: tt_lib.tensor) -> tt_lib.tensor:
-        if self.sharded:
-            untilize_with_halo_input_shard_height = (int)(x.shape()[2] / self.first_conv_num_cores_nhw)
-
-            shard_grid = tt_lib.tensor.CoreRangeSet(
-                {
-                    tt_lib.tensor.CoreRange(
-                        tt_lib.tensor.CoreCoord(0, 0),
-                        tt_lib.tensor.CoreCoord(11, 7),
-                    ),
-                    tt_lib.tensor.CoreRange(
-                        tt_lib.tensor.CoreCoord(0, 8),
-                        tt_lib.tensor.CoreCoord(1, 8),
-                    ),
-                }
+        if not self.sharded:
+            original_A_cl_host_shape = x.get_legacy_shape()
+            x = x.reshape(
+                x.get_legacy_shape()[0], x.get_legacy_shape()[1], 1, x.get_legacy_shape()[2] * x.get_legacy_shape()[3]
             )
-            shard_spec = tt_lib.tensor.ShardSpec(
-                shard_grid,
-                [
-                    untilize_with_halo_input_shard_height,
-                    x.shape()[3],
-                ],
-                tt_lib.tensor.ShardOrientation.ROW_MAJOR,
-                False,
-            )
-            mem_config = tt_lib.tensor.MemoryConfig(
-                tt_lib.tensor.TensorMemoryLayout.HEIGHT_SHARDED, tt_lib.tensor.BufferType.L1, shard_spec
-            )
-            x = x.to(self.device, mem_config)
-
-        else:
-            original_A_cl_host_shape = x.shape()
-            x = x.reshape(x.shape()[0], x.shape()[1], 1, x.shape()[2] * x.shape()[3])
 
             x = x.to(self.device, self.memory_config)  # to l1
             # re-shape back to original shape (N, H, W, C)
@@ -2047,6 +2113,20 @@ class ResNet(nn.Module):
                 original_A_cl_host_shape[2],
                 original_A_cl_host_shape[3],
             )
+        elif x.storage_type() != tt_lib.tensor.StorageType.DEVICE:
+            shard_spec = tt_lib.tensor.ShardSpec(
+                self.shard_grid,
+                [
+                    x.get_legacy_shape()[2] // self.first_conv_num_cores_nhw,
+                    x.get_legacy_shape()[3],
+                ],
+                tt_lib.tensor.ShardOrientation.ROW_MAJOR,
+                False,
+            )
+            mem_config = tt_lib.tensor.MemoryConfig(
+                tt_lib.tensor.TensorMemoryLayout.HEIGHT_SHARDED, tt_lib.tensor.BufferType.L1, shard_spec
+            )
+            x = x.to(self.device, mem_config)
 
         x = self.conv1(x)
         # Relu is fused with conv1
@@ -2093,8 +2173,8 @@ class ResNet(nn.Module):
                 x,
                 self.layer_3_grid_size,
                 [
-                    math.ceil((x.shape()[-2] // 32) / self.layer_3_grid_size[0]) * 32,
-                    x.shape()[-1] // self.layer_3_grid_size[1],
+                    math.ceil((x.get_legacy_shape()[-2] // 32) / self.layer_3_grid_size[0]) * 32,
+                    x.get_legacy_shape()[-1] // self.layer_3_grid_size[1],
                 ],
                 tt_lib.tensor.TensorMemoryLayout.BLOCK_SHARDED,
                 tt_lib.tensor.ShardOrientation.COL_MAJOR,
@@ -2110,8 +2190,8 @@ class ResNet(nn.Module):
                 x,
                 self.layer_4_grid_size,
                 [
-                    math.ceil((x.shape()[-2] // 32) / self.layer_4_grid_size[0]) * 32,
-                    x.shape()[-1] // self.layer_4_grid_size[1],
+                    math.ceil((x.get_legacy_shape()[-2] // 32) / self.layer_4_grid_size[0]) * 32,
+                    x.get_legacy_shape()[-1] // self.layer_4_grid_size[1],
                 ],
                 tt_lib.tensor.TensorMemoryLayout.BLOCK_SHARDED,
                 tt_lib.tensor.ShardOrientation.COL_MAJOR,
@@ -2128,18 +2208,23 @@ class ResNet(nn.Module):
             self.memory_config,
         )
 
-        x = x.reshape(self.batch_size, x.shape()[1], (int)(x.shape()[2] / self.batch_size), x.shape()[3])
+        x = x.reshape(
+            self.batch_size,
+            x.get_legacy_shape()[1],
+            (int)(x.get_legacy_shape()[2] / self.batch_size),
+            x.get_legacy_shape()[3],
+        )
         if self.sharded:
             grid_size = (8, 4)
             x = tt_lib.tensor.interleaved_to_sharded(
                 x,
                 grid_size,
-                [x.volume() // x.shape()[-1], x.shape()[-1] // (grid_size[0] * grid_size[1])],
+                [x.volume() // x.get_legacy_shape()[-1], x.get_legacy_shape()[-1] // (grid_size[0] * grid_size[1])],
                 tt_lib.tensor.TensorMemoryLayout.WIDTH_SHARDED,
                 tt_lib.tensor.ShardOrientation.ROW_MAJOR,
             )
 
-        unpadded_shape = x.shape()
+        unpadded_shape = x.get_legacy_shape()
         padded_shape = [
             unpadded_shape[0],
             unpadded_shape[1],
@@ -2168,7 +2253,12 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x, self.width_sharded_memory_config)
 
-        unpadded_shape_end = [x.shape()[0] - 1, x.shape()[1] - 1, 1 - 1, x.shape()[3] - 1]
+        unpadded_shape_end = [
+            x.get_legacy_shape()[0] - 1,
+            x.get_legacy_shape()[1] - 1,
+            1 - 1,
+            x.get_legacy_shape()[3] - 1,
+        ]
         if self.sharded:
             x = tt_lib.tensor.untilize_with_unpadding(
                 x, (0, 0, 0, 0), unpadded_shape_end, output_mem_config=self.width_sharded_memory_config
@@ -2177,9 +2267,9 @@ class ResNet(nn.Module):
             x = tt_lib.tensor.untilize(x, self.memory_config, use_multicore=True)
             x = tt_lib.tensor.unpad(x, (0, 0, 0, 0), unpadded_shape_end, output_mem_config=self.memory_config)
 
-        x = x.reshape(1, x.shape()[1], self.batch_size * x.shape()[2], x.shape()[3])
+        x = x.reshape(1, x.get_legacy_shape()[1], self.batch_size * x.get_legacy_shape()[2], x.get_legacy_shape()[3])
 
-        unpadded_shape = x.shape()
+        unpadded_shape = x.get_legacy_shape()
         padded_shape = [
             unpadded_shape[0],
             unpadded_shape[1],
@@ -2215,6 +2305,11 @@ class ResNet(nn.Module):
             (desired_shape[0] - 1, desired_shape[1] - 1, desired_shape[2] - 1, desired_shape[3] - 1),
             self.memory_config,
         )
-        x = x.reshape(self.batch_size, x.shape()[1], (int)(x.shape()[2] / self.batch_size), x.shape()[3])
+        x = x.reshape(
+            self.batch_size,
+            x.get_legacy_shape()[1],
+            (int)(x.get_legacy_shape()[2] / self.batch_size),
+            x.get_legacy_shape()[3],
+        )
 
         return x

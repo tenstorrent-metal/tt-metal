@@ -834,6 +834,8 @@ Backward Operations
 
 .. autofunction:: tt_lib.tensor.addcdiv_bw
 
+.. autofunction:: tt_lib.tensor.conj_bw
+
 .. autofunction:: tt_lib.tensor.unary_mul_bw
 
 .. autofunction:: tt_lib.tensor.unary_add_bw
@@ -845,6 +847,8 @@ Backward Operations
 .. autofunction:: tt_lib.tensor.unary_div_bw
 
 .. autofunction:: tt_lib.tensor.div_bw
+
+.. autofunction:: tt_lib.tensor.rdiv_bw
 
 .. autofunction:: tt_lib.tensor.sqrt_bw
 
@@ -936,7 +940,11 @@ Backward Operations
 
 .. autofunction:: tt_lib.tensor.hardshrink_bw
 
+.. autofunction:: tt_lib.tensor.softshrink_bw
+
 .. autofunction:: tt_lib.tensor.hardswish_bw
+
+.. autofunction:: tt_lib.tensor.softplus_bw
 
 .. autofunction:: tt_lib.tensor.polygamma_bw
 
@@ -974,6 +982,81 @@ Backward Operations
 
 .. autofunction:: tt_lib.tensor.binary_lt_bw
 
+.. autofunction:: tt_lib.tensor.subalpha_bw
+
+.. autofunction:: tt_lib.tensor.log10_bw
+
+.. autofunction:: tt_lib.tensor.log1p_bw
+
+.. autofunction:: tt_lib.tensor.binary_ne_bw
+
+.. autofunction:: tt_lib.tensor.erf_bw
+
+.. autofunction:: tt_lib.tensor.erfc_bw
+
+.. autofunction:: tt_lib.tensor.digamma_bw
+
+.. autofunction:: tt_lib.tensor.deg2rad_bw
+
+.. autofunction:: tt_lib.tensor.rad2deg_bw
+
+.. autofunction:: tt_lib.tensor.reciprocal_bw
+
+.. autofunction:: tt_lib.tensor.relu6_bw
+
+.. autofunction:: tt_lib.tensor.rpow_bw
+
+.. autofunction:: tt_lib.tensor.silu_bw
+
+.. autofunction:: tt_lib.tensor.selu_bw
+
+.. autofunction:: tt_lib.tensor.binary_ge_bw
+
+.. autofunction:: tt_lib.tensor.binary_eq_bw
+
+.. autofunction:: tt_lib.tensor.binary_gt_bw
+
+.. autofunction:: tt_lib.tensor.square_bw
+
+.. autofunction:: tt_lib.tensor.lgamma_bw
+
+.. autofunction:: tt_lib.tensor.trunc_bw
+
+.. autofunction:: tt_lib.tensor.frac_bw
+
+.. autofunction:: tt_lib.tensor.log_sigmoid_bw
+
+.. autofunction:: tt_lib.tensor.tanhshrink_bw
+
+.. autofunction:: tt_lib.tensor.threshold_bw
+
+.. autofunction:: tt_lib.tensor.unary_eq_bw
+
+.. autofunction:: tt_lib.tensor.logit_bw
+
+.. autofunction:: tt_lib.tensor.logiteps_bw
+
+.. autofunction:: tt_lib.tensor.softsign_bw
+
+.. autofunction:: tt_lib.tensor.sign_bw
+
+.. autofunction:: tt_lib.tensor.ceil_bw
+
+.. autofunction:: tt_lib.tensor.log2_bw
+
+.. autofunction:: tt_lib.tensor.ge_bw
+
+.. autofunction:: tt_lib.tensor.le_bw
+
+.. autofunction:: tt_lib.tensor.unary_fmod_bw
+
+.. autofunction:: tt_lib.tensor.unary_remainder_bw
+
+.. autofunction:: tt_lib.tensor.imag_bw
+
+.. autofunction:: tt_lib.tensor.real_bw
+
+.. autofunction:: tt_lib.tensor.multigammaln_bw
 
 Loss Functions
 ==============

@@ -17,8 +17,6 @@ def get_device_core_grid(device):
 Device = ttl.device.Device
 Device.core_grid = property(get_device_core_grid)
 
-DEVICES = {}
-
 
 def open_device(*, device_id: int):
     """
@@ -36,6 +34,14 @@ def close_device(device):
     Close the device and remove it from the device cache.
     """
     ttnn._ttnn.device.close_device(device)
+
+
+def enable_program_cache(device):
+    ttnn._ttnn.device.enable_program_cache(device)
+
+
+def disable_and_clear_program_cache(device):
+    ttnn._ttnn.device.disable_and_clear_program_cache(device)
 
 
 def synchronize_device(device):

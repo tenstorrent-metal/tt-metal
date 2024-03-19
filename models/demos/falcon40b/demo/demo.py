@@ -195,8 +195,8 @@ def run_falcon_demo_kv(
     prefill_on_host,
 ):
     torch.manual_seed(0)
-
-    tt_lib.program_cache.enable()
+    for device in devices:
+        device.enable_program_cache()
 
     configuration = FalconConfig(**model_config_entries)
 
@@ -397,9 +397,7 @@ def run_falcon_demo_kv(
             del tt_decode_attention_mask
 
         tt_outs = []
-        for i in range(len(devices)):
-            tt_outs.append(tt2torch_tensor(tt_logits[0]).squeeze(1))
-        logits = torch.concat(tt_outs, dim=-1)
+        logits = torch.cat([tt2torch_tensor(tt_o).squeeze(1) for tt_o in tt_logits], -1)
         del tt_logits
 
         decode_ids = post_processor(logits=logits, index=...).reshape(batch_size, 1)
@@ -426,7 +424,8 @@ def run_falcon_demo_kv(
 
     print_output_prompts(generated_ids, tokenizer)
 
-    tt_lib.program_cache.disable_and_clear()
+    for device in devices:
+        device.disable_and_clear_program_cache()
 
     del user_output_ids
     del output_ids
@@ -542,7 +541,8 @@ def run_falcon_demo_kv(
 
     print_output_prompts(generated_ids, tokenizer)
 
-    tt_lib.program_cache.disable_and_clear()
+    for device in devices:
+        device.disable_and_clear_program_cache()
 
     generated_text = tokenizer.batch_decode(generated_ids.tolist())
 

@@ -21,13 +21,15 @@ struct CommandHeader {
     uint32_t is_program_buffer = 0;
     uint32_t stall = 0;
     uint32_t page_size = 0;
-    uint32_t producer_cb_size = 0;
+    uint32_t pull_and_push_cb_size = 0;
     uint32_t event;
-    uint32_t router_cb_size = 0;
+    uint32_t producer_cb_size = 0;
     uint32_t consumer_cb_size = 0;
+    uint32_t router_cb_size = 0;
+    uint32_t pull_and_push_cb_num_pages = 0;
     uint32_t producer_cb_num_pages = 0;
-    uint32_t router_cb_num_pages = 0;
     uint32_t consumer_cb_num_pages = 0;
+    uint32_t router_cb_num_pages = 0;
     uint32_t num_pages = 0;
     uint32_t num_runtime_arg_pages = 0;
     uint32_t num_cb_config_pages = 0;
@@ -37,9 +39,9 @@ struct CommandHeader {
     uint32_t num_go_signal_unicast_pages = 0;
     uint32_t issue_data_size = 0;
     uint32_t completion_data_size = 0;
+    uint32_t program_transfer_num_pages = 0;
+    uint32_t router_transfer_num_pages = 0;
     uint32_t producer_consumer_transfer_num_pages = 0;
-    uint32_t producer_router_transfer_num_pages = 0;
-    uint32_t consumer_router_transfer_num_pages = 0;
     uint32_t buffer_type = 0;
     uint32_t sharded_buffer_num_cores = 0;
     uint32_t new_issue_queue_size = 0;
@@ -48,6 +50,7 @@ struct CommandHeader {
     uint8_t event_sync_core_x = 0;
     uint8_t event_sync_core_y = 0;
     uint32_t event_sync_event_id = 0;
+    uint32_t fwd_path = 1;
 };
 
 static_assert((offsetof(CommandHeader, event) % 32) == 0);
@@ -77,7 +80,6 @@ class DeviceCommand {
     static constexpr uint32_t NUM_ENTRIES_PER_BUFFER_TRANSFER_INSTRUCTION = COMMAND_PTR_SHARD_IDX + NUM_MAX_CORES*NUM_ENTRIES_PER_SHARD;
     static constexpr uint32_t NUM_POSSIBLE_BUFFER_TRANSFERS = 2;
     // Perf measurements showed best results with divisions of 4 pages being transferred from producer -> consumer
-    // TODO (abhullar): Sync with agrebenisan to replicate measurments for producer -> router -> consumer path
     static constexpr uint32_t SYNC_NUM_PAGES = 4;
 
     // Ensure any changes to this device command have asserts modified/extended
@@ -108,11 +110,17 @@ class DeviceCommand {
 
     void set_page_size(const uint32_t page_size);
 
-    void set_producer_cb_size(const uint32_t cb_size);
+    void set_pull_and_push_cb_size(const uint32_t cb_size);
+
+   void set_producer_cb_size(const uint32_t cb_size);
 
     void set_consumer_cb_size(const uint32_t cb_size);
 
     void set_router_cb_size(const uint32_t cb_size);
+
+    void set_pull_and_push_cb_num_pages(const uint32_t cb_num_pages);
+
+    void set_producer_consumer_transfer_num_pages(const uint32_t producer_consumer_transfer_num_pages);
 
     void set_producer_cb_num_pages(const uint32_t cb_num_pages);
 
@@ -138,11 +146,9 @@ class DeviceCommand {
 
     void set_completion_data_size(const uint32_t data_size);
 
-    void set_producer_consumer_transfer_num_pages(const uint32_t producer_consumer_transfer_num_pages);
+    void set_program_transfer_num_pages(const uint32_t program_transfer_num_pages);
 
-    void set_producer_router_transfer_num_pages(const uint32_t producer_router_transfer_num_pages);
-
-    void set_consumer_router_transfer_num_pages(const uint32_t consumer_router_transfer_num_pages);
+    void set_router_transfer_num_pages(const uint32_t router_transfer_num_pages);
 
     void set_is_event_sync(const uint16_t is_event_sync);
     void set_event_sync_core_x(const uint8_t event_sync_core_x);

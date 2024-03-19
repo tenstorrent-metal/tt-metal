@@ -52,7 +52,7 @@ def linear(
     if bias is not None:
         tt_bias = setup_tt_tensor(bias, device, layout[2], input_mem_config[2], dtype[2])
 
-    _, __, out_features, in_features = tt_weight.shape()
+    _, __, out_features, in_features = tt_weight.get_legacy_shape()
     tt_linear = tt_Linear(in_features, out_features, tt_weight, tt_bias)
 
     t1 = tt_linear(t0)
@@ -800,6 +800,25 @@ def eltwise_lerp_binary(
     t2 = ttl.tensor.lerp(t0, t1, weight, output_mem_config=output_mem_config)
 
     return tt2torch_tensor(t2)
+
+
+@setup_host_and_device
+def eltwise_softplus(
+    x,
+    *args,
+    beta,
+    threshold,
+    device,
+    dtype,
+    layout,
+    input_mem_config,
+    output_mem_config,
+    **kwargs,
+):
+    t0 = setup_tt_tensor(x, device, layout[0], input_mem_config[0], dtype[0])
+    t1 = ttl.tensor.softplus(t0, beta, threshold, output_mem_config=output_mem_config)
+
+    return tt2torch_tensor(t1)
 
 
 @setup_host_and_device
@@ -2159,7 +2178,6 @@ eltwise_log10 = make_unary_op(ttl.tensor.log10)
 eltwise_swish = make_unary_op(ttl.tensor.swish)
 eltwise_add1 = make_unary_op(ttl.tensor.add1)
 eltwise_log1p = make_unary_op(ttl.tensor.log1p)
-eltwise_softplus = make_unary_op(ttl.tensor.softplus)
 eltwise_erfinv = make_unary_op(ttl.tensor.erfinv)
 eltwise_mish = make_unary_op(ttl.tensor.mish)
 eltwise_hardswish = make_unary_op(ttl.tensor.hardswish)

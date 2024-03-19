@@ -11,7 +11,6 @@ test-list:
         args-sampling-strategy: "all"
       datagen:
         function: gen_rand
-        dtype: bfloat16
         args:
           low: -100
           high: 100
@@ -20,7 +19,7 @@ test-list:
       args-gen: gen_dtype_layout_device
       args:
         data-layout: ["TILE"]
-        data-type: ["BFLOAT16"]
+        data-type: ["BFLOAT16", "BFLOAT8_B"]
         buffer-type: ["DRAM", "L1"]
         out-buffer-type: ["DRAM", "L1"]
       output-file: eltwise_eqz_sweep.csv

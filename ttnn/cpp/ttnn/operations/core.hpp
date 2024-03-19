@@ -21,7 +21,7 @@ static inline const std::array<ttnn::TensorSchema, 1> reshape_input_schemas{
     ttnn::TensorSchema{
         1,
         8,
-        {ttnn::bfloat16, ttnn::bfloat8_b, ttnn::uint16, ttnn::uint32, ttnn::float32},
+        {ttnn::bfloat16, ttnn::bfloat8_b, ttnn::bfloat4_b, ttnn::uint16, ttnn::uint32, ttnn::float32},
         {ttnn::TILE_LAYOUT, ttnn::ROW_MAJOR_LAYOUT},
         true,
         true,
@@ -32,7 +32,7 @@ static inline const std::array<ttnn::TensorSchema, 1> reshape_input_schemas{
 inline ttnn::Tensor reshape(const ttnn::Tensor& tensor, const ttnn::Shape& shape) {
     ttnn::validate_input_tensor("ttnn.reshape", tensor, reshape_input_schemas[0]);
 
-    auto tensor_shape = tensor.ttnn_shape();
+    auto tensor_shape = tensor.get_shape();
     if (tensor_shape == shape) {
         return tensor;
     }
@@ -41,7 +41,7 @@ inline ttnn::Tensor reshape(const ttnn::Tensor& tensor, const ttnn::Shape& shape
         return tensor.reshape(shape.value());
     });
 
-    const auto layout = tensor.layout();
+    const auto layout = tensor.get_layout();
 
     if (tensor.is_contiguous()) {
         if (ttnn::has_storage_type_of(tensor, ttnn::StorageType::DEVICE)) {
@@ -68,7 +68,7 @@ inline ttnn::Tensor reshape(const ttnn::Tensor& tensor, const ttnn::Shape& shape
     }
 
     if (ttnn::has_storage_type_of(tensor, ttnn::StorageType::DEVICE) and tensor_shape.rank() == 4 and
-        shape.rank() == 4 and tensor.dtype() == ttnn::bfloat16) {
+        shape.rank() == 4 and tensor.get_dtype() == ttnn::bfloat16) {
         auto shape_with_tile_padding = shape.with_tile_padding();
         const auto w = shape_with_tile_padding[0];
         const auto z = shape_with_tile_padding[1];
@@ -102,14 +102,14 @@ inline ttnn::Tensor reshape(const ttnn::Tensor& tensor, const std::array<int32_t
     std::array<std::uint32_t, Rank> new_shape{};
     std::copy(shape.begin(), shape.end(), new_shape.begin());
     if (new_volume < 0) {
-        const auto volume = tensor.ttnn_shape().with_tile_padding().volume();
+        const auto volume = tensor.get_shape().with_tile_padding().volume();
         new_shape[index_of_negative_1] = volume / (-new_volume);
     }
     return reshape(tensor, ttnn::Shape(new_shape));
 }
 
 inline ttnn::Tensor unsqueeze_to_4D(const ttnn::Tensor& tensor) {
-    const auto tensor_shape = tensor.ttnn_shape();
+    const auto tensor_shape = tensor.get_shape();
     const auto rank = tensor_shape.rank();
     if (rank == 4) {
         return tensor;
@@ -122,6 +122,30 @@ inline ttnn::Tensor unsqueeze_to_4D(const ttnn::Tensor& tensor) {
     return ttnn::operations::core::reshape(tensor, tensor_shape_4D);
 }
 
+inline ttnn::Tensor squeeze_from_4D(const ttnn::Tensor& tensor, const int rank) {
+    auto shape = tensor.get_shape();
+    if (shape.rank() != 4) {
+        TT_THROW("Tensor has to be of rank 4!");
+    }
+    if (rank < 1 or rank > 4) {
+        TT_THROW("Cannot use squeeze_from_4D to set the tensor to the rank of {}!", rank);
+    }
+
+    for (auto index = 0; index < 4 - rank; ++index) {
+        if (shape[index] != 1) {
+            TT_THROW("Cannot use squeeze_from_4D to set the tensor to the rank of {}!", rank);
+        }
+    }
+
+    switch (rank) {
+        case 1: return ttnn::operations::core::reshape(tensor, shape.to_rank<1>());
+        case 2: return ttnn::operations::core::reshape(tensor, shape.to_rank<2>());
+        case 3: return ttnn::operations::core::reshape(tensor, shape.to_rank<3>());
+        case 4: return tensor;
+        default: TT_THROW("Invalid choice!");
+    }
+}
+
 inline ttnn::Tensor from_device(const ttnn::Tensor& tensor) { return tensor.cpu(); }
 
 // TODO : @eyonland move these creation functions to creation.hpp
@@ -132,9 +156,8 @@ inline ttnn::Tensor full(
     const DataType data_type,
     const Layout layout,
     Device& device,
-    const MemoryConfig& output_mem_config = MemoryConfig{
-        .memory_layout = tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
-    return tt::numpy::full(shape.with_tile_padding().value(), value, data_type, layout, &device, output_mem_config);
+    const MemoryConfig& memory_config = ttnn::DRAM_MEMORY_CONFIG) {
+    return tt::numpy::full(shape.with_tile_padding().value(), value, data_type, layout, &device, memory_config);
 }
 
 inline ttnn::Tensor zeros(
@@ -142,9 +165,8 @@ inline ttnn::Tensor zeros(
     const DataType data_type,
     const Layout layout,
     Device& device,
-    const MemoryConfig& output_mem_config = MemoryConfig{
-        .memory_layout = tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
-    return full(shape, 0.0f, data_type, layout, device, output_mem_config);
+    const MemoryConfig& memory_config = ttnn::DRAM_MEMORY_CONFIG) {
+    return full(shape, 0.0f, data_type, layout, device, memory_config);
 }
 
 inline ttnn::Tensor ones(
@@ -152,9 +174,8 @@ inline ttnn::Tensor ones(
     const DataType data_type,
     const Layout layout,
     Device& device,
-    const MemoryConfig& output_mem_config = MemoryConfig{
-        .memory_layout = tt::tt_metal::TensorMemoryLayout::INTERLEAVED}) {
-    return full(shape, 1.0f, data_type, layout, device, output_mem_config);
+    const MemoryConfig& memory_config = ttnn::DRAM_MEMORY_CONFIG) {
+    return full(shape, 1.0f, data_type, layout, device, memory_config);
 }
 
 }  // namespace core
@@ -163,8 +184,9 @@ inline ttnn::Tensor ones(
 using operations::core::from_device;
 using operations::core::full;
 using operations::core::ones;
+using operations::core::zeros;
 using operations::core::reshape;
 using operations::core::unsqueeze_to_4D;
-using operations::core::zeros;
+using operations::core::squeeze_from_4D;
 
 }  // namespace ttnn

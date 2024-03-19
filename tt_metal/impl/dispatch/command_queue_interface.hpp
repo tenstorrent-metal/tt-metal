@@ -14,28 +14,43 @@
 using namespace tt::tt_metal;
 
 // Starting L1 address of commands
-inline uint32_t get_command_start_l1_address(bool use_eth_l1) {
-    return (use_eth_l1 ? eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE : L1_UNRESERVED_BASE);
+inline uint32_t get_command_start_l1_address() {
+    return L1_UNRESERVED_BASE;
+}
+
+inline uint32_t get_eth_command_start_l1_address(SyncCBConfigRegion cq_region) {
+    if (cq_region == SyncCBConfigRegion::ROUTER_ISSUE) {
+        return eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
+    } else if (cq_region == SyncCBConfigRegion::ROUTER_COMPLETION){
+        return eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + eth_l1_mem::address_map::ERISC_L1_TUNNEL_BUFFER_SIZE;
+    } else {
+        TT_ASSERT(false, "Unsupported router CB config");
+        return 0;
+    }
 }
 
 // Where issue queue interface core pulls in data (follows command)
 inline uint32_t get_data_section_l1_address(bool use_eth_l1) {
-    uint32_t l1_base = use_eth_l1 ? eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE : L1_UNRESERVED_BASE;
-    return l1_base + DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
+    if (use_eth_l1) {
+        return eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE + DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
+    } else {
+        return L1_UNRESERVED_BASE + DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
+    }
 }
 
-// Space available in issue queue interface core pushing command data to consumer to dispatch or relay forward
-inline uint32_t get_producer_data_buffer_size(bool use_eth_l1) {
-    uint32_t l1_size = use_eth_l1 ? MEM_ETH_SIZE : MEM_L1_SIZE;
-    uint32_t l1_base = use_eth_l1 ? eth_l1_mem::address_map::ERISC_APP_RESERVED_BASE : L1_UNRESERVED_BASE;
-    return (l1_size - (DeviceCommand::NUM_ENTRIES_IN_DEVICE_COMMAND * sizeof(uint32_t)) - l1_base);
+inline uint32_t get_cq_data_buffer_size(bool use_eth_l1) {
+    if (use_eth_l1) {
+        return eth_l1_mem::address_map::ERISC_L1_TUNNEL_BUFFER_SIZE - DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
+    } else {
+        return MEM_L1_SIZE - L1_UNRESERVED_BASE -  DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
+    }
 }
 
-// Space available in core receiving command data to dispatch or relay forward
-inline uint32_t get_consumer_data_buffer_size(bool use_eth_l1) {
-    uint32_t num_consumer_cmd_slots = use_eth_l1 ? 1 : 2;
-    uint32_t producer_data_buffer_size = get_producer_data_buffer_size(use_eth_l1);
-    return (producer_data_buffer_size - ((num_consumer_cmd_slots - 1) * DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND)) / num_consumer_cmd_slots;
+// Space available in command_queue_consumer
+inline uint32_t get_consumer_data_buffer_size() {
+    uint32_t num_consumer_cmd_slots = 2;
+    uint32_t producer_data_buffer_size = get_cq_data_buffer_size(false);
+    return (producer_data_buffer_size - DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND) / num_consumer_cmd_slots;
 }
 
 /// @brief Get offset of the command queue relative to its channel
@@ -188,7 +203,7 @@ class SystemMemoryManager {
     }
 
     void set_last_completed_event(const uint8_t cq_id, const uint32_t event_id) {
-        TT_ASSERT(event_id >= this->cq_to_last_completed_event[cq_id], "Event ID is expected to increase. Wrapping not supported for sync.");
+        TT_ASSERT(event_id >= this->cq_to_last_completed_event[cq_id], "Event ID is expected to increase. Wrapping not supported for sync. Completed event {} but last recorded completed event is {}", event_id, this->cq_to_last_completed_event[cq_id]);
         cq_to_event_locks[cq_id].lock();
         this->cq_to_last_completed_event[cq_id] = event_id;
         cq_to_event_locks[cq_id].unlock();

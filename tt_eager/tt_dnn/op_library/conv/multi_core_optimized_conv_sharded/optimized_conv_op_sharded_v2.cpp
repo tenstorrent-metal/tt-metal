@@ -59,13 +59,18 @@ tuple<CBHandle, CBHandle> create_CBs_for_sharded_input_v2(
     const Tensor& output,
     uint32_t bias_ntiles,
     bool with_bias,
-    bool split_reader
+    bool split_reader,
+    bool fp32_dest_acc_en,
+    bool packer_l1_acc
 ) {
+
+    tt::DataFormat interm0_df = packer_l1_acc ? (fp32_dest_acc_en ? tt::DataFormat::Float32 : tt::DataFormat::Float16_b) : out_df;
 
     uint32_t act_tile_size = tt_metal::detail::TileSize(act_df);
     uint32_t weight_tile_size = tt_metal::detail::TileSize(weight_df);
     uint32_t tilized_act_tile_size = tt_metal::detail::TileSize(tilized_act_df);
     uint32_t out_tile_size = tt_metal::detail::TileSize(out_df);
+    uint32_t interm0_single_tile_size = tt_metal::detail::TileSize(interm0_df);
 
     CBHandle cb_sharded_act = 0;
     if (input.memory_config().is_sharded()) {
@@ -126,8 +131,8 @@ tuple<CBHandle, CBHandle> create_CBs_for_sharded_input_v2(
 
     CBHandle cb_output = 0;
     if (untilize_out) {
-        CircularBufferConfig cb_matmul_partials_config = CircularBufferConfig(num_output_tiles * out_tile_size, {{matmul_partials_cb, out_df}})
-		    .set_page_size(matmul_partials_cb, out_tile_size);
+        CircularBufferConfig cb_matmul_partials_config = CircularBufferConfig(num_output_tiles * interm0_single_tile_size, {{matmul_partials_cb, interm0_df}})
+		    .set_page_size(matmul_partials_cb, interm0_single_tile_size);
         auto cb_matmul_partials = tt_metal::CreateCircularBuffer(program, core, cb_matmul_partials_config);
 
         // Supposed to be a small CB only responsible for reorganizing
@@ -143,18 +148,33 @@ tuple<CBHandle, CBHandle> create_CBs_for_sharded_input_v2(
         }
         cb_output = tt_metal::CreateCircularBuffer(program, core, cb_output_config);
     } else {
-        CoreRangeSet cores(std::set<CoreRange>({core}));
-        std::map<uint8_t, tt::DataFormat> cb_output_data_format_spec = {
-            {out0_cb, out_df},
-            {matmul_partials_cb, out_df}
-        };
-        CircularBufferConfig cb_matmul_partials_config = CircularBufferConfig(num_output_tiles * out_tile_size, cb_output_data_format_spec)
-		    .set_page_size(out0_cb, out_tile_size)
-            .set_page_size(matmul_partials_cb, out_tile_size);
-        if (output.is_sharded()) {
-            cb_matmul_partials_config = cb_matmul_partials_config.set_globally_allocated_address(*output.buffer());
+        //Share buffer if same data format
+        if(interm0_df == out_df) {
+            CoreRangeSet cores(std::set<CoreRange>({core}));
+            std::map<uint8_t, tt::DataFormat> cb_output_data_format_spec = {
+                {out0_cb, out_df},
+                {matmul_partials_cb, out_df}
+            };
+            CircularBufferConfig cb_matmul_partials_config = CircularBufferConfig(num_output_tiles * out_tile_size, cb_output_data_format_spec)
+                .set_page_size(out0_cb, out_tile_size)
+                .set_page_size(matmul_partials_cb, out_tile_size);
+            if (output.is_sharded()) {
+                cb_matmul_partials_config = cb_matmul_partials_config.set_globally_allocated_address(*output.buffer());
+            }
+            cb_output = tt_metal::CreateCircularBuffer(program, cores, cb_matmul_partials_config);
+        } else {
+            //Separate buffer if not same data format
+            CircularBufferConfig cb_matmul_partials_config = CircularBufferConfig(num_output_tiles * interm0_single_tile_size, {{matmul_partials_cb, interm0_df}})
+                .set_page_size(matmul_partials_cb, interm0_single_tile_size);
+            auto cb_matmul_partials = tt_metal::CreateCircularBuffer(program, core, cb_matmul_partials_config);
+
+            CircularBufferConfig cb_output_config = CircularBufferConfig(num_output_tiles * out_tile_size, {{out0_cb, out_df}})
+                .set_page_size(out0_cb, out_tile_size);
+            if (output.is_sharded()) {
+                cb_output_config = cb_output_config.set_globally_allocated_address(*output.buffer());
+            }
+            cb_output = tt_metal::CreateCircularBuffer(program, core, cb_output_config);
         }
-        cb_output = tt_metal::CreateCircularBuffer(program, cores, cb_matmul_partials_config);
     }
 
     if (with_bias) {
@@ -174,20 +194,20 @@ tuple<CBHandle, CBHandle> create_CBs_for_sharded_input_v2(
 operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tensor& a, const Tensor &b, const Shape& ashape, std::optional<const Tensor> bias, const std::optional<const Tensor> conv_reader_indices, vector<int> conv_params, uint32_t output_channels, bool untilize_out, bool has_bias, bool fuse_relu, const OptimizedConvParallelizationConfig& parallelization_config, const OptimizedConvBlockConfig& block_config, uint32_t extra_padding_for_32B_alignment, bool use_shallow_conv_variant, Tensor &output, DeviceComputeKernelConfig compute_kernel_config) {
     bool pass = true;
     tt_metal::Device *device = a.device();
-    TT_ASSERT(a.layout() == Layout::ROW_MAJOR, "Conv activation should be in row major layout");
+    TT_ASSERT(a.get_layout() == Layout::ROW_MAJOR, "Conv activation should be in row major layout");
     TT_ASSERT(a.memory_config().is_sharded(), "Conv activation must be sharded.");
-    TT_ASSERT(output_channels <= b.shape()[3], "Invalid weight shape. Incorrect weight tensor.");
+    TT_ASSERT(output_channels <= b.get_legacy_shape()[3], "Invalid weight shape. Incorrect weight tensor.");
     uint32_t act_block_h_ntiles = block_config.act_block_h_ntiles;
     uint32_t act_block_w_ntiles = block_config.act_block_w_ntiles;
-    uint32_t weight_block_w_ntiles = block_config.weight_block_w_ntiles;
-    uint32_t out_block_h_ntiles = block_config.out_block_h_ntiles;
+    uint32_t weight_block_w_ntiles = parallelization_config.per_core_out_matrix_width_ntiles;
+    uint32_t out_block_h_ntiles = parallelization_config.per_core_out_matrix_height_ntiles;
     uint32_t out_subblock_h_ntiles = block_config.out_subblock_h_ntiles;
     uint32_t out_subblock_w_ntiles = block_config.out_subblock_w_ntiles;
 
-    DataFormat act_df = tt_metal::datatype_to_dataformat_converter(a.dtype());
-    DataFormat weight_df = tt_metal::datatype_to_dataformat_converter(b.dtype());
-    DataFormat out_df = tt_metal::datatype_to_dataformat_converter(output.dtype());
-    DataFormat bias_df = has_bias ? tt_metal::datatype_to_dataformat_converter(bias.value().dtype()) : DataFormat::Float16_b;
+    DataFormat act_df = tt_metal::datatype_to_dataformat_converter(a.get_dtype());
+    DataFormat weight_df = tt_metal::datatype_to_dataformat_converter(b.get_dtype());
+    DataFormat out_df = tt_metal::datatype_to_dataformat_converter(output.get_dtype());
+    DataFormat bias_df = has_bias ? tt_metal::datatype_to_dataformat_converter(bias.value().get_dtype()) : DataFormat::Float16_b;
     DataFormat tilized_act_df = out_df;
 
     log_debug("act_df: {}", act_df);
@@ -237,11 +257,11 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
     TT_ASSERT(out_block_h_ntiles >= act_block_h_ntiles, "Output block height (in # of tiles) should be greater than or equal to activation block height (in # of tiles)");
 
     // Tensor b has weights and it should be tiled layout after converting conv weights into weight matrix
-    TT_ASSERT(b.layout() == Layout::TILE, "Conv weights should be in tiled layout");
-    TT_ASSERT(b.shape()[0] == 1, "Conv weight matrix shape is invalid");
-    TT_ASSERT(b.shape()[1] == 1, "Conv weight matrix shape is invalid");
-    uint32_t weight_matrix_height = b.shape()[2];
-    uint32_t weight_matrix_width = b.shape()[3];
+    TT_ASSERT(b.get_layout() == Layout::TILE, "Conv weights should be in tiled layout");
+    TT_ASSERT(b.get_legacy_shape()[0] == 1, "Conv weight matrix shape is invalid");
+    TT_ASSERT(b.get_legacy_shape()[1] == 1, "Conv weight matrix shape is invalid");
+    uint32_t weight_matrix_height = b.get_legacy_shape()[2];
+    uint32_t weight_matrix_width = b.get_legacy_shape()[3];
     uint32_t weight_matrix_height_ntiles = weight_matrix_height / TILE_HEIGHT;
     uint32_t weight_matrix_width_ntiles = weight_matrix_width / TILE_WIDTH;
 
@@ -250,7 +270,6 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
     // TODO: Only updated variables which is affected, but there may be more that needs to account for this
     // TODO: Loop naming in reader, writer, and compute kernels could also be cleaned up
     // TODO: Can conv_act_c_blocks be same as num_blocks_act_w?
-    uint32_t conv_act_c_blocks = block_config.act_c_num_blocks;
     auto shard_shape = a.shard_spec().value().shape;
 
     // parallelization config
@@ -261,11 +280,11 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
     assert(num_cores_x < 13);
     assert(num_cores_y < 10);
     uint32_t per_core_out_matrix_height_ntiles = p_config.per_core_out_matrix_height_ntiles;
-    uint32_t per_core_weight_matrix_width_ntiles = p_config.per_core_weight_matrix_width_ntiles;
+    uint32_t per_core_out_matrix_width_ntiles = p_config.per_core_out_matrix_width_ntiles;
 
     // weight_width_sliced determines is 1d-sysarr-conv or 2d-sysarr-conv
-    bool weight_width_sliced = per_core_weight_matrix_width_ntiles < weight_matrix_width_ntiles;
-    assert(conv_act_c_blocks == weight_matrix_width_ntiles / per_core_weight_matrix_width_ntiles);
+    bool weight_width_sliced = per_core_out_matrix_width_ntiles < weight_matrix_width_ntiles;
+    uint32_t conv_act_c_blocks = weight_matrix_width_ntiles / per_core_out_matrix_width_ntiles;
     uint32_t input_channels_padded = 0;
     if(weight_width_sliced) {
         TT_FATAL(conv_act_c_blocks == num_cores_y, "Expected conv_act_blocks to be equal to height of grid");
@@ -307,7 +326,7 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
         // Tensor bias is of shape {output_channels}
         TT_ASSERT(bias.has_value());
         TT_ASSERT(bias.value().buffer() != nullptr);
-        auto bias_shape_without_padding = bias.value().shape().without_padding();
+        auto bias_shape_without_padding = bias.value().get_legacy_shape().without_padding();
         TT_ASSERT(bias_shape_without_padding[0] == 1, "Bias should have batch == 1");
     }
 
@@ -414,7 +433,7 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
     if (has_bias) {
         bias_buffer = bias.value().buffer();
         bias_dram_addr = bias_buffer->address();
-        bias_ntiles = bias.value().shape()[3] / constants::TILE_WIDTH;  // TODO: support non tile multiple sizes
+        bias_ntiles = bias.value().get_legacy_shape()[3] / constants::TILE_WIDTH;  // TODO: support non tile multiple sizes
     }
 
     //uint32_t conv_output_size_h = ((conv_act_size_h - weight_size_h + (2 * pad_h)) / stride_h) + 1;
@@ -500,13 +519,13 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
     reader_defines["WINDOW_INNER"] = std::to_string(window_inner);
     log_debug("window_outer: {}, window_inner: {}", window_outer, window_inner);
 
-    assert(weight_matrix_width_ntiles % per_core_weight_matrix_width_ntiles == 0);
-    assert(per_core_weight_matrix_width_ntiles % weight_block_w_ntiles == 0);
-    uint32_t num_blocks_weight_w_per_core = per_core_weight_matrix_width_ntiles / weight_block_w_ntiles;
+    assert(weight_matrix_width_ntiles % per_core_out_matrix_width_ntiles == 0);
+    assert(per_core_out_matrix_width_ntiles % weight_block_w_ntiles == 0);
+    uint32_t num_blocks_weight_w_per_core = per_core_out_matrix_width_ntiles / weight_block_w_ntiles;
     if (not weight_width_sliced) {
         assert(num_blocks_weight_w_per_core == num_blocks_weight_w);
     }
-    uint32_t num_weight_slices_width = weight_matrix_width_ntiles / per_core_weight_matrix_width_ntiles;
+    uint32_t num_weight_slices_width = weight_matrix_width_ntiles / per_core_out_matrix_width_ntiles;
     assert(num_cores_y % num_weight_slices_width == 0);
     uint32_t num_cores_y_per_weight_slice_width = num_cores_y / num_weight_slices_width;
     uint32_t total_num_cores_per_weight_slice = num_cores_y_per_weight_slice_width * num_cores_x;
@@ -619,7 +638,7 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
 
     if (fully_buffer_weights) {
         num_weight_cb_tiles *= window_outer;
-    } else if (per_core_weight_matrix_width_ntiles < 5 && per_core_out_matrix_height_ntiles < 22) {
+    } else if (per_core_out_matrix_width_ntiles < 5 && per_core_out_matrix_height_ntiles < 22) {
         num_weight_cb_tiles = num_weight_cb_tiles * 2;
     }
 
@@ -652,7 +671,9 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
             output,
             bias_ntiles_per_core,
             has_bias,
-            split_reader
+            split_reader,
+            fp32_dest_acc_en,
+            packer_l1_acc
     );
 
     string reader_kernel;
@@ -762,6 +783,10 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
     if (split_reader) {
         reader_defines["SPLIT_READER"] = "1";
         compute_defines["SPLIT_READER"] = "1";
+    }
+
+    if (packer_l1_acc) {
+        compute_defines["PACKER_L1_ACC"] = "1";
     }
 
     writer_compile_time_args = {
@@ -900,10 +925,10 @@ operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_v2_(const Tens
         uint32_t out_w_start = matrix_h_start % conv_output_size_w;
         uint32_t in_h_start = (n_start * conv_act_size_h) + out_h_start * stride_h;
         uint32_t last_start_in_h_curr_image = 222 + (n_start * conv_act_size_h);
-        uint32_t out_start_tile_id = (act_slice_i * per_core_out_matrix_height_ntiles * weight_matrix_width_ntiles) + (weight_slice_i * per_core_weight_matrix_width_ntiles);
+        uint32_t out_start_tile_id = (act_slice_i * per_core_out_matrix_height_ntiles * weight_matrix_width_ntiles) + (weight_slice_i * per_core_out_matrix_width_ntiles);
         uint32_t out_start_tile_id_h = act_slice_i * per_core_out_matrix_height_ntiles;
-        uint32_t out_start_tile_id_w = weight_slice_i * per_core_weight_matrix_width_ntiles;
-        uint32_t bias_tile_offset = weight_slice_i * per_core_weight_matrix_width_ntiles;
+        uint32_t out_start_tile_id_w = weight_slice_i * per_core_out_matrix_width_ntiles;
+        uint32_t bias_tile_offset = weight_slice_i * per_core_out_matrix_width_ntiles;
         if (has_bias) {
             assert(bias_tile_offset < bias_ntiles);
         }

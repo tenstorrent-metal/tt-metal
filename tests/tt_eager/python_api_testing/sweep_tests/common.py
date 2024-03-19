@@ -39,7 +39,7 @@ def run_tt_lib_test(
     device=None,
     plot_func=None,
 ):
-    logger.info(f"Running with args: {test_args}")
+    logger.debug(f"Running with args: {test_args}")
 
     tensor_inputs = []
 
@@ -51,6 +51,8 @@ def run_tt_lib_test(
     pytorch_out = pytorch_op(*tensor_inputs, **test_args)
 
     result, output = output_comparison_func(pytorch_out, tt_lib_out)
+
+    logger.info(f"{result} {output}")
 
     if plot_func is not None:
         test_name = str(pytorch_op).split()[1]
@@ -116,31 +118,6 @@ def align_to_interval(x, start_val, interval):
 def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, test_tt_layouts, test_buffer_types):
     num_shapes = shape_dict["num-shapes"]
 
-    # Datagen functions
-    if isinstance(datagen_dict, dict):
-        datagen_funcs = [
-            generation_funcs.gen_func_with_cast(
-                partial(
-                    getattr(generation_funcs, datagen_dict["function"]),
-                    **datagen_dict["args"],
-                ),
-                generation_funcs.supported_dtypes[datagen_dict.get("dtype", "float32")],
-                datagen_dict.get("tilize", False),
-            )
-        ] * num_shapes
-    elif isinstance(datagen_dict, list):
-        datagen_funcs = [
-            generation_funcs.gen_func_with_cast(
-                partial(
-                    getattr(generation_funcs, _datagen_dict["function"]),
-                    **_datagen_dict["args"],
-                ),
-                generation_funcs.supported_dtypes[_datagen_dict.get("dtype", "float32")],
-                _datagen_dict.get("tilize", False),
-            )
-            for _datagen_dict in datagen_dict
-        ]
-
     # Helper
     def _gen_args(input_shapes):
         args = test_args_gen(input_shapes, test_tt_dtypes, test_tt_layouts, test_buffer_types)
@@ -151,7 +128,28 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
             generated_test_args = random.choice(args)
             args = [generated_test_args]
 
-        return args
+        result = []
+
+        # Add datagen_funcs
+        for generated_test_args in args:
+            datagen_funcs = []
+
+            for i in range(len(generated_test_args["dtype"])):
+                _datagen_dict = datagen_dict[i] if isinstance(datagen_dict, list) else datagen_dict
+
+                datagen_funcs.append(
+                    generation_funcs.gen_func_with_cast_tt(
+                        partial(
+                            getattr(generation_funcs, _datagen_dict["function"]),
+                            **_datagen_dict["args"],
+                        ),
+                        generated_test_args["dtype"][i],
+                    )
+                )
+
+            result.append((datagen_funcs, generated_test_args))
+
+        return result
 
     if "shape-list" in shape_dict:
         # Path for running hardcoded shapes; ignore all other parameters
@@ -159,7 +157,7 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
         for shape in shape_list:
             assert len(shape) == num_shapes
 
-            for generated_test_args in _gen_args(shape):
+            for datagen_funcs, generated_test_args in _gen_args(shape):
                 yield shape, datagen_funcs, generated_test_args
     else:
         start_shape = shape_dict["start-shape"]
@@ -180,7 +178,7 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                 for shape in product(*dim_ranges):
                     input_shapes = shape_transformator(shape)
 
-                    for generated_test_args in _gen_args(input_shapes):
+                    for datagen_funcs, generated_test_args in _gen_args(input_shapes):
                         yield input_shapes, datagen_funcs, generated_test_args
 
             else:
@@ -202,7 +200,7 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                             sample_id += 1
                             continue
 
-                        for generated_test_args in args:
+                        for datagen_funcs, generated_test_args in args:
                             sample_id += 1
                             yield input_shapes, datagen_funcs, generated_test_args
 
@@ -704,6 +702,21 @@ def shapes_and_datagen(shape_dict, datagen_dict, test_args_gen, test_tt_dtypes, 
                 weights_shape = [shape[1]]
 
                 return [input_shape, weights_shape]
+
+            for shapes, datagen_funcs, test_args in _gen_shapes_and_args(
+                start_shape, end_shape, interval, _gen_ttnn_rmsnorm_shapes
+            ):
+                yield shapes, datagen_funcs, test_args
+        elif method == "ttnn-groupnorm":
+            assert len(start_shape) == 2
+            assert len(end_shape) == 2
+
+            def _gen_ttnn_rmsnorm_shapes(shape):
+                input_shape = [shape[0], shape[1]]
+                weights_shape = [shape[1]]
+                bias_shape = [shape[1]]
+
+                return [input_shape, weights_shape, bias_shape]
 
             for shapes, datagen_funcs, test_args in _gen_shapes_and_args(
                 start_shape, end_shape, interval, _gen_ttnn_rmsnorm_shapes

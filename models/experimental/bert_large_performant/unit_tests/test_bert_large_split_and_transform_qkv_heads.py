@@ -46,14 +46,14 @@ def run_split_query_key_value_and_split_heads_test(device, batch, dtype, in0_mem
     assert q.memory_config().buffer_type == out_mem_config.buffer_type
     assert k.memory_config().buffer_type == out_mem_config.buffer_type
     assert v.memory_config().buffer_type == out_mem_config.buffer_type
-    logger.debug(f"in0: {a_t.memory_config().buffer_type} and {a_t.dtype()}")
-    logger.debug(f"q: {q.memory_config().buffer_type} and {q.dtype()}")
-    logger.debug(f"k: {k.memory_config().buffer_type} and {k.dtype()}")
-    logger.debug(f"v: {v.memory_config().buffer_type} and {v.dtype()}")
+    logger.debug(f"in0: {a_t.memory_config().buffer_type} and {a_t.get_dtype()}")
+    logger.debug(f"q: {q.memory_config().buffer_type} and {q.get_dtype()}")
+    logger.debug(f"k: {k.memory_config().buffer_type} and {k.get_dtype()}")
+    logger.debug(f"v: {v.memory_config().buffer_type} and {v.get_dtype()}")
 
-    assert q.shape() == [batch, 16, 384, 64]
-    assert k.shape() == [batch, 16, 64, 384]
-    assert v.shape() == [batch, 16, 384, 64]
+    assert q.get_legacy_shape() == [batch, 16, 384, 64]
+    assert k.get_legacy_shape() == [batch, 16, 64, 384]
+    assert v.get_legacy_shape() == [batch, 16, 384, 64]
 
     tt_host_rm_q = q.cpu().to(ttl.tensor.Layout.ROW_MAJOR)
     pyt_got_back_rm_q = tt_host_rm_q.to_torch()
@@ -69,16 +69,16 @@ def run_split_query_key_value_and_split_heads_test(device, batch, dtype, in0_mem
     ref_v = ref_v.reshape([batch, 384, 16, 64]).transpose(-3, -2)
 
     passing_pcc_q, output_pcc_q = comp_pcc(pyt_got_back_rm_q, ref_q, 0.99)
-    logger.info(f"Q passing={passing_pcc_q}")
-    logger.info(f"Q output pcc={output_pcc_q}")
+    logger.debug(f"Q passing={passing_pcc_q}")
+    logger.debug(f"Q output pcc={output_pcc_q}")
     assert passing_pcc_q
     passing_pcc_k, output_pcc_k = comp_pcc(pyt_got_back_rm_k, ref_k, 0.99)
-    logger.info(f"K passing={passing_pcc_k}")
-    logger.info(f"K output pcc={output_pcc_k}")
+    logger.debug(f"K passing={passing_pcc_k}")
+    logger.debug(f"K output pcc={output_pcc_k}")
     assert passing_pcc_k
     passing_pcc_v, output_pcc_v = comp_pcc(pyt_got_back_rm_v, ref_v, 0.99)
-    logger.info(f"V passing={passing_pcc_v}")
-    logger.info(f"V output pcc={output_pcc_v}")
+    logger.debug(f"V passing={passing_pcc_v}")
+    logger.debug(f"V output pcc={output_pcc_v}")
     assert passing_pcc_v
 
 
@@ -136,4 +136,4 @@ def test_split_query_key_value_and_split_heads_with_program_cache(device, use_pr
         py_dummy_tensor = torch.randn(dummy_shape)
         tt_dummy_tensor = ttl.tensor.Tensor(py_dummy_tensor, dtype).to(ttl.tensor.Layout.TILE).to(device, mem_config)
 
-    assert ttl.program_cache.num_entries() == 2
+    assert device.num_program_cache_entries() == 2

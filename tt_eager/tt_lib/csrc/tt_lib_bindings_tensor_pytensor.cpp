@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <chrono>
+#include <memory>
 
 #include "tensor/borrowed_buffer.hpp"
 #include "tensor/owned_buffer.hpp"
@@ -13,8 +14,17 @@
 
 namespace tt::tt_metal::detail {
 
+template <typename T>
+Tensor create_owned_tensor(T* data_ptr, size_t num_elements, std::vector<uint32_t>& shape, DataType data_type, Layout layout)
+{
+    auto data = std::vector(data_ptr, data_ptr + num_elements);
+    auto buffer = owned_buffer::create(std::move(data));
+    auto storage = OwnedStorage{std::move(buffer)};
+    return Tensor(std::move(storage), shape, data_type, layout);
+}
+
 Tensor convert_torch_tensor_to_tt_tensor(
-    const py::handle &torch_tensor, std::optional<DataType> optional_data_type = std::nullopt) {
+    const py::handle &torch_tensor, std::optional<DataType> optional_data_type = std::nullopt, bool enable_borrow = true) {
     py::object torch = py::module_::import("torch");
     if (not py::isinstance(torch_tensor, torch.attr("Tensor"))) {
         TT_THROW("The argument must be of type torch.Tensor!");
@@ -45,13 +55,16 @@ Tensor convert_torch_tensor_to_tt_tensor(
     } else if (torch_dtype.equal(torch.attr("int32"))) {
         // TODO(arakhmati): add DataType::INT32?
         data_type = DataType::UINT32;
+    }  else if (torch_dtype.equal(torch.attr("int16"))) {
+        // TODO(arakhmati): add DataType::INT16?
+        data_type = DataType::UINT16;
     } else {
         TT_THROW(fmt::format("Unsupported DataType: {}", py::repr(torch_dtype)));
     }
 
     switch (data_type) {
         case DataType::UINT16: {
-            if (not torch_dtype.equal(torch.attr("int32"))) {
+            if (not torch_dtype.equal(torch.attr("int16"))) {
                 contiguous_torch_tensor = contiguous_torch_tensor.attr("to")(torch.attr("int16"));
             }
             break;
@@ -62,6 +75,7 @@ Tensor convert_torch_tensor_to_tt_tensor(
             }
             break;
         }
+        case DataType::BFLOAT4_B:
         case DataType::BFLOAT8_B:
         case DataType::FLOAT32: {
             if (not torch_dtype.equal(torch.attr("float32"))) {
@@ -89,32 +103,57 @@ Tensor convert_torch_tensor_to_tt_tensor(
     switch (data_type) {
         case DataType::UINT16: {
             auto data_ptr = reinterpret_cast<uint16_t *>(torch_data_ptr);
-            auto storage = BorrowedStorage(
-                borrowed_buffer::Buffer(data_ptr, num_elements), on_creation_callback, on_destruction_callback);
-            return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+            if (enable_borrow) {
+                auto storage = BorrowedStorage(
+                    borrowed_buffer::Buffer(data_ptr, num_elements), on_creation_callback, on_destruction_callback);
+                return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+            } else {
+                return create_owned_tensor(data_ptr, num_elements, shape, data_type, Layout::ROW_MAJOR);
+            }
         }
         case DataType::UINT32: {
             auto data_ptr = reinterpret_cast<uint32_t *>(torch_data_ptr);
-            auto storage = BorrowedStorage(
-                borrowed_buffer::Buffer(data_ptr, num_elements), on_creation_callback, on_destruction_callback);
-            return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+            if (enable_borrow) {
+                auto storage = BorrowedStorage(
+                    borrowed_buffer::Buffer(data_ptr, num_elements), on_creation_callback, on_destruction_callback);
+                return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+            } else {
+                return create_owned_tensor(data_ptr, num_elements, shape, data_type, Layout::ROW_MAJOR);
+            }
         }
         case DataType::FLOAT32: {
             auto data_ptr = reinterpret_cast<float *>(torch_data_ptr);
-            auto storage = BorrowedStorage(
-                borrowed_buffer::Buffer(data_ptr, num_elements), on_creation_callback, on_destruction_callback);
-            return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+            if (enable_borrow) {
+                auto storage = BorrowedStorage(
+                    borrowed_buffer::Buffer(data_ptr, num_elements), on_creation_callback, on_destruction_callback);
+                return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+            } else {
+                return create_owned_tensor(data_ptr, num_elements, shape, data_type, Layout::ROW_MAJOR);
+            }
         }
         case DataType::BFLOAT16: {
             auto data_ptr = reinterpret_cast<bfloat16 *>(torch_data_ptr);
-            auto storage = BorrowedStorage(
-                borrowed_buffer::Buffer(data_ptr, num_elements), on_creation_callback, on_destruction_callback);
-            return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+            if (enable_borrow) {
+                auto storage = BorrowedStorage(
+                    borrowed_buffer::Buffer(data_ptr, num_elements), on_creation_callback, on_destruction_callback);
+                return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+            } else {
+                return create_owned_tensor(data_ptr, num_elements, shape, data_type, Layout::ROW_MAJOR);
+            }
         }
         case DataType::BFLOAT8_B: {
             auto data_ptr = reinterpret_cast<float *>(torch_data_ptr);
             auto data = std::vector<float>(data_ptr, data_ptr + num_elements);
             auto uint32_vector = pack_fp32_vec_as_bfp8_tiles(data, /*row_major_input=*/false, /*is_exp_a=*/false);
+            auto buffer = owned_buffer::create<uint32_t>(std::move(uint32_vector));
+            auto storage = OwnedStorage{std::move(buffer)};
+            // TODO(arakhmati): should it be Layout::TILE?
+            return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+        }
+        case DataType::BFLOAT4_B: {
+            auto data_ptr = reinterpret_cast<float *>(torch_data_ptr);
+            auto data = std::vector<float>(data_ptr, data_ptr + num_elements);
+            auto uint32_vector = pack_fp32_vec_as_bfp4_tiles(data, /*row_major_input=*/false, /*is_exp_a=*/false);
             auto buffer = owned_buffer::create<uint32_t>(std::move(uint32_vector));
             auto storage = OwnedStorage{std::move(buffer)};
             // TODO(arakhmati): should it be Layout::TILE?
@@ -129,7 +168,6 @@ Tensor convert_torch_tensor_to_tt_tensor(
 
 Tensor convert_numpy_tensor_to_tt_tensor(
     const py::handle &np_tensor, std::optional<DataType> optional_data_type = std::nullopt) {
-    std::cout << "convert_numpy_tensor_to_tt_tensor" << std::endl;
     py::object np = py::module_::import("numpy");
     if (not py::isinstance(np_tensor, np.attr("ndarray"))) {
         TT_THROW("The tensor must be of type numpy.ndarray!");
@@ -175,6 +213,7 @@ Tensor convert_numpy_tensor_to_tt_tensor(
             }
             break;
         }
+        case DataType::BFLOAT4_B:
         case DataType::BFLOAT8_B:
         case DataType::FLOAT32: {
             if (not np_dtype.equal(np.attr("float32"))) {
@@ -239,6 +278,15 @@ Tensor convert_numpy_tensor_to_tt_tensor(
             // TODO(arakhmati): should it be Layout::TILE?
             return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
         }
+        case DataType::BFLOAT4_B: {
+            auto data_ptr = reinterpret_cast<float *>(np_data_ptr);
+            auto data = std::vector<float>(data_ptr, data_ptr + num_elements);
+            auto uint32_vector = pack_fp32_vec_as_bfp4_tiles(data, /*row_major_input=*/false, /*is_exp_a=*/false);
+            auto buffer = owned_buffer::create<uint32_t>(std::move(uint32_vector));
+            auto storage = OwnedStorage{std::move(buffer)};
+            // TODO(arakhmati): should it be Layout::TILE?
+            return Tensor(std::move(storage), shape, data_type, Layout::ROW_MAJOR);
+        }
         default: {
             TT_THROW(fmt::format("Unsupported DataType: {}", data_type));
             break;
@@ -247,11 +295,11 @@ Tensor convert_numpy_tensor_to_tt_tensor(
 }
 
 Tensor convert_python_tensor_to_tt_tensor(
-    const py::handle &tensor, std::optional<DataType> optional_data_type = std::nullopt) {
+    const py::handle &tensor, std::optional<DataType> optional_data_type = std::nullopt, bool enable_borrow = true) {
     py::object torch = py::module_::import("torch");
     py::object np = py::module_::import("numpy");
     if (py::isinstance(tensor, torch.attr("Tensor"))) {
-        return convert_torch_tensor_to_tt_tensor(tensor, optional_data_type);
+        return convert_torch_tensor_to_tt_tensor(tensor, optional_data_type, enable_borrow);
     } else if (py::isinstance(tensor, np.attr("ndarray"))) {
         return convert_numpy_tensor_to_tt_tensor(tensor, optional_data_type);
     } else {
@@ -259,10 +307,30 @@ Tensor convert_python_tensor_to_tt_tensor(
     }
 }
 
+Tensor convert_python_tensors_to_tt_tensors(py::list tensor_shards, std::optional<DataType> data_type) {
+    std::vector<Tensor> tt_shards;
+    for (const auto &shard : tensor_shards) {
+        tt_shards.push_back(detail::convert_python_tensor_to_tt_tensor(shard, data_type, false));
+    }
+    std::vector<OwnedBuffer> host_owned_buffers;
+    std::vector<Shape> host_owned_shapes;
+    for (const auto &shard : tt_shards) {
+        host_owned_buffers.push_back(std::get<OwnedStorage>(shard.get_storage()).buffer);
+        host_owned_shapes.push_back(shard.get_legacy_shape());
+    }
+    auto storage = MultiDeviceHostStorage{std::move(host_owned_buffers), host_owned_shapes};
+
+    return Tensor(std::move(storage), tt_shards.at(0).get_legacy_shape(), tt_shards.at(0).get_dtype(), Layout::ROW_MAJOR);
+}
+
     OwnedBuffer create_owned_buffer_from_vector_of_floats(std::vector<float>&& data, DataType data_type) {
         switch (data_type) {
             case DataType::BFLOAT8_B: {
                 auto uint32_vector = pack_fp32_vec_as_bfp8_tiles(data, /*row_major_input=*/false, /*is_exp_a=*/false);
+                return owned_buffer::create<uint32_t>(std::move(uint32_vector));
+            }
+            case DataType::BFLOAT4_B: {
+                auto uint32_vector = pack_fp32_vec_as_bfp4_tiles(data, /*row_major_input=*/false, /*is_exp_a=*/false);
                 return owned_buffer::create<uint32_t>(std::move(uint32_vector));
             }
             case DataType::FLOAT32: {
@@ -291,7 +359,7 @@ Tensor convert_python_tensor_to_tt_tensor(
         auto frombuffer = torch.attr("frombuffer");
 
         auto buffer = std::visit(
-            [] (auto&& storage) -> std::variant<OwnedBuffer, BorrowedBuffer> {
+            [](auto &&storage) -> std::variant<OwnedBuffer, BorrowedBuffer> {
                 using T = std::decay_t<decltype(storage)>;
                 if constexpr (std::is_same_v<T, OwnedStorage>) {
                     return storage.buffer;
@@ -300,17 +368,26 @@ Tensor convert_python_tensor_to_tt_tensor(
                     TT_THROW("Device tensor cannot be converted to torch");
                 } else if constexpr (std::is_same_v<T, BorrowedStorage>) {
                     return storage.buffer;
+                } else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                    TT_THROW("Tensor with MultiDeviceStorage cannot be converted to torch");
+                } else if constexpr (std::is_same_v<T, MultiDeviceHostStorage>) {
+                    TT_THROW("Tensor MultiDeviceHostStorage cannot be converted to torch directly. Use composer(..) functionality.");
                 } else {
                     raise_unsupported_storage<T>();
                 }
             },
-            tt_tensor.storage()
-        );
+            tt_tensor.get_storage());
 
-        auto tt_dtype = tt_tensor.dtype();
+        auto tt_dtype = tt_tensor.get_dtype();
         if (tt_dtype == DataType::BFLOAT8_B) {
             auto uint32_data = std::get<owned_buffer::Buffer<std::uint32_t>>(std::get<OwnedBuffer>(buffer)).get();
             auto float_unpacked_data = unpack_bfp8_tiles_into_float_vec(uint32_data, /*row_major_output=*/false, /*is_exp_a=*/false);
+            buffer = owned_buffer::create<float>(std::move(float_unpacked_data));
+            tt_dtype = DataType::FLOAT32;
+        }
+        if (tt_dtype == DataType::BFLOAT4_B) {
+            auto uint32_data = std::get<owned_buffer::Buffer<std::uint32_t>>(std::get<OwnedBuffer>(buffer)).get();
+            auto float_unpacked_data = unpack_bfp4_tiles_into_float_vec(uint32_data, /*row_major_output=*/false, /*is_exp_a=*/false);
             buffer = owned_buffer::create<float>(std::move(float_unpacked_data));
             tt_dtype = DataType::FLOAT32;
         }
@@ -323,7 +400,7 @@ Tensor convert_python_tensor_to_tt_tensor(
         };
         auto torch_dtype = tt_dtype_to_torch_dtype.at(tt_dtype);
 
-        auto shape = tt_tensor.shape();
+        auto shape = tt_tensor.get_legacy_shape();
         auto torch_shape = std::vector<std::uint32_t>(std::begin(shape), std::end(shape));
         auto tensor = frombuffer(buffer, "dtype"_a=torch_dtype);
         tensor = tensor.attr("reshape")(torch_shape);
@@ -350,17 +427,28 @@ Tensor convert_python_tensor_to_tt_tensor(
                     TT_THROW("Device tensor cannot be converted to numpy");
                 } else if constexpr (std::is_same_v<T, BorrowedStorage>) {
                     return storage.buffer;
+                } else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                    TT_THROW("Device tensor cannot be converted to numpy");
+                } else if constexpr (std::is_same_v<T, MultiDeviceHostStorage>) {
+                    TT_THROW("Device tensor cannot be converted to torch");
                 } else {
                     raise_unsupported_storage<T>();
                 }
             },
-            tt_tensor.storage());
+            tt_tensor.get_storage());
 
-        auto tt_dtype = tt_tensor.dtype();
+        auto tt_dtype = tt_tensor.get_dtype();
         if (tt_dtype == DataType::BFLOAT8_B) {
             auto uint32_data = std::get<owned_buffer::Buffer<std::uint32_t>>(std::get<OwnedBuffer>(buffer)).get();
             auto float_unpacked_data =
                 unpack_bfp8_tiles_into_float_vec(uint32_data, /*row_major_output=*/false, /*is_exp_a=*/false);
+            buffer = owned_buffer::create<float>(std::move(float_unpacked_data));
+            tt_dtype = DataType::FLOAT32;
+        }
+        if (tt_dtype == DataType::BFLOAT4_B) {
+            auto uint32_data = std::get<owned_buffer::Buffer<std::uint32_t>>(std::get<OwnedBuffer>(buffer)).get();
+            auto float_unpacked_data =
+                unpack_bfp4_tiles_into_float_vec(uint32_data, /*row_major_output=*/false, /*is_exp_a=*/false);
             buffer = owned_buffer::create<float>(std::move(float_unpacked_data));
             tt_dtype = DataType::FLOAT32;
         }
@@ -372,7 +460,7 @@ Tensor convert_python_tensor_to_tt_tensor(
         };
         auto np_dtype = tt_dtype_to_np_dtype.at(tt_dtype);
 
-        auto shape = tt_tensor.shape();
+        auto shape = tt_tensor.get_legacy_shape();
         auto np_shape = std::vector<std::uint32_t>(std::begin(shape), std::end(shape));
         auto tensor = frombuffer(buffer, "dtype"_a = np_dtype);
         tensor = tensor.attr("reshape")(np_shape);
@@ -489,7 +577,6 @@ Tensor convert_python_tensor_to_tt_tensor(
         // For additional info see: https://pybind11.readthedocs.io/en/stable/advanced/functions.html#keep-alive
         auto pyTensor = py::class_<Tensor>(m_tensor, "Tensor", R"doc(
 
-
             Class constructor supports tensors of rank 4.
             The constructor takes following arguments:
 
@@ -507,6 +594,8 @@ Tensor convert_python_tensor_to_tt_tensor(
             |            |                                                        |                           | tt_lib.tensor.DataType.UINT32      |          |
             |            |                                                        |                           |                                    |          |
             |            |                                                        |                           | tt_lib.tensor.DataType.BFLOAT8_B   |          |
+            |            |                                                        |                           |                                    |          |
+            |            |                                                        |                           | tt_lib.tensor.DataType.BFLOAT4_B   |          |
             +------------+--------------------------------------------------------+---------------------------+------------------------------------+----------+
             | layout     | Layout of tensor data in memory                        | tt_lib.tensor.Layout      | tt_lib.tensor.Layout.ROW_MAJOR     | Yes      |
             |            |                                                        |                           |                                    |          |
@@ -519,7 +608,7 @@ Tensor convert_python_tensor_to_tt_tensor(
 
         )doc");
 
-        pyTensor
+        pyTensor.def(py::init<ttnn::Tensor &>())
             .def(
                 py::init<>([](std::vector<float> &&data,
                               const std::array<uint32_t, 4> &shape,
@@ -581,7 +670,7 @@ Tensor convert_python_tensor_to_tt_tensor(
                     | arg3          | device        |
                     +---------------+---------------+
 
-                    Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B (in TILE layout) are supported on device.
+                    Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B, BFLOAT4_B (in TILE layout) are supported on device.
 
                     Note that TT Tensor in ROW_MAJOR layout on TT Accelerator device must have size of last dimension divisble by 2.
 
@@ -630,7 +719,7 @@ Tensor convert_python_tensor_to_tt_tensor(
                     | arg5          | mem_config    |
                     +---------------+---------------+
 
-                    Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B (in TILE layout) are supported on device.
+                    Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B, BFLOAT4_B (in TILE layout) are supported on device.
 
                     Note that TT Tensor in ROW_MAJOR layout on TT Accelerator device must have size of last dimension divisble by 2.
 
@@ -653,6 +742,9 @@ Tensor convert_python_tensor_to_tt_tensor(
                 )doc")
             .def(
                 py::init<>([](const py::object &tensor, std::optional<DataType> data_type) {
+                    if (py::isinstance<py::list>(tensor)) {
+                        return detail::convert_python_tensors_to_tt_tensors(tensor, data_type);
+                    }
                     return detail::convert_python_tensor_to_tt_tensor(tensor, data_type);
                 }),
                 py::arg("tensor"),
@@ -713,6 +805,9 @@ Tensor convert_python_tensor_to_tt_tensor(
                         py_tensor = np.zeros((1, 1, 32, 32))
                         tt_lib.tensor.Tensor(py_tensor)
                 )doc")
+            .def_property_readonly("shape", [](const Tensor &self) { return self.get_shape(); })
+            .def_property_readonly("dtype", [](const Tensor &self) { return self.get_dtype(); })
+            .def_property_readonly("layout", [](const Tensor &self) { return self.get_layout(); })
             .def(
                 "deallocate",
                 [](Tensor &self, bool force) { return self.deallocate(force); },
@@ -731,7 +826,7 @@ Tensor convert_python_tensor_to_tt_tensor(
                 R"doc(
                 Move TT Tensor from host device to TT accelerator device.
 
-                Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B (in TILE layout) are supported on device.
+                Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B, BFLOAT4_B (in TILE layout) are supported on device.
 
                 If ``arg1`` is not supplied, default ``MemoryConfig`` with ``interleaved`` set to ``True``.
 
@@ -755,7 +850,7 @@ Tensor convert_python_tensor_to_tt_tensor(
                 R"doc(
                 Move TT Tensor from host device to TT accelerator device.
 
-                Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B (in TILE layout) are supported on device.
+                Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B, BFLOAT4_B (in TILE layout) are supported on device.
 
                 If ``arg1`` is not supplied, default ``MemoryConfig`` with ``interleaved`` set to ``True``.
 
@@ -778,7 +873,7 @@ Tensor convert_python_tensor_to_tt_tensor(
                 R"doc(
                 Move TT Tensor from host device to TT accelerator device.
 
-                Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B (in TILE layout) are supported on device.
+                Only BFLOAT16 (in ROW_MAJOR or TILE layout) and BFLOAT8_B, BFLOAT4_B (in TILE layout) are supported on device.
 
                 If ``arg1`` is not supplied, default ``MemoryConfig`` with ``interleaved`` set to ``True``.
 
@@ -1106,14 +1201,14 @@ Tensor convert_python_tensor_to_tt_tensor(
 
             )doc")
             .def(
-                "shape",
-                [](const Tensor &self) { return self.shape(); },
+                "get_legacy_shape",
+                [](const Tensor &self) { return self.get_legacy_shape(); },
                 R"doc(
                 Get the shape of the tensor as Shape class.
 
                 .. code-block:: python
 
-                    shape = tt_tensor.shape()
+                    shape = tt_tensor.get_legacy_shape()
 
             )doc")
             .def(
@@ -1181,11 +1276,15 @@ Tensor convert_python_tensor_to_tt_tensor(
                                 TT_THROW("Device storage doesn't support buffer method");
                             } else if constexpr (std::is_same_v<T, BorrowedStorage>) {
                                 return storage.buffer;
+                            } else if constexpr (std::is_same_v<T, MultiDeviceStorage>) {
+                                TT_THROW("MultiDeviceStorage doesn't support buffer method");
+                            } else if constexpr (std::is_same_v<T, MultiDeviceHostStorage>) {
+                                TT_THROW("MultiDeviceHostStorage doesn't support buffer method");
                             } else {
                                 raise_unsupported_storage<T>();
                             }
                         },
-                        self.storage());
+                        self.get_storage());
                 },
                 R"doc(
                 Get the underlying buffer.
@@ -1198,12 +1297,12 @@ Tensor convert_python_tensor_to_tt_tensor(
 
             )doc")
             .def(
-                "layout", [](const Tensor &self) { return self.layout(); }, R"doc(
+                "get_layout", [](const Tensor &self) { return self.get_layout(); }, R"doc(
                 Get memory layout of TT Tensor.
 
                 .. code-block:: python
 
-                    layout = tt_tensor.layout()
+                    layout = tt_tensor.get_layout()
 
             )doc")
             .def(
@@ -1224,6 +1323,7 @@ Tensor convert_python_tensor_to_tt_tensor(
                     is_sharded = tt_tensor.is_sharded()
 
             )doc")
+            .def("is_contiguous", [](const Tensor &self) -> bool { return self.is_contiguous(); })
             .def(
                 "is_sharded", [](const Tensor &self) { return self.is_sharded(); }, R"doc(
                 Check if TT Tensor is sharded.
@@ -1234,16 +1334,16 @@ Tensor convert_python_tensor_to_tt_tensor(
 
             )doc")
             .def(
-                "dtype", [](const Tensor &self) { return self.dtype(); }, R"doc(
+                "get_dtype", [](const Tensor &self) { return self.get_dtype(); }, R"doc(
                 Get dtype of TT Tensor.
 
                 .. code-block:: python
 
-                    dtype = tt_tensor.dtype()
+                    dtype = tt_tensor.get_dtype()
             )doc")
             .def(
                 "shape_without_padding",
-                [](const Tensor &self) { return Shape{self.shape().without_padding()}; },
+                [](const Tensor &self) { return Shape{self.get_legacy_shape().without_padding()}; },
                 R"doc(
                 Get shape without padding of TT Tensor.
 

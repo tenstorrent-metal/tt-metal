@@ -12,7 +12,6 @@ from tt_eager.tt_dnn.op_library.sliding_window_op_infra.untilize_with_halo_confi
     construct_utwh_output_shards,
     validate_utwh_output_shards_and_req_conv_input_shard_start_end,
     validate_tensor_metadata,
-    generate_untilize_with_halo_kernel_configs,
     validate_untilize_with_halo_kernel_configs,
 )
 from tt_eager.tt_dnn.op_library.sliding_window_op_infra.sliding_window_op_config_generation_and_validation import (
@@ -537,8 +536,8 @@ def test_generate_all_configs_and_references(
             atol=1e-3,
             pcc=0.9999,
         )
-        logger.info(f"Passing={passing_allclose_and_pcc}")
-        logger.info(f"Output info={output_info}")
+        logger.debug(f"Passing={passing_allclose_and_pcc}")
+        logger.debug(f"Output info={output_info}")
         passing_pcc, _ = comp_pcc(
             golden_untilize_with_halo_output_pyt_tensor, untilize_with_halo_output_pyt_tensor, pcc=0.999
         )

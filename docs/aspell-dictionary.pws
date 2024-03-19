@@ -1,9 +1,11 @@
-personal_ws-1.1 en 530
+personal_ws-1.1 en 539
 ABI
 ADDI
 API
 APIs
+AST
 AnotherVecType
+AssignGlobalBufferToProgram
 BFLOAT
 BNT
 BRISC
@@ -43,6 +45,7 @@ CreateDevice
 CreateKernel
 CreateProgram
 CreateSemaphore
+DATAMOVEMENT
 DEFAULTFLOAT
 DPRINT
 DataFormat
@@ -78,6 +81,7 @@ GetRuntimeArgs
 Grayskull
 HW
 HiFi
+HostDataType
 InstantiateTrace
 InterleavedBufferConfig
 Jupyter
@@ -131,6 +135,7 @@ RISCs
 ReadFromDevice
 ReduceDim
 ResNet
+RuntimeArgs
 SETPRECISION
 SETW
 SFP
@@ -161,6 +166,7 @@ UnaryOpType
 UpdateCircularBufferPageSize
 UpdateCircularBufferTotalSize
 UpdateDynamicCircularBufferAddress
+UpdateRuntimeArgs
 VC
 VCs
 WH
@@ -229,6 +235,7 @@ csv
 ctl
 datacopy
 dataflow
+datamovement
 datatypes
 deallocate
 deallocation
@@ -301,6 +308,7 @@ hw
 hypot
 icb
 idst
+idx
 ie
 ifrom
 init
@@ -322,6 +330,7 @@ iw
 iy
 jupyter
 kv
+kwargs
 labelled
 ld
 ldexp

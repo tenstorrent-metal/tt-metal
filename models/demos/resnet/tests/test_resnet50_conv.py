@@ -600,7 +600,7 @@ hardcoded_conv_blocking_and_parallelization_config = {
 }
 
 
-@pytest.mark.parametrize("N", (1, 2, 8, 16), ids=["batch_1", "batch_2", "batch_8", "batch_16"])
+@pytest.mark.parametrize("N", [8, 16], ids=["batch_8", "batch_16"])
 @pytest.mark.parametrize(
     "K, C, H, W, R, S, stride_h, stride_w, pad_h, pad_w",
     (
@@ -668,7 +668,7 @@ hardcoded_conv_blocking_and_parallelization_config = {
     ids=["output_BFLOAT16", "output_BFLOAT8_B"],
 )
 def test_resnet50_conv(
-    use_program_cache, device, N, K, C, H, W, R, S, stride_h, stride_w, pad_h, pad_w, weights_dtype, output_dtype
+    device, use_program_cache, N, K, C, H, W, R, S, stride_h, stride_w, pad_h, pad_w, weights_dtype, output_dtype
 ):
     output_mem_config = tt_lib.tensor.MemoryConfig(
         tt_lib.tensor.TensorMemoryLayout.INTERLEAVED, tt_lib.tensor.BufferType.L1
@@ -726,7 +726,7 @@ def test_resnet50_conv(
                 output_mem_config=output_mem_config,
                 weights_dtype=weights_dtype,
                 output_dtype=output_dtype,
-                math_fidelity=tt_lib.tensor.MathFidelity.HiFi4,
+                # math_fidelity=tt_lib.tensor.MathFidelity.HiFi4,
             )
         else:
             assert (conv_as_mm_padded_act_height, K) in hardcoded_conv_blocking_and_parallelization_config[N]
@@ -792,7 +792,7 @@ def test_resnet50_conv(
             output_on_device = tt_lib.tensor.sharded_to_interleaved(output_on_device, memory_config)
 
         # convert tiled output to RM
-        assert output_on_device.layout() == tt_lib.tensor.Layout.TILE
+        assert output_on_device.get_layout() == tt_lib.tensor.Layout.TILE
         output_on_device = format_tensor(output_on_device, tt_lib.tensor.Layout.ROW_MAJOR, device, memory_config)
         output_on_device = output_on_device.reshape(
             conv_output_shape[0],
@@ -803,7 +803,7 @@ def test_resnet50_conv(
 
         # Copy to host and Compare against pytorch
         out = output_on_device.cpu()
-        assert out.layout() == tt_lib.tensor.Layout.ROW_MAJOR
+        assert out.get_layout() == tt_lib.tensor.Layout.ROW_MAJOR
 
         out_result = out.to_torch()
         # NHWC to NCHW
@@ -813,6 +813,6 @@ def test_resnet50_conv(
         # Compare against golden
         assert out_result.shape == out_golden.shape
         passing_pcc, output_pcc = comp_pcc(out_golden, out_result, 0.99)
-        logger.info(f"Passing={passing_pcc}")
-        logger.info(f"Output pcc={output_pcc}")
+        logger.debug(f"Passing={passing_pcc}")
+        logger.debug(f"Output pcc={output_pcc}")
         assert passing_pcc

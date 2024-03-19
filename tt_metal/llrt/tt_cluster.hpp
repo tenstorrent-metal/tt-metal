@@ -32,6 +32,11 @@ using tt_target_dram = std::tuple<int, int, int>;
 using tt::DEVICE;
 using tt::TargetDevice;
 
+enum EthRouterMode : uint32_t {
+    IDLE = 0,
+    BI_DIR_TUNNELING = 1,
+};
+
 namespace tt {
 
 class Cluster {
@@ -107,12 +112,13 @@ class Cluster {
     uint64_t get_pcie_base_addr_from_device(chip_id_t chip_id) const;
 
     // Ethernet cluster api
-    // Returns map of connected chip ids to active ethernet cores
-    std::unordered_map<chip_id_t, std::vector<CoreCoord>> get_ethernet_cores_grouped_by_connected_chips(
-        chip_id_t chip_id) const;
+    // Returns set of device ids connected via ethernet
+    std::unordered_set<chip_id_t> get_ethernet_connected_device_ids(chip_id_t chip_id) const;
 
     // Returns set of logical active ethernet coordinates on chip
-    std::unordered_set<CoreCoord> get_active_ethernet_cores(chip_id_t chip_id) const;
+    // If skip_reserved_tunnel_cores is true, will return cores that dispatch is not using,
+    // intended for users to grab available eth cores for testing
+    std::unordered_set<CoreCoord> get_active_ethernet_cores(chip_id_t chip_id, bool skip_reserved_tunnel_cores=false) const;
 
     // Returns set of logical inactive ethernet coordinates on chip
     std::unordered_set<CoreCoord> get_inactive_ethernet_cores(chip_id_t chip_id) const;
@@ -130,13 +136,11 @@ class Cluster {
     // Configures routing mapping of ethernet cores
     void initialize_routing_info_for_ethernet_cores();
 
+    void reserve_ethernet_cores_for_tunneling();
+
     // Dispatch core is managed by device, so this is an api for device to get the each eth core used in FD tunneling.
     // Returns logical eth core that communicates with specified dispatch core
     tt_cxy_pair get_eth_core_for_dispatch_core(
-        tt_cxy_pair logical_dispatch_core, EthRouterMode mode, chip_id_t connected_chip_id) const;
-
-    // Writes router config to corresponding eth core
-    void configure_eth_core_for_dispatch_core(
         tt_cxy_pair logical_dispatch_core, EthRouterMode mode, chip_id_t connected_chip_id) const;
 
     // Internal routing for SD and FD enables launching user ethernet kernels and FD tunneling for all devices in the
@@ -183,6 +187,9 @@ class Cluster {
     tt_cxy_pair convert_physical_cxy_to_virtual(const tt_cxy_pair &physical_cxy) const;
     void configure_static_tlbs(chip_id_t mmio_device_id) const;
 
+    // Returns map of connected chip ids to active ethernet cores
+    std::unordered_map<chip_id_t, std::vector<CoreCoord>> get_ethernet_cores_grouped_by_connected_chips(
+        chip_id_t chip_id) const;
     void initialize_ethernet_sockets();
 
     ARCH arch_;
@@ -216,7 +223,7 @@ class Cluster {
     std::unordered_map<chip_id_t, uint16_t> device_to_host_mem_channel_;
 
     // Mapping of each devices' ethernet routing mode
-    std::unordered_map<chip_id_t, std::unordered_map<CoreCoord, routing_info_t>> device_eth_routing_info_;
+    std::unordered_map<chip_id_t, std::unordered_map<CoreCoord, EthRouterMode>> device_eth_routing_info_;
 
     tt_device_dram_address_params dram_address_params = {
         DRAM_BARRIER_BASE

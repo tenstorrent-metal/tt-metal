@@ -37,6 +37,7 @@
 #include "tt_dnn/op_library/moreh_groupnorm_backward/moreh_groupnorm_backward_op.hpp"
 #include "tt_dnn/op_library/moreh_mean/moreh_mean_op.hpp"
 #include "tt_dnn/op_library/moreh_mean_backward/moreh_mean_backward_op.hpp"
+#include "tt_dnn/op_library/moreh_getitem/moreh_getitem_op.hpp"
 
 namespace py = pybind11;
 
@@ -153,9 +154,10 @@ void py_module(py::module& m_primary) {
            const MatmulDefaultProgramConfig& program_config,
            const MemoryConfig& out_mem_config,
            std::optional<DataType> output_dtype,
-           std::optional<DeviceComputeKernelConfig> compute_kernel_config
+           std::optional<DeviceComputeKernelConfig> compute_kernel_config,
+           const bool untilize_out
            ) {
-            return matmul(input_tensor_a, input_tensor_b, program_config, out_mem_config, output_dtype, compute_kernel_config);
+            return matmul(input_tensor_a, input_tensor_b, program_config, out_mem_config, output_dtype, compute_kernel_config, untilize_out);
         },
         py::arg("input_tensor_a").noconvert(),
         py::arg("input_tensor_b").noconvert(),
@@ -164,6 +166,7 @@ void py_module(py::module& m_primary) {
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("output_dtype").noconvert() = std::nullopt,
         py::arg("compute_kernel_config").noconvert() = std::nullopt,
+        py::arg("untilize_out").noconvert() = false,
         R"doc(
             Perform a matrix multiplication ``input_tensor_a x input_tensor_b``.
 
@@ -184,9 +187,10 @@ void py_module(py::module& m_primary) {
            const MatmulMultiCoreReuseProgramConfig& program_config,
            const MemoryConfig& out_mem_config,
            std::optional<DataType> output_dtype,
-           std::optional<DeviceComputeKernelConfig> compute_kernel_config
+           std::optional<DeviceComputeKernelConfig> compute_kernel_config,
+           const bool untilize_out
            ) {
-            return matmul(input_tensor_a, input_tensor_b, program_config, out_mem_config, output_dtype, compute_kernel_config);
+            return matmul(input_tensor_a, input_tensor_b, program_config, out_mem_config, output_dtype, compute_kernel_config, untilize_out);
         },
         py::arg("input_tensor_a").noconvert(),
         py::arg("input_tensor_b").noconvert(),
@@ -195,6 +199,7 @@ void py_module(py::module& m_primary) {
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("output_dtype").noconvert() = std::nullopt,
         py::arg("compute_kernel_config").noconvert() = std::nullopt,
+        py::arg("untilize_out").noconvert() = false,
         R"doc(
             Perform a matrix multiplication ``input_tensor_a x input_tensor_b``.
 
@@ -216,10 +221,11 @@ void py_module(py::module& m_primary) {
            const MatmulDefaultProgramConfig& program_config,
            const MemoryConfig& out_mem_config,
            std::optional<DataType> output_dtype,
-           std::optional<DeviceComputeKernelConfig> compute_kernel_config
+           std::optional<DeviceComputeKernelConfig> compute_kernel_config,
+           const bool untilize_out
            ) {
             return matmul(
-                input_tensor_a, input_tensor_b, bias, program_config, out_mem_config, output_dtype, compute_kernel_config);
+                input_tensor_a, input_tensor_b, bias, program_config, out_mem_config, output_dtype, compute_kernel_config, untilize_out);
         },
         py::arg("input_tensor_a").noconvert(),
         py::arg("input_tensor_b").noconvert(),
@@ -229,6 +235,7 @@ void py_module(py::module& m_primary) {
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("output_dtype").noconvert() = std::nullopt,
         py::arg("compute_kernel_config").noconvert() = std::nullopt,
+        py::arg("untilize_out").noconvert() = false,
         R"doc(
             Perform a matrix multiplication ``input_tensor_a x input_tensor_b``.
 
@@ -251,7 +258,9 @@ void py_module(py::module& m_primary) {
            const MatmulMultiCoreReuseProgramConfig& program_config,
            const MemoryConfig& out_mem_config,
            std::optional<DataType> output_dtype,
-           std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
+           std::optional<DeviceComputeKernelConfig> compute_kernel_config,
+           const bool untilize_out
+           ) {
             return matmul(
                 input_tensor_a,
                 input_tensor_b,
@@ -259,7 +268,9 @@ void py_module(py::module& m_primary) {
                 program_config,
                 out_mem_config,
                 output_dtype,
-                compute_kernel_config);
+                compute_kernel_config,
+                untilize_out
+                );
         },
         py::arg("input_tensor_a").noconvert(),
         py::arg("input_tensor_b").noconvert(),
@@ -269,6 +280,7 @@ void py_module(py::module& m_primary) {
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("output_dtype").noconvert() = std::nullopt,
         py::arg("compute_kernel_config").noconvert() = std::nullopt,
+        py::arg("untilize_out").noconvert() = false,
         R"doc(
             Perform a matrix multiplication ``input_tensor_a x input_tensor_b``.
 
@@ -291,10 +303,11 @@ void py_module(py::module& m_primary) {
            const MatmulMultiCoreReuseMultiCastProgramConfig& program_config,
            const MemoryConfig& out_mem_config,
            std::optional<DataType> output_dtype,
-           std::optional<DeviceComputeKernelConfig> compute_kernel_config
+           std::optional<DeviceComputeKernelConfig> compute_kernel_config,
+           const bool untilize_out
            ) {
             return matmul(
-                input_tensor_a, input_tensor_b, bias, program_config, out_mem_config, output_dtype, compute_kernel_config);
+                input_tensor_a, input_tensor_b, bias, program_config, out_mem_config, output_dtype, compute_kernel_config, untilize_out);
         },
         py::arg("input_tensor_a").noconvert(),
         py::arg("input_tensor_b").noconvert(),
@@ -304,6 +317,7 @@ void py_module(py::module& m_primary) {
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("output_dtype").noconvert() = std::nullopt,
         py::arg("compute_kernel_config").noconvert() = std::nullopt,
+        py::arg("untilize_out").noconvert() = false,
         R"doc(
             Perform a matrix multiplication ``input_tensor_a x input_tensor_b``.
 
@@ -326,10 +340,11 @@ void py_module(py::module& m_primary) {
            const MatmulMultiCoreReuseMultiCast1DProgramConfig& program_config,
            const MemoryConfig& out_mem_config,
            std::optional<DataType> output_dtype,
-           std::optional<DeviceComputeKernelConfig> compute_kernel_config
+           std::optional<DeviceComputeKernelConfig> compute_kernel_config,
+           const bool untilize_out
            ) {
             return matmul(
-                input_tensor_a, input_tensor_b, bias, program_config, out_mem_config, output_dtype, compute_kernel_config);
+                input_tensor_a, input_tensor_b, bias, program_config, out_mem_config, output_dtype, compute_kernel_config, untilize_out);
         },
         py::arg("input_tensor_a").noconvert(),
         py::arg("input_tensor_b").noconvert(),
@@ -339,6 +354,7 @@ void py_module(py::module& m_primary) {
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("output_dtype").noconvert() = std::nullopt,
         py::arg("compute_kernel_config").noconvert() = std::nullopt,
+        py::arg("untilize_out").noconvert() = false,
         R"doc(
             Perform a matrix multiplication ``input_tensor_a x input_tensor_b``.
 
@@ -668,6 +684,58 @@ void py_module(py::module& m_primary) {
         "Performs a softmax operation on the last tensor dimension. Returns a reference to the input tensor modified "
         "in place.");
 
+    m_primary.def("relu", &tt::operations::primary::relu,
+        py::arg("input").noconvert(), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+        Applies the rectified linear unit (ReLU) function to the elements of the input tensor ``input``.
+
+        Input tensor must have TILE layout. Output tensor will have TILE layout.
+
+        .. csv-table::
+            :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+            "input", "Tensor RELU is applied to", "Tensor", "Tensor of shape [W, Z, Y, X]", "Yes"
+            "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+    )doc");
+
+    m_primary.def("add", &tt::operations::primary::add,
+        py::arg("input_a").noconvert(), py::arg("input_b").noconvert(),
+        py::arg("fused_activations") = std::nullopt,
+        py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+        py::arg("output_dtype").noconvert() = std::nullopt,
+        py::arg("in_place") = false,
+        R"doc(Perform an eltwise-binary add (``{0} + {1}``) on two tensors.
+
+        Both input tensors must have TILE layout. Output tensor will have TILE layout.
+    )doc");
+
+    m_primary.def("bcast", &tt::operations::primary::bcast,
+        py::arg("input_a").noconvert(), py::arg("input_b").noconvert(), py::arg("math_op"), py::arg("dim"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+        Perform a binary elementwise operation ``math_op`` between tensors ``input_a`` and ``input_b``, where values from tensor ``input_b`` are broadcast.
+
+        Let tensor ``input_a`` have shape ``[W0, Z0, Y0, X0]`` and tensor ``input_b`` shape ``[W1, Z1, Y1, X1]``. ``dim`` determines the type of broadcast performed.
+
+        For ``dim=BcastOpDim::W`` broadcast is performed on dimension ``X``. ``Y0`` and ``Y1`` must be the same and either (W1=1 and Z1=1) or (W0=W1 and Z0=Z1).
+
+        For ``dim=BcastOpDim::H`` broadcast is performed on dimension  ``Y``. ``X0`` and ``X1`` must be the same and either (W1=1 and Z1=1) or (W0=W1 and Z0=Z1).
+
+        For ``dim=BcastOpDim::HW`` broadcast is performed on dimensions ``X`` and ``Y``. Either (W1=1 and Z1=1) or (W0=W1 and Z0=Z1) must hold for input shapes.
+
+        Both input tensors must have BFLOAT16 data type.
+
+        Output tensor will have BFLOAT16 data type.
+
+        Input tensors must have TILE layout. Output tensors will have TILE layout.
+
+        .. csv-table::
+            :header: "Argument", "Description", "Data type", "Valid range", "Required"
+
+            "input_a", "Input tensor", "Tensor", "Tensor of shape [W0, Z0, Y0, X0], where Y0%32=0 and X0%32=0", "Yes"
+            "input_b", "Input tensor to broadcast", "Tensor", "Tensor of shape [W1, Z1, Y1, X1], where Y1%32=0 and X1%32=0", "Yes"
+            "math_op", "Aggregating math operation", " BcastOpMath", "ADD, SUB, MUL", "Yes"
+            "dim", "Dimension on which to broadcast", "BcastOpDim", "W, H, HW", "Yes"
+            "output_mem_config", "Layout of tensor in TT Accelerator device memory banks", "MemoryConfig", "Default is interleaved in DRAM", "No"
+    )doc");
+
     py::enum_<MorehSoftmaxOpParallelizationStrategy>(m_primary, "MorehSoftmaxOpParallelizationStrategy")
         .value("NONE", MorehSoftmaxOpParallelizationStrategy::NONE)
         .value("SMALL_W", MorehSoftmaxOpParallelizationStrategy::SMALL_W)
@@ -781,16 +849,10 @@ void py_module(py::module& m_primary) {
         py::arg("end"),
         py::arg("step"),
         py::arg("any").noconvert(),
+        py::arg("output_tensor").noconvert() = std::nullopt,
+        py::arg("untilize_out").noconvert() = false,
+        py::arg("output_dtype").noconvert() = std::nullopt,
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
-        "Performs an arange operation. Returns an output tensor.");
-
-    m_primary.def(
-        "moreh_arange_inplace",
-        &moreh_arange_inplace,
-        py::arg("input_tensor").noconvert(),
-        py::arg("start"),
-        py::arg("end"),
-        py::arg("step"),
         "Performs an arange operation. Returns an output tensor.");
 
     m_primary.def(
@@ -844,6 +906,7 @@ void py_module(py::module& m_primary) {
         py::arg("gamma").noconvert() = std::nullopt,
         py::arg("beta").noconvert() = std::nullopt,
         py::kw_only(),
+        py::arg("are_needed_outputs").noconvert() = std::vector<bool>{true, false, false},
         py::arg("output").noconvert() = std::nullopt,
         py::arg("mean").noconvert() = std::nullopt,
         py::arg("rstd").noconvert() = std::nullopt,
@@ -851,7 +914,7 @@ void py_module(py::module& m_primary) {
         py::arg("mean_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("rstd_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         R"doc(
-        "Performs a moreh_groupnorm operation.
+        Performs a moreh_groupnorm operation.
     )doc");
 
     // moreh_groupnorm_backward
@@ -864,6 +927,7 @@ void py_module(py::module& m_primary) {
         py::arg("rstd").noconvert(),
         py::arg("num_groups").noconvert(),
         py::kw_only(),
+        py::arg("are_needed_outputs").noconvert() = std::vector<bool>{true, true, true},
         py::arg("gamma").noconvert() = std::nullopt,
         py::arg("input_grad").noconvert() = std::nullopt,
         py::arg("gamma_grad").noconvert() = std::nullopt,
@@ -872,7 +936,7 @@ void py_module(py::module& m_primary) {
         py::arg("gamma_grad_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         py::arg("beta_grad_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         R"doc(
-        "Performs a moreh_groupnorm_backward operation.
+        Performs a moreh_groupnorm_backward operation.
     )doc");
 
     m_primary.def(
@@ -890,6 +954,16 @@ void py_module(py::module& m_primary) {
         py::arg("output_grad").noconvert(),
         py::arg("input_grad").noconvert(),
         "Performs mean backward operation. Returns an input_grad tensor.");
+
+    m_primary.def(
+        "moreh_getitem",
+        &moreh_getitem,
+        py::arg("input_tensor").noconvert(),
+        py::arg("index_tensors").noconvert(),
+        py::arg("index_dims").noconvert(),
+        py::arg("output_tensor").noconvert() = std::nullopt,
+        py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+        "Performs a getitem operation. Returns an output tensor.");
 }
 
 }  // namespace

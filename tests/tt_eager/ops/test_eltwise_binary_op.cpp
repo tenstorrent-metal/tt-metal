@@ -7,7 +7,6 @@
 #include "tensor/owned_buffer_functions.hpp"
 #include "tensor/tensor.hpp"
 #include "tt_dnn/op_library/eltwise_binary/eltwise_binary_op.hpp"
-#include "tt_dnn/op_library/program_cache.hpp"
 #include "tt_numpy/functions.hpp"
 
 using tt::tt_metal::DataType;
@@ -28,7 +27,7 @@ Tensor host_function(const Tensor& input_tensor_a, const Tensor& input_tensor_b)
         auto value = BinaryFunction{}(input_a_buffer[index].to_float(), input_b_buffer[index].to_float());
         output_buffer[index] = bfloat16(value);
     }
-    return Tensor(OwnedStorage{output_buffer}, input_tensor_a.shape(), input_tensor_a.dtype(), input_tensor_a.layout());
+    return Tensor(OwnedStorage{output_buffer}, input_tensor_a.get_legacy_shape(), input_tensor_a.get_dtype(), input_tensor_a.get_layout());
 }
 
 template <auto HostFunction, typename DeviceFunction, typename... Args>
@@ -102,7 +101,7 @@ int main() {
         }
     };
 
-    tt::tt_metal::program_cache::enable();
+    device->enable_program_cache();
 
     run_binary_ops();
     run_binary_ops();
@@ -113,13 +112,13 @@ int main() {
 
     run_binary_ops();
 
-    TT_FATAL(tt::tt_metal::program_cache::num_entries() == 4,
+    TT_FATAL(device->num_program_cache_entries() == 4,
         "There are {} entries",
-        tt::tt_metal::program_cache::num_entries());
+        device->num_program_cache_entries());
 
-    tt::tt_metal::program_cache::disable_and_clear();
+    device->disable_and_clear_program_cache();
 
-    TT_FATAL(tt::tt_metal::program_cache::num_entries() == 0);
+    TT_FATAL(device->num_program_cache_entries()== 0);
 
     TT_FATAL(tt::tt_metal::CloseDevice(device));
 

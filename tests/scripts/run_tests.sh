@@ -103,14 +103,18 @@ run_frequent_api_pipeline_tests() {
     source build/python_env/bin/activate
     export PYTHONPATH=$TT_METAL_HOME
 
-    # Please put model runs in here from now on - thank you
-    if [[ $dispatch_mode == "slow" ]]; then
-        TT_METAL_SLOW_DISPATCH_MODE=1 ./build/test/tt_metal/unit_tests_frequent
-        echo "Running Python API unit tests in SD for frequent..."
-        ./tests/scripts/run_python_api_unit_tests.sh
-    else
-        echo "API tests are not available for fast dispatch because they're already covered in post-commit"
-    fi
+    ./tests/scripts/run_temporary_frequent_api_tests.sh
+}
+
+# Run frequent multi device pipeline tests - these are the t3000 + 4xn300 tests
+run_frequent_multi_device_pipeline_tests() {
+    local tt_arch=$1
+    local pipeline_type=$2
+    local dispatch_mode=$3
+
+    # Switch to modules only soon
+    # run_module_tests "$tt_arch" "llrt" "$pipeline_type"
+    ./tests/scripts/run_frequent_regressions_multi_device.sh
 }
 
 run_models_performance() {
@@ -227,6 +231,8 @@ run_pipeline_tests() {
         run_stress_post_commit_pipeline_tests "$tt_arch" "$pipeline_type" "$dispatch_mode"
     elif [[ $pipeline_type == "post_commit_multi_device" ]]; then
         run_post_commit_multi_device_pipeline_tests "$tt_arch" "$pipeline_type" "$dispatch_mode"
+    elif [[ $pipeline_type == "frequent_multi_device" ]]; then
+        run_frequent_multi_device_pipeline_tests "$tt_arch" "$pipeline_type" "$dispatch_mode"
     elif [[ $pipeline_type == "microbenchmarks" ]]; then
         run_microbenchmarks_pipeline_tests "$tt_arch" "$pipeline_type" "$dispatch_mode"
     elif [[ $pipeline_type == "ttnn_sweeps" ]]; then

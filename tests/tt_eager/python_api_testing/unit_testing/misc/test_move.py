@@ -43,8 +43,8 @@ def run_move_op(test_id, shape, layout, dtype, in0_mem_config, output_mem_config
     pyt_got_back_rm = tt_host_rm.to_torch()
 
     passing_pcc, output_pcc = comp_pcc(pyt_got_back_rm, torch_tensor, 0.99)
-    logger.info(f"Passing={passing_pcc}")
-    logger.info(f"Output pcc={output_pcc}")
+    logger.debug(f"Passing={passing_pcc}")
+    logger.debug(f"Output pcc={output_pcc}")
 
     assert passing_pcc
 
@@ -90,7 +90,7 @@ def test_move_op(test_id, shape, layout, dtype, in0_mem_config, output_mem_confi
     run_move_op(test_id, shape, layout, dtype, in0_mem_config, output_mem_config, device)
 
 
-def test_move_op_with_program_cache(use_program_cache, device):
+def test_move_op_with_program_cache(device, use_program_cache):
     mem_config = ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.L1)
     dtype = ttl.tensor.DataType.BFLOAT16
     layout = ttl.tensor.Layout.TILE
@@ -110,4 +110,4 @@ def test_move_op_with_program_cache(use_program_cache, device):
         py_dummy_tensor = torch.randn(dummy_shape)
         tt_dummy_tensor = ttl.tensor.Tensor(py_dummy_tensor, dtype).to(ttl.tensor.Layout.TILE).to(device, mem_config)
 
-    assert ttl.program_cache.num_entries() == 2
+    assert device.num_program_cache_entries() == 2

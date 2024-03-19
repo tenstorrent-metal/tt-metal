@@ -76,7 +76,7 @@ inline void reduce_h_fused(
 
     tile_regs_wait();
     tile_regs_commit();
-    pack_untilize_dst<num_output_tiles>(out_cb_id, num_out_rows, num_faces_in_tile);  /* pack 1 row (1x16 or 1x32) */
+    pack_untilize_dst<num_output_tiles>(out_cb_id, 1/*out_subblock_h*/, 0, num_out_rows, num_faces_in_tile);  /* pack 1 row (1x16 or 1x32) */
     tile_regs_release();
 
     cb_push_back(out_cb_id, out_ntiles_c * effective_nblocks);
@@ -109,7 +109,7 @@ void MAIN {
     constexpr uint32_t num_out_rows = 1;
 
     tilizeA_B_reduce_init(in_cb_id, in_scalar_cb_id, in_ntiles_hwc, out_cb_id, num_faces_in_tile);
-    pack_untilize_dst_init_short<num_output_tiles>(num_out_rows, num_faces_in_tile); /* pack 1 row (1x16 or 1x32) */
+    pack_untilize_dst_init_short<num_output_tiles>(out_cb_id, num_out_rows, num_faces_in_tile); /* pack 1 row (1x16 or 1x32) */
 
     cb_wait_front(in_scalar_cb_id, 1);
     for (uint32_t i = 0; i < nsticks_per_core_by_nblocks; ++ i) {

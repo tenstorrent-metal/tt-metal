@@ -5,7 +5,7 @@
 import pytest
 import torch
 import tt_lib as ttl
-from models.utility_functions import comp_allclose_and_pcc
+from models.utility_functions import comp_allclose_and_pcc, skip_for_wormhole_b0
 from tests.tt_eager.python_api_testing.unit_testing.misc.test_moreh_matmul import get_tensors
 from loguru import logger
 
@@ -71,8 +71,8 @@ def test_moreh_linear(shapes, has_bias, device):
     cpu_layout = ttl.tensor.Layout.ROW_MAJOR
     ttcpu_output = tt_output.cpu().to(cpu_layout).unpad_from_tile(output_shape).to_torch()
     passing, output_pcc = comp_allclose_and_pcc(torch_output, ttcpu_output, pcc=0.999, rtol=rtol, atol=atol)
-    logger.info(f"Passing = {passing}")
-    logger.info(f"Output PCC = {output_pcc}")
+    logger.debug(f"Passing = {passing}")
+    logger.debug(f"Output PCC = {output_pcc}")
 
     assert passing
 
@@ -98,6 +98,7 @@ def test_moreh_linear(shapes, has_bias, device):
         ([2, 4, 4, 1024], [1, 1, 1300, 1024], [1, 1, 1, 1], [2, 4, 4, 1300]),
     ),
 )
+@skip_for_wormhole_b0("disabled due to watcher error, see issue #5868")
 @pytest.mark.parametrize(
     "requires_grads",
     (
@@ -145,7 +146,7 @@ def test_moreh_linear_backward(shapes, requires_grads, requires_bias_grad, devic
     if requires_input_grad:
         ttcpu_input_grad = tt_input_grad.cpu().to(cpu_layout).unpad_from_tile(input_shape).to_torch()
         passing, output_pcc = comp_allclose_and_pcc(torch_input.grad, ttcpu_input_grad, pcc=0.999, rtol=rtol, atol=atol)
-        logger.info(f"input_grad passing={passing} pcc={output_pcc}")
+        logger.debug(f"input_grad passing={passing} pcc={output_pcc}")
         assert passing
 
     if requires_weight_grad:
@@ -153,12 +154,12 @@ def test_moreh_linear_backward(shapes, requires_grads, requires_bias_grad, devic
         passing, output_pcc = comp_allclose_and_pcc(
             torch_weight.grad, ttcpu_weight_grad, pcc=0.999, rtol=rtol, atol=atol
         )
-        logger.info(f"weight_grad passing={passing} pcc={output_pcc}")
+        logger.debug(f"weight_grad passing={passing} pcc={output_pcc}")
         assert passing
 
     if requires_bias_grad:
         ttcpu_bias_grad = tt_bias_grad.cpu().to(cpu_layout).unpad_from_tile(bias_shape).to_torch()
 
         passing, output_pcc = comp_allclose_and_pcc(torch_bias.grad, ttcpu_bias_grad, pcc=0.999, rtol=rtol, atol=atol)
-        logger.info(f"bias_grad passing={passing} pcc={output_pcc}")
+        logger.debug(f"bias_grad passing={passing} pcc={output_pcc}")
         assert passing

@@ -10,6 +10,7 @@ Device
    ttnn/open_device
    ttnn/close_device
    ttnn/manage_device
+   ttnn/synchronize_device
 
 Memory Config
 *************
@@ -303,9 +304,19 @@ Model Conversion
    ttnn/model_preprocessing/preprocess_model_parameters
 
 
-Miscellaneous
-*************
+Reports
+*******
 .. toctree::
    :maxdepth: 1
 
+   ttnn/print_l1_buffers
    ttnn/set_printoptions
+
+
+Operation Hooks
+***************
+.. toctree::
+   :maxdepth: 1
+
+   ttnn/register_pre_operation_hook
+   ttnn/register_post_operation_hook

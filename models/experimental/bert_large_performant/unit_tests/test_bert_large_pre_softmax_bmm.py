@@ -64,8 +64,8 @@ def run_bert_large_pre_softmax_bmm_test(device, dtype, in0_mem_config, in1_mem_c
 
     ref_bmm = torch.matmul(A, B)
     passing_pcc, output_pcc = comp_pcc(ref_bmm, pyt_got_back_rm, 0.99)
-    logger.info(f"Passing={passing_pcc}")
-    logger.info(f"Output pcc={output_pcc}")
+    logger.debug(f"Passing={passing_pcc}")
+    logger.debug(f"Output pcc={output_pcc}")
 
     assert passing_pcc
 
@@ -123,4 +123,4 @@ def test_bert_large_pre_softmax_bmm_with_program_cache(device, use_program_cache
         py_dummy_tensor = torch.randn(dummy_shape)
         tt_dummy_tensor = ttl.tensor.Tensor(py_dummy_tensor, dtype).to(ttl.tensor.Layout.TILE).to(device, mem_config)
 
-    assert ttl.program_cache.num_entries() == 2
+    assert device.num_program_cache_entries() == 2

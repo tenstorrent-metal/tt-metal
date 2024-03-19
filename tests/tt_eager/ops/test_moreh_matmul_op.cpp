@@ -156,17 +156,17 @@ int main(int argc, char **argv) {
         // Allocates a DRAM buffer on device populated with values specified by initialize
         Tensor a = tt::numpy::random::random(shapea).to(Layout::TILE).to(device);
         Tensor b = diagonal(shapeb, 1.0f).to(Layout::TILE).to(device);
-        Tensor output_tensor_cpu = create_device_tensor(shapec, a.dtype(), Layout::TILE, device, a.memory_config());
+        Tensor output_tensor_cpu = create_device_tensor(shapec, a.get_dtype(), Layout::TILE, device, a.memory_config());
         Tensor out_cpu = tt::operations::primary::moreh_matmul(a, b, std::nullopt, false, static_cast<bool>(transpose_b)).cpu();
 
-        const auto expected_storage = std::get<DeviceStorage>(output_tensor_cpu.storage());
+        const auto expected_storage = std::get<DeviceStorage>(output_tensor_cpu.get_storage());
         Tensor with_output_tensor = tt::operations::primary::moreh_matmul(a, b, output_tensor_cpu, false, static_cast<bool>(transpose_b));
-        const auto actual_storage = std::get<DeviceStorage>(with_output_tensor.storage());
+        const auto actual_storage = std::get<DeviceStorage>(with_output_tensor.get_storage());
         Tensor out_cpu_with_output_tensor = with_output_tensor.cpu();
         ////////////////////////////////////////////////////////////////////////////
         //                      Validation & Teardown
         ////////////////////////////////////////////////////////////////////////////
-        const auto &out_shape = out_cpu.shape();
+        const auto &out_shape = out_cpu.get_legacy_shape();
         log_info(
             LogTest,
             "out_cpu shape {} - {}, {}, {}, {}",
@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
             out_shape[2],
             out_shape[3]);
 
-        const auto &out_cpu_with_output_tensor_shape = out_cpu_with_output_tensor.shape();
+        const auto &out_cpu_with_output_tensor_shape = out_cpu_with_output_tensor.get_legacy_shape();
         log_info(
             LogTest,
             "out_cpu_with_output_tensor shape {} - {}, {}, {}, {}",

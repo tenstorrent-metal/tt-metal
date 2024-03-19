@@ -22,14 +22,14 @@ namespace tt_metal {
 operation::ProgramWithCallbacks move_multi_core_sharded(const Tensor &input, Tensor &output) {
     tt_metal::Program program{};
 
-    tt::DataFormat cb_data_format = datatype_to_dataformat_converter(input.dtype());
+    tt::DataFormat cb_data_format = datatype_to_dataformat_converter(input.get_dtype());
     auto shard_spec = input.shard_spec().value();
     auto shard_shape = shard_spec.shape;
     auto shard_grid = shard_spec.grid;
-    auto input_shape = input.shape();
-    auto input_dtype = input.dtype();
-    auto input_layout = input.layout();
-    TT_FATAL(input_layout == output.layout() && input_dtype == output.dtype() && shard_shape == output.shard_spec().value().shape && input_shape == output.shape());
+    auto input_shape = input.get_legacy_shape();
+    auto input_dtype = input.get_dtype();
+    auto input_layout = input.get_layout();
+    TT_FATAL(input_layout == output.get_layout() && input_dtype == output.get_dtype() && shard_shape == output.shard_spec().value().shape && input_shape == output.get_legacy_shape());
     const uint32_t src_cb_sharded = CB::c_in0;
     const uint32_t dst_cb_sharded = CB::c_in1;
     uint32_t tile_size_bytes = tile_size(cb_data_format);
@@ -59,7 +59,7 @@ operation::ProgramWithCallbacks move_multi_core_sharded(const Tensor &input, Ten
     auto output_buffer_address = output.buffer()->address();
     TT_FATAL(output_buffer_address > input_buffer_address, "Expected output buffer to be allocated at a higher address than input buffer");
     uint32_t move_chunk_size_bytes = output_buffer_address - input_buffer_address;
-    TT_FATAL(move_chunk_size_bytes % 32 == 0, "Expected chunk size bytes to move to be 32 byte aligned.");
+    TT_FATAL(move_chunk_size_bytes % ADDRESS_ALIGNMENT == 0, "Expected chunk size bytes to move to be {} byte aligned.", ADDRESS_ALIGNMENT);
     uint32_t num_chunks = total_size_bytes / move_chunk_size_bytes;
     uint32_t remainder_chunk_size_bytes = total_size_bytes % move_chunk_size_bytes;
 

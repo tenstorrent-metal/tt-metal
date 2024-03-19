@@ -14,17 +14,7 @@
 //
 #pragma once
 
-#include "dev_msgs.h"
-
-// XXXX TODO(PGK): why why why do we not have this standardized
-enum debug_sanitize_which_riscv {
-    DebugSanitizeBrisc  = 0,
-    DebugSanitizeNCrisc = 1,
-    DebugSanitizeTrisc0 = 2,
-    DebugSanitizeTrisc1 = 3,
-    DebugSanitizeTrisc2 = 4,
-    DebugSanitizeErisc = 5,
-};
+#include "watcher_common.h"
 
 #if defined(COMPILE_FOR_BRISC) || defined(COMPILE_FOR_NCRISC) || defined(COMPILE_FOR_ERISC)
 
@@ -41,7 +31,10 @@ extern uint8_t noc_index;
 #include "noc_parameters.h"
 #include "noc_overlay_parameters.h"
 
-#define DEBUG_VALID_L1_ADDR(a, l) ((a >= MEM_L1_BASE) && (a + l <= MEM_L1_BASE + MEM_L1_SIZE) && ((a) + (l) > (a)))
+#define DEBUG_VALID_L1_ADDR(a, l) ((a >= MEM_L1_BASE) && \
+                                   (a + l <= MEM_L1_BASE + MEM_L1_SIZE) && \
+                                   ((a) + (l) > (a)) && \
+                                   ((a % NOC_L1_ALIGNMENT_BYTES) == 0))
 
 // TODO(PGK): remove soft reset when fw is downloaded at init
 #define DEBUG_VALID_REG_ADDR(a)                                                        \
@@ -49,23 +42,18 @@ extern uint8_t noc_index;
       ((a) < NOC_OVERLAY_START_ADDR + NOC_STREAM_REG_SPACE_SIZE * NOC_NUM_STREAMS)) || \
      ((a) == RISCV_DEBUG_REG_SOFT_RESET_0))
 #define DEBUG_VALID_WORKER_ADDR(a, l) (DEBUG_VALID_L1_ADDR(a, l) || (DEBUG_VALID_REG_ADDR(a) && (l) == 4))
-#define DEBUG_VALID_PCIE_ADDR(a, l) (((a) >= NOC_PCIE_ADDR_BASE) && ((a) + (l) <= NOC_PCIE_ADDR_END) && ((a) + (l) > (a)))
-#define DEBUG_VALID_DRAM_ADDR(a, l) (((a) >= NOC_DRAM_ADDR_BASE) && ((a) + (l) <= NOC_DRAM_ADDR_END) && ((a) + (l) > (a)))
+#define DEBUG_VALID_PCIE_ADDR(a, l) (((a) >= NOC_PCIE_ADDR_BASE) && \
+                                     ((a) + (l) <= NOC_PCIE_ADDR_END) && \
+                                     ((a) + (l) > (a)) && \
+                                     ((a % NOC_PCIE_ALIGNMENT_BYTES) == 0))
+#define DEBUG_VALID_DRAM_ADDR(a, l) (((a) >= NOC_DRAM_ADDR_BASE) && \
+                                     ((a) + (l) <= NOC_DRAM_ADDR_END) && \
+                                     ((a) + (l) > (a)) && \
+                                     ((a % NOC_DRAM_ALIGNMENT_BYTES) == 0))
 
-#define DEBUG_VALID_ETH_ADDR(a, l) (((a) >= MEM_ETH_BASE) && ((a) + (l) <= MEM_ETH_BASE + MEM_ETH_SIZE))
-
-inline uint32_t debug_sanitize_get_which_riscv()
-{
-#if defined(COMPILE_FOR_BRISC)
-    return DebugSanitizeBrisc;
-#elif defined(COMPILE_FOR_NCRISC)
-    return DebugSanitizeNCrisc;
-#elif defined(COMPILE_FOR_ERISC)
-    return DebugSanitizeErisc;
-#else
-    return DebugSanitizeTrisc0 + COMPILE_FOR_TRISC;
-#endif
-}
+#define DEBUG_VALID_ETH_ADDR(a, l) (((a) >= MEM_ETH_BASE) && \
+                                    ((a) + (l) <= MEM_ETH_BASE + MEM_ETH_SIZE) && \
+                                    ((a % NOC_L1_ALIGNMENT_BYTES) == 0))
 
 // Note:
 //  - this isn't racy w/ the host so long as invalid is written last
@@ -77,7 +65,7 @@ inline void debug_sanitize_post_noc_addr_and_hang(uint64_t a, uint32_t l, uint32
     if (v[noc_index].invalid == DebugSanitizeNocInvalidOK) {
         v[noc_index].addr = a;
         v[noc_index].len = l;
-        v[noc_index].which = debug_sanitize_get_which_riscv();
+        v[noc_index].which = debug_get_which_riscv();
         v[noc_index].invalid = invalid;
     }
 

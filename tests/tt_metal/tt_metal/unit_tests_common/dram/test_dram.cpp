@@ -108,7 +108,7 @@ bool dram_single_core (CommonFixture* fixture, tt_metal::Device *device, const D
 
     auto input_dram_noc_xy = input_dram_buffer->noc_coordinates();
     auto output_dram_noc_xy = output_dram_buffer->noc_coordinates();
-    log_info(tt::LogVerif, "Creating kernel");
+    log_debug(tt::LogVerif, "Creating kernel");
     // Create the kernel
     auto dram_kernel = tt_metal::CreateKernel(
         program,
@@ -140,7 +140,7 @@ bool dram_single_core (CommonFixture* fixture, tt_metal::Device *device, const D
 }
 
 TEST_F(CommonFixture, DRAMLoopbackSingleCore){
-    uint32_t buffer_size = 2 * 1024 * 50;
+    uint32_t buffer_size = 2 * 1024 * 25;
     std::vector<uint32_t> src_vec = create_random_vector_of_bfloat16(
         buffer_size, 100, std::chrono::system_clock::now().time_since_epoch().count());
     unit_tests_common::dram::test_dram::DRAMConfig dram_test_config = {

@@ -448,8 +448,8 @@ hardcoded_conv_blocking_and_parallelization_config = {
     "math_fidelity", [tt_lib.tensor.MathFidelity.HiFi4, tt_lib.tensor.MathFidelity.LoFi], ids=["HiFi4", "LoFi"]
 )
 def test_resnet50_conv(
-    use_program_cache,
     device,
+    use_program_cache,
     math_fidelity,
     activations_dtype,
     weights_dtype,
@@ -546,11 +546,8 @@ def test_resnet50_conv(
         config_override = {
             "act_block_w": act_block_w,
             "act_block_h": act_block_h,
-            "weight_block_w": weight_block_w,
             "out_subblock_h": out_subblock_h,
             "out_subblock_w": out_subblock_w,
-            "out_block_h": out_block_h,
-            "act_c_num_blocks": act_c_num_blocks,
             "grid_size": grid_size,
             "per_core_out_matrix_height": per_core_out_matrix_h,
             "per_core_weight_matrix_width": per_core_weight_matrix_w,
@@ -577,7 +574,6 @@ def test_resnet50_conv(
             weights_dtype=weights_dtype,
             output_dtype=activations_dtype,
             math_fidelity=math_fidelity,
-            act_c_num_blocks=act_c_num_blocks,
         )
 
         conv_input_on_device = tt_lib.tensor.Tensor(
@@ -590,7 +586,7 @@ def test_resnet50_conv(
         output_on_device = conv(conv_input_on_device)
 
         # convert tiled output to RM
-        assert output_on_device.layout() == tt_lib.tensor.Layout.TILE
+        assert output_on_device.get_layout() == tt_lib.tensor.Layout.TILE
         output_on_device = format_tensor(
             output_on_device, tt_lib.tensor.Layout.ROW_MAJOR, device, interleaved_mem_config
         )
@@ -603,7 +599,7 @@ def test_resnet50_conv(
 
         # Copy to host
         out = output_on_device.cpu()
-        assert out.layout() == tt_lib.tensor.Layout.ROW_MAJOR
+        assert out.get_layout() == tt_lib.tensor.Layout.ROW_MAJOR
 
         out_result = out.to_torch()
         # NHWC to NCHW
@@ -712,7 +708,7 @@ def test_resnet50_conv(
         output_on_device = tt_lib.tensor.sharded_to_interleaved(output_on_device, interleaved_mem_config)
 
         # convert tiled output to RM
-        assert output_on_device.layout() == tt_lib.tensor.Layout.TILE
+        assert output_on_device.get_layout() == tt_lib.tensor.Layout.TILE
         output_on_device = format_tensor(
             output_on_device, tt_lib.tensor.Layout.ROW_MAJOR, device, interleaved_mem_config
         )
@@ -725,7 +721,7 @@ def test_resnet50_conv(
 
         # Copy to host and compare against pytorch
         out = output_on_device.cpu()
-        assert out.layout() == tt_lib.tensor.Layout.ROW_MAJOR
+        assert out.get_layout() == tt_lib.tensor.Layout.ROW_MAJOR
 
         out_result = out.to_torch()
         # NHWC to NCHW
@@ -739,14 +735,14 @@ def test_resnet50_conv(
         # Compare baseline against golden
         assert out_result_baseline.shape == out_golden.shape
         passing_pcc_baseline, output_pcc_baseline = comp_pcc(out_golden, out_result_baseline, 0.99)
-        logger.info(f"Passing baseline={passing_pcc_baseline}")
-        logger.info(f"Output pcc baseline={output_pcc_baseline}")
+        logger.debug(f"Passing baseline={passing_pcc_baseline}")
+        logger.debug(f"Output pcc baseline={output_pcc_baseline}")
 
         # Compare out result against golden
         assert out_result.shape == out_golden.shape
         passing_pcc, output_pcc = comp_pcc(out_golden, out_result, 0.99)
-        logger.info(f"Passing={passing_pcc}")
-        logger.info(f"Output pcc={output_pcc}")
+        logger.debug(f"Passing={passing_pcc}")
+        logger.debug(f"Output pcc={output_pcc}")
         assert passing_pcc
 
         # Compare baseline to output (should be identical)

@@ -105,15 +105,20 @@ Tensor log1p(const Tensor& x, const MemoryConfig& output_mem_config) {
     return operation::decorate_as_composite(__func__, _log1p)(x, output_mem_config);
 }
 
-// softplus[x] = log[1 + exp[x]]
+// softplus[x] =(1/beta) * log[1 + exp[x * beta]]
+// (x*beta) > threshold ==> x
 // use transformation y = log[1+exp[x]] by broadcast
-Tensor _softplus(const Tensor& x, const MemoryConfig& output_mem_config) {
-    Tensor exp_x = exp(x, output_mem_config);
+Tensor _softplus(const Tensor& x, float beta, float threshold, const MemoryConfig& output_mem_config) {
+    float oned_beta = (1 / beta);
+    Tensor x_beta = mul_unary(x, beta, output_mem_config);
+    Tensor exp_x = exp(x_beta, output_mem_config);
     Tensor result_log1p = log1p(exp_x, output_mem_config);
-    return result_log1p;
+    Tensor sp_result = mul_unary(result_log1p,  oned_beta, output_mem_config);
+    sp_result = where(gt(x_beta, full_like(x, threshold, output_mem_config), std::nullopt, output_mem_config), x, sp_result, output_mem_config);
+    return sp_result;
 }
-Tensor softplus(const Tensor& a, const MemoryConfig& output_mem_config) {
-    return operation::decorate_as_composite(__func__, _softplus)(a, output_mem_config);
+Tensor softplus(const Tensor& a, float beta, float threshold, const MemoryConfig& output_mem_config) {
+    return operation::decorate_as_composite(__func__, _softplus)(a, beta, threshold, output_mem_config);
 }
 
 // tanhshrink(x) = x - tanh(x)
@@ -227,7 +232,7 @@ Tensor multigammaln(const Tensor& a, const MemoryConfig& output_mem_config) {
 // use transformation y = x*tanh[softplus[x]] by broadcast
 // Ref: https://krutikabapat.github.io/Swish-Vs-Mish-Latest-Activation-Functions/
 Tensor _mish(const Tensor& x, const MemoryConfig& output_mem_config) {
-    Tensor sp_x = softplus(x, output_mem_config);
+    Tensor sp_x = softplus(x, 1.0f, 20.0f, output_mem_config);
     Tensor tanh_x = tanh(sp_x, output_mem_config);
     sp_x.deallocate();
     Tensor mish_x = mul(x, tanh_x, std::nullopt, output_mem_config);
@@ -709,9 +714,9 @@ Tensor addalpha(const Tensor& input_a, const Tensor& input_b, float alpha, const
 Tensor _repeat_interleave(const Tensor& input_a, uint32_t repeat, int32_t dim, const MemoryConfig& output_mem_config) {
     std::vector<Tensor> combined_tensors;
     combined_tensors.reserve(repeat);
-    auto shape_wh = input_a.shape();
+    auto shape_wh = input_a.get_legacy_shape();
     // normalizing the negative dim
-    uint32_t normalized_dim = input_a.shape().get_normalized_index(dim);
+    uint32_t normalized_dim = input_a.get_legacy_shape().get_normalized_index(dim);
     // check if dim is 1 or 3
     if (normalized_dim & 1) {
         constexpr uint32_t tmp_dim = 2;
@@ -938,7 +943,7 @@ Tensor xlogy(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& o
 Tensor _variance_impl(
     const Tensor& y, const Tensor& mean_y, Tensor& y_minus_mean_y, const MemoryConfig& output_mem_config) {
     constexpr float correction = 0.0f;
-    auto shape_wh = y.shape();
+    auto shape_wh = y.get_legacy_shape();
     float scale = 1.0f / ((float)(shape_wh[3] * shape_wh[2]) - correction);
     Tensor sqr_y_minus_mean_y = square(y_minus_mean_y, output_mem_config);
     Tensor sum_sqr_y_minus_mean_y =
@@ -990,7 +995,7 @@ Tensor normalize_hw(const Tensor& y, const MemoryConfig& output_mem_config) {
 using HWFunctionT = std::function<Tensor(const Tensor& y, const MemoryConfig&)>;
 Tensor _make_global_from_hw_impl(
     HWFunctionT fn, const Tensor& y, const MemoryConfig& output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG) {
-    const Shape s_orig = y.shape();
+    const Shape s_orig = y.get_legacy_shape();
     TT_FATAL(s_orig.rank() == 4, "Cannot support non-rank 4 Tensor");
 
     // format to HW
@@ -998,7 +1003,7 @@ Tensor _make_global_from_hw_impl(
 
     // compute @fn
     Tensor z_0 = fn(y_hw, output_mem_config);
-    TT_FATAL(y_hw.shape() == z_0.shape(), "shape match");
+    TT_FATAL(y_hw.get_legacy_shape() == z_0.get_legacy_shape(), "shape match");
     y_hw.deallocate();
 
     // reformat
@@ -1032,8 +1037,8 @@ Tensor hypot(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& o
 
 Tensor _scatter(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& output_mem_config) {
     const Shape start_index = {0, 0, 0, 0};
-    Tensor index = pad(ones_like(input_a, output_mem_config), input_b.shape(), start_index, 0);
-    Tensor temp_a = pad(input_a, input_b.shape(), start_index, 0);
+    Tensor index = pad(ones_like(input_a, output_mem_config), input_b.get_legacy_shape(), start_index, 0);
+    Tensor temp_a = pad(input_a, input_b.get_legacy_shape(), start_index, 0);
     return where(index, temp_a, input_b, output_mem_config);
 }
 Tensor scatter(const Tensor& input_a, const Tensor& input_b, const MemoryConfig& output_mem_config) {
@@ -1238,8 +1243,8 @@ Tensor arange(int32_t start, int32_t end, int32_t step, Device* device, const Me
  *   by running reshape.
  */
 Tensor _outer(Tensor& a, Tensor& b, const MemoryConfig& output_mem_config) {
-    const Shape s_a = a.shape();
-    const Shape s_b = b.shape();
+    const Shape s_a = a.get_legacy_shape();
+    const Shape s_b = b.get_legacy_shape();
 
     auto num_ones = [](const Shape& s) -> uint32_t {
         uint32_t num1s = 0;
@@ -1362,7 +1367,7 @@ Tensor sfpu_eps(const Shape shape, Layout layout, Device* device, const MemoryCo
 
 // tril : select lower triangular region of input matrix
 Tensor _tril(const Tensor& input_a, int32_t diag, const MemoryConfig& output_mem_config) {
-    Tensor index_l = tt::numpy::index_tril<bfloat16>(input_a.shape(), diag, DataType::BFLOAT16);
+    Tensor index_l = tt::numpy::index_tril<bfloat16>(input_a.get_legacy_shape(), diag, DataType::BFLOAT16);
     return mul(input_a, index_l, std::nullopt, output_mem_config);
 }
 Tensor tril(
@@ -1374,7 +1379,7 @@ Tensor tril(
 
 // triu : select upper triangular region of input matrix
 Tensor _triu(const Tensor& input_a, int32_t diag, const MemoryConfig& output_mem_config) {
-    Tensor index_u = tt::numpy::index_triu<bfloat16>(input_a.shape(), diag, DataType::BFLOAT16);
+    Tensor index_u = tt::numpy::index_triu<bfloat16>(input_a.get_legacy_shape(), diag, DataType::BFLOAT16);
     return mul(input_a, index_u, std::nullopt, output_mem_config);
 }
 Tensor triu(
@@ -1416,33 +1421,9 @@ Tensor pow(const Tensor& input_a, int exponent, const MemoryConfig& output_mem_c
     return power(input_a, exponent, output_mem_config);
 }
 
-// repeat a input tensor @input_a as specified by the number of dimensions
-Tensor _repeat(const Tensor& input_a, const Shape& shape, const MemoryConfig& output_mem_config) {
-    auto& input_shape = input_a.shape();
-    TT_FATAL(input_shape.rank() == shape.rank(), "repeat dimensions should be same rank as input tensor");
-
-    Tensor y = input_a;
-    for (uint32_t dim = 0; dim < shape.rank(); dim++) {
-        TT_FATAL(
-            shape[dim] > 0, "repetition dimension should be 1 or more; unable to delete tensor dimension at this time");
-        std::vector<Tensor> Yrepetitions;
-        for (uint32_t idx = 0; idx < shape[dim]; idx++) Yrepetitions.emplace_back(y);
-        y = concat(Yrepetitions, dim, output_mem_config);
-        Yrepetitions.clear();
-    }
-    return y;
-}
-Tensor repeat(
-    const Tensor& input_a,
-    const Shape& shape_b,
-    const MemoryConfig& output_mem_config /* = operation::DEFAULT_OUTPUT_MEMORY_CONFIG */) {
-    return operation::decorate_as_composite(__func__, _repeat)(input_a, shape_b, output_mem_config);
-}
-
-
 // Argmax returns the index of maximum element in the tensor
 Tensor _argmax(const Tensor& input_a, int64_t _dim, bool all, const MemoryConfig& output_mem_config) {
-    auto& input_shape = input_a.shape();
+    auto& input_shape = input_a.get_legacy_shape();
     TT_FATAL(input_shape.rank() == 4, "supported for rank-4 tensors at this time");
 
     uint32_t dim = input_shape.get_normalized_index(_dim);

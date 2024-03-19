@@ -95,6 +95,27 @@ enum debug_sanitize_noc_invalid_enum {
     DebugSanitizeNocInvalidMulticast  = 5,
 };
 
+struct debug_assert_msg_t {
+    volatile uint16_t line_num;
+    volatile uint8_t tripped;
+    volatile uint8_t which;
+};
+
+enum debug_assert_tripped_enum {
+    DebugAssertOK      = 2,
+    DebugAssertTripped = 3,
+};
+
+// XXXX TODO(PGK): why why why do we not have this standardized
+typedef enum debug_sanitize_which_riscv {
+    DebugBrisc  = 0,
+    DebugNCrisc = 1,
+    DebugTrisc0 = 2,
+    DebugTrisc1 = 3,
+    DebugTrisc2 = 4,
+    DebugErisc = 5,
+} riscv_id_t;
+
 constexpr int num_riscv_per_core = 5;
 struct mailboxes_t {
     struct ncrisc_halt_msg_t ncrisc_halt;
@@ -103,6 +124,7 @@ struct mailboxes_t {
     struct slave_sync_msg_t slave_sync;
     struct debug_status_msg_t debug_status[num_riscv_per_core];
     struct debug_sanitize_noc_addr_msg_t sanitize_noc[NUM_NOCS];
+    struct debug_assert_msg_t assert_status;
 };
 
 #ifndef TENSIX_FIRMWARE
@@ -113,23 +135,24 @@ static_assert(MEM_MAILBOX_BASE + offsetof(mailboxes_t, ncrisc_halt.stack_save) =
 static_assert(MEM_MAILBOX_BASE + sizeof(mailboxes_t) < MEM_MAILBOX_END);
 #endif
 
-enum EthRouterMode : uint32_t {
-    FD_SRC = 0,
-    FD_DST = 1,
-    SD = 2,
+struct eth_word_t {
+    volatile uint32_t bytes_sent;
+    volatile uint32_t dst_cmd_valid;
+    uint32_t reserved_0;
+    uint32_t reserved_1;
+};
+
+enum class SyncCBConfigRegion: uint8_t {
+    DB_TENSIX = 0,
+    TENSIX = 1,
+    ROUTER_ISSUE = 2,
+    ROUTER_COMPLETION = 3,
 };
 
 struct routing_info_t {
     volatile uint32_t routing_enabled;
-    volatile uint32_t routing_mode;
-    volatile uint32_t connected_chip_id;
+    volatile uint32_t src_sent_valid_cmd;
+    volatile uint32_t dst_acked_valid_cmd;
     volatile uint32_t unused_arg0;
-    volatile uint32_t relay_src_x;
-    volatile uint32_t relay_src_y;
-    volatile uint32_t relay_dst_x;
-    volatile uint32_t relay_dst_y;
-    volatile uint32_t fd_buffer_msgs_sent;
-    uint32_t reserved_0_;
-    uint32_t reserved_1_;
-    uint32_t reserved_2_;
+    eth_word_t fd_buffer_msgs[2];
 };

@@ -14,7 +14,7 @@
 #include "llrt/tt_cluster.hpp"
 #include "dev_msgs.h"
 #include "tt_metal/impl/dispatch/command_queue_interface.hpp"
-
+#include "program_cache.hpp"
 namespace tt {
 
 namespace tt_metal {
@@ -105,12 +105,12 @@ class Device {
 
     std::vector<CoreCoord> ethernet_cores_from_logical_cores(const std::vector<CoreCoord> &logical_cores) const;
 
-    std::unordered_map<chip_id_t, std::vector<CoreCoord>> get_ethernet_cores_grouped_by_connected_chips() const {
-        return tt::Cluster::instance().get_ethernet_cores_grouped_by_connected_chips(this->id_);
+    std::unordered_set<chip_id_t> get_ethernet_connected_device_ids() const {
+        return tt::Cluster::instance().get_ethernet_connected_device_ids(this->id_);
     }
 
-    std::unordered_set<CoreCoord> get_active_ethernet_cores() const {
-        return tt::Cluster::instance().get_active_ethernet_cores(this->id_);
+    std::unordered_set<CoreCoord> get_active_ethernet_cores(bool skip_reserved_tunnel_cores=false) const {
+        return tt::Cluster::instance().get_active_ethernet_cores(this->id_, skip_reserved_tunnel_cores);
     }
 
     std::unordered_set<CoreCoord> get_inactive_ethernet_cores() const {
@@ -174,6 +174,7 @@ class Device {
     SystemMemoryManager& sysmem_manager() { return *sysmem_manager_; }
     HWCommandQueue& hw_command_queue(size_t cq_id = 0);
     CommandQueue& command_queue(size_t cq_id = 0);
+    bool using_slow_dispatch() const;
     void check_allocator_is_initialized() const;
 
     // Checks that the given arch is on the given pci_slot and that it's responding
@@ -186,7 +187,9 @@ class Device {
     void initialize_firmware(CoreCoord phys_core, launch_msg_t *launch_msg);
     void initialize_and_launch_firmware();
     void initialize_command_queue();
+    void initialize_synchronous_sw_cmd_queue();
     void compile_command_queue_programs();
+    void compile_command_queue_programs_for_grayskull();
     void configure_command_queue_programs();
     void clear_l1_state();
 
@@ -223,6 +226,17 @@ class Device {
     uint8_t num_hw_cqs_;
 
     vector<std::unique_ptr<Program, tt::tt_metal::detail::ProgramDeleter>> command_queue_programs;
+    bool using_fast_dispatch = false;
+    program_cache::detail::ProgramCache program_cache;
+
+    void enable_program_cache() { program_cache.enable(); }
+    void disable_and_clear_program_cache() {
+        if (this->program_cache.is_enabled()) {
+            program_cache.clear();
+            program_cache.disable();
+        }
+    }
+    std::size_t num_program_cache_entries() { return program_cache.num_entries(); }
 };
 
 }  // namespace tt_metal

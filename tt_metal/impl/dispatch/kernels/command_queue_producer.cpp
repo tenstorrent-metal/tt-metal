@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include "tt_metal/impl/dispatch/kernels/command_queue_producer.hpp"
+#include "tt_metal/impl/dispatch/kernels/cq_prefetcher.hpp"
 
 void kernel_main() {
     constexpr uint32_t host_issue_queue_read_ptr_addr = get_compile_time_arg_val(0);
@@ -53,8 +53,8 @@ void kernel_main() {
         bool is_sharded = (bool) (header->buffer_type == (uint32_t)DeviceCommand::BufferType::SHARDED);
         uint32_t sharded_buffer_num_cores = header->sharded_buffer_num_cores;
 
-        db_cb_config_t* db_cb_config = get_local_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
-        const db_cb_config_t* remote_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
+        volatile db_cb_config_t* db_cb_config = get_local_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
+        volatile db_cb_config_t* remote_db_cb_config = get_remote_db_cb_config(CQ_CONSUMER_CB_BASE, db_buf_switch);
         if ((DeviceCommand::WrapRegion)wrap == DeviceCommand::WrapRegion::ISSUE) {
             // Basically popfront without the extra conditional
             cq_read_interface.issue_fifo_rd_ptr = cq_read_interface.issue_fifo_limit - cq_read_interface.issue_fifo_size;  // Head to beginning of command queue
@@ -64,17 +64,17 @@ void kernel_main() {
         }
         program_local_cb(data_section_addr, producer_cb_num_pages, page_size, producer_cb_size);
         wait_consumer_space_available(db_semaphore_addr);
-        program_consumer_cb<consumer_cmd_base_addr, consumer_data_buffer_size, consumer_cmd_base_addr, consumer_data_buffer_size>(
+        program_remote_sync_cb<SyncCBConfigRegion::DB_TENSIX, consumer_data_buffer_size>(
             db_cb_config,
             remote_db_cb_config,
-            db_buf_switch,
             consumer_noc_encoding,
             consumer_cb_num_pages,
             page_size,
-            consumer_cb_size);
+            consumer_cb_size,
+            db_buf_switch);
         relay_command<command_start_addr, consumer_cmd_base_addr, consumer_data_buffer_size>(db_buf_switch, consumer_noc_encoding);
         if (stall) {
-            wait_consumer_idle(db_semaphore_addr);
+            wait_consumer_idle<2>(db_semaphore_addr);
         }
 
         update_producer_consumer_sync_semaphores(producer_noc_encoding, consumer_noc_encoding, db_semaphore_addr, get_semaphore(0));

@@ -1,8 +1,7 @@
 name: "[post-commit] metal - Run profiler regression"
 
 on:
-  push:
-    branches: ["main"]
+
   workflow_dispatch:
   workflow_call:
 
@@ -24,6 +23,7 @@ jobs:
       TT_METAL_ENV: ${{ vars.TT_METAL_ENV }}
       ARCH_NAME: ${{ matrix.runner-info.arch }}
       CONFIG: ci
+      LOGURU_LEVEL: INFO
     environment: dev
     runs-on: ${{ matrix.runner-info.runs-on }}
     steps:

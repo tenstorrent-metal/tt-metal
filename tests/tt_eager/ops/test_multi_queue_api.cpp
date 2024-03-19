@@ -11,7 +11,6 @@
 #include "tensor/tensor.hpp"
 #include "tt_dnn/op_library/eltwise_unary/eltwise_unary_op.hpp"
 #include "tt_dnn/op_library/operation.hpp"
-#include "tt_dnn/op_library/program_cache.hpp"
 #include "tt_metal/host_api.hpp"
 #include "tt_numpy/functions.hpp"
 
@@ -42,7 +41,7 @@ Tensor host_function(const Tensor& input_tensor) {
         auto value = UnaryFunction(input_buffer[index].to_float());
         output_buffer[index] = bfloat16(value);
     }
-    return Tensor(OwnedStorage{output_buffer}, input_tensor.shape(), input_tensor.dtype(), input_tensor.layout());
+    return Tensor(OwnedStorage{output_buffer}, input_tensor.get_legacy_shape(), input_tensor.get_dtype(), input_tensor.get_layout());
 }
 
 void test_multi_queue_api() {
