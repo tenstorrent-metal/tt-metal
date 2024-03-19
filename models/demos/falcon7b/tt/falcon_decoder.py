@@ -168,7 +168,7 @@ class TtFalconDecoderLayer(nn.Module):
                 residual[i],
                 output_mem_config=self.model_config["DROPOUT_ADD_OUTPUT_MEMCFG"],
             )
-            residual[i].deallocate()
+            # residual[i].deallocate()
 
         if use_cache:
             outputs = (output, layer_present)

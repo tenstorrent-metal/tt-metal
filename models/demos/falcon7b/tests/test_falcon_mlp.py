@@ -79,7 +79,26 @@ def run_test_FalconMLP_inference(
     for i in range(num_devices):
         tt_mlp_input.append(torch2tt_tensor(mlp_input[batch * i : batch * (i + 1)], devices[i]))
 
-    tt_out = tt_FalconMLP_model(tt_mlp_input)
+    import time
+    from models.utility_functions import enable_persistent_kernel_cache
+
+    enable_persistent_kernel_cache()
+    for device in devices:
+        device.enable_program_cache()
+    N = 10
+    total_time = 0
+    for i in range(N):
+        start = time.time()
+        tt_out = tt_FalconMLP_model(tt_mlp_input)
+        for device in devices:
+            tt_lib.device.Synchronize(device)
+        fwd_time = time.time() - start
+        if i != 0:
+            total_time += fwd_time
+    logger.info(f"Forward pass time: {total_time/(N-1)}")
+    for device in devices:
+        device.disable_and_clear_program_cache()
+    # tt_out = tt_FalconMLP_model(tt_mlp_input)
     for i in range(num_devices):
         tt_out[i] = tt2torch_tensor(tt_out[i])
     tt_out = torch.concat(tt_out)
@@ -97,7 +116,7 @@ def run_test_FalconMLP_inference(
         assert does_pass, f"PCC value is lower than {pcc}"
 
 
-@pytest.mark.parametrize("num_devices", (1, 2, 4))
+@pytest.mark.parametrize("num_devices", (1, 2, 4, 8))
 @pytest.mark.parametrize(
     "model_version, batch, seq_len, pcc",
     (

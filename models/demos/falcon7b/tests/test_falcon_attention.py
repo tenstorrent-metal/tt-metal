@@ -115,16 +115,44 @@ def run_test_FalconAttention_inference(
         tt_cache_path,
     )
 
-    tt_out, tt_layer_present = tt_FalconAttention_model(
-        tt_attention_input,
-        alibi=None,
-        attention_mask=tt_attention_mask,
-        llm_mode=llm_mode,
-        user_id=user_id,
-        layer_past=tt_layer_past,
-        layer_past_len=kv_cache_len,
-        use_cache=use_cache,
-    )
+    import time
+    from models.utility_functions import enable_persistent_kernel_cache
+
+    enable_persistent_kernel_cache()
+    for device in devices:
+        device.enable_program_cache()
+    N = 10
+    total_time = 0
+    for i in range(N):
+        start = time.time()
+        tt_out, tt_layer_present = tt_FalconAttention_model(
+            tt_attention_input,
+            alibi=None,
+            attention_mask=tt_attention_mask,
+            llm_mode=llm_mode,
+            user_id=user_id,
+            layer_past=tt_layer_past,
+            layer_past_len=kv_cache_len,
+            use_cache=use_cache,
+        )
+        for device in devices:
+            tt_lib.device.Synchronize(device)
+        fwd_time = time.time() - start
+        if i != 0:
+            total_time += fwd_time
+    logger.info(f"Forward pass time: {total_time/(N-1)}")
+    for device in devices:
+        device.disable_and_clear_program_cache()
+    # tt_out, tt_layer_present = tt_FalconAttention_model(
+    #     tt_attention_input,
+    #     alibi=None,
+    #     attention_mask=tt_attention_mask,
+    #     llm_mode=llm_mode,
+    #     user_id=user_id,
+    #     layer_past=tt_layer_past,
+    #     layer_past_len=kv_cache_len,
+    #     use_cache=use_cache,
+    # )
     tt_out, tt_layer_present = concat_device_outputs(num_devices, tt_out, llm_mode, tt_layer_present, kv_len)
 
     # check outputs ----------------------------------------------------------------------
@@ -148,7 +176,7 @@ def run_test_FalconAttention_inference(
         assert does_pass, f"PCC value is lower than {pcc}"
 
 
-@pytest.mark.parametrize("num_devices", (1, 2, 4))
+@pytest.mark.parametrize("num_devices", (1, 2, 4, 8))
 @pytest.mark.parametrize(
     "llm_mode, batch, seq_len, kv_cache_len",
     (

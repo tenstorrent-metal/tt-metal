@@ -61,7 +61,7 @@ class TtFalconMLP(nn.Module):
                     output_dtype=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
                 )
             )
-            x[device_id].deallocate()
+            # x[device_id].deallocate()
         for device_id in range(len(x)):
             hidden_states[device_id] = tt_lib.tensor.falcon_dense_4h_to_h_matmul(
                 hidden_states[device_id],

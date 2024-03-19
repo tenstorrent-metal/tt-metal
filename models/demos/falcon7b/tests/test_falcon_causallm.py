@@ -148,14 +148,41 @@ def run_test_FalconCausalLM_inference(
         tt_embeddings, tt_attention_mask = tt_FalconCausalLM.model_preprocessing(
             llm_mode, model_input, kv_cache_len, num_input_tokens=kv_len
         )
-        tt_out, tt_layer_present = tt_FalconCausalLM(
-            input_embeddings=tt_embeddings,
-            llm_mode=llm_mode,
-            attention_mask=tt_attention_mask,
-            layer_past=tt_layer_past,
-            layer_past_len=kv_cache_len,
-            use_cache=use_cache,
-        )
+        import time
+        from tqdm import tqdm
+        from models.utility_functions import enable_persistent_kernel_cache
+
+        enable_persistent_kernel_cache()
+        for device in devices:
+            device.enable_program_cache()
+        N = 10
+        total_time = 0
+        for i in tqdm(range(N)):
+            start = time.time()
+            tt_out, tt_layer_present = tt_FalconCausalLM(
+                input_embeddings=tt_embeddings,
+                llm_mode=llm_mode,
+                attention_mask=tt_attention_mask,
+                layer_past=tt_layer_past,
+                layer_past_len=kv_cache_len,
+                use_cache=use_cache,
+            )
+            for device in devices:
+                tt_lib.device.Synchronize(device)
+            fwd_time = time.time() - start
+            if i != 0:
+                total_time += fwd_time
+        logger.info(f"Forward pass time: {total_time/(N-1)}")
+        for device in devices:
+            device.disable_and_clear_program_cache()
+        # tt_out, tt_layer_present = tt_FalconCausalLM(
+        #     input_embeddings=tt_embeddings,
+        #     llm_mode=llm_mode,
+        #     attention_mask=tt_attention_mask,
+        #     layer_past=tt_layer_past,
+        #     layer_past_len=kv_cache_len,
+        #     use_cache=use_cache,
+        # )
         for i in range(num_devices):
             tt_out[i] = tt2torch_tensor(tt_out[i]).squeeze(1).transpose(0, 1)
         tt_out = torch.concat(tt_out)
@@ -194,7 +221,7 @@ def run_test_FalconCausalLM_inference(
         assert does_pass, f"PCC value is lower than {pcc}"
 
 
-@pytest.mark.parametrize("num_devices", (1, 2, 4))
+@pytest.mark.parametrize("num_devices", (1, 2, 4, 8))
 @pytest.mark.parametrize(
     "llm_mode, batch, seq_len, kv_cache_len",
     (
