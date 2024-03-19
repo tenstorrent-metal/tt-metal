@@ -1687,6 +1687,22 @@ op_map = {
     "ttnn-empty": {
         "tt_lib_op": ttnn_ops.empty,
         "pytorch_op": pytorch_ops.ttnn_empty,
-    },    
+    },
+    "ttnn-attention_softmax_nomask_2": {
+        "tt_lib_op": ttnn_ops.attention_softmax_nomask_2,
+        "pytorch_op": pytorch_ops.attention_softmax_nomask,
+    },
+    "ttnn-attention_softmax_2": {
+        "tt_lib_op": ttnn_ops.attention_softmax_2,
+        "pytorch_op": pytorch_ops.attention_softmax,
+    },
+    "ttnn-zeros": {
+        "tt_lib_op": ttnn_ops.zeros,
+        "pytorch_op": pytorch_ops.zeros,
+    },
+    "ttnn-zeros_like": {
+        "tt_lib_op": ttnn_ops.zeros_like,
+        "pytorch_op": pytorch_ops.zeros_like,
+    },
 }
 
