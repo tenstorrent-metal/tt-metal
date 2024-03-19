@@ -182,7 +182,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
             model_config[key] = BFLOAT16_DTYPE
 
     model_config["KV_CACHE_MEMCFG"] = DRAM_MEMCFG
-    model_config["KV_CACHE_DTYPE"] = BFP8_DTYPE
+    model_config["KV_CACHE_DTYPE"] = dtype
 
     if model_config_str in ("BFLOAT16-L1",):
         model_config["ROTARY_EMBEDDING_OUTPUT_MEMCFG"] = L1_MEMCFG
