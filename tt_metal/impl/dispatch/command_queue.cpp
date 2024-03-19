@@ -38,7 +38,6 @@ namespace tt::tt_metal {
 uint32_t get_noc_unicast_encoding(CoreCoord coord) { return NOC_XY_ENCODING(NOC_X(coord.x), NOC_Y(coord.y)); }
 
 // EnqueueReadBufferCommandSection
-
 std::vector<uint32_t> EnqueueReadBufferCommand::commands;
 
 EnqueueReadBufferCommand::EnqueueReadBufferCommand(
@@ -175,6 +174,8 @@ void EnqueueReadBufferCommand::process() {
 }
 
 // EnqueueWriteBufferCommand section
+std::vector<uint32_t> EnqueueWriteBufferCommand::commands;
+
 EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
     uint32_t command_queue_id,
     Device* device,
@@ -193,46 +194,99 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
         buffer.buffer_type() == BufferType::DRAM or buffer.buffer_type() == BufferType::L1,
         "Trying to write to an invalid buffer");
     this->device = device;
-}
 
-const void EnqueueWriteBufferCommand::assemble_device_commands(uint32_t src_address) {
-    uint32_t num_pages = this->pages_to_write;
-    uint32_t padded_page_size = align(this->buffer.page_size(), 32);
-    if (this->buffer.page_size() != this->buffer.size()) {  // should buffer.size() be num_pages * page_size
-        padded_page_size = align(this->buffer.page_size(), 32);
+    // TODO: ADD CQ_DISPATCH_CMD_WAIT!!!
+    if (this->commands.empty()) {
+        CQPrefetchCmd relay_write;
+        relay_write.base.cmd_id = CQ_PREFETCH_CMD_RELAY_INLINE;
+        // relay_inline attributes set in assemble_device_commands
+        relay_write.relay_inline.length = 0;
+        relay_write.relay_inline.stride = 0;
+
+        uint32_t *relay_write_ptr = (uint32_t *)&relay_write;
+        for (int i = 0; i < sizeof(CQPrefetchCmd) / sizeof(uint32_t); i++) {
+            this->commands.push_back(*relay_write_ptr++);
+        }
+
+        CQDispatchCmd write_paged_cmd;
+        write_paged_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_PAGED;
+         // write_paged attributes set in assemble_device_commands
+        write_paged_cmd.write_paged.is_dram = 0;
+        write_paged_cmd.write_paged.start_page = 0;
+        write_paged_cmd.write_paged.base_addr = 0;
+        write_paged_cmd.write_paged.page_size = 0;
+        write_paged_cmd.write_paged.pages = 0;
+
+        uint32_t *write_paged_cmd_ptr = (uint32_t *)&write_paged_cmd;
+        for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
+            this->commands.push_back(*write_paged_cmd_ptr++);
+        }
     }
 }
 
+const void EnqueueWriteBufferCommand::assemble_device_commands(uint32_t) {
+    uint32_t num_pages = this->pages_to_write;
+    uint32_t padded_page_size = align(this->buffer.page_size(), 32);
+
+    uint32_t relay_write_idx = 0; // TODO: Update when wait is added
+    CQPrefetchCmd *relay_write_cmd = (CQPrefetchCmd*)(this->commands.data() + relay_write_idx);
+    uint32_t payload_size_bytes = sizeof(CQDispatchCmd) + (this->pages_to_write * padded_page_size);
+    relay_write_cmd->relay_inline.length = payload_size_bytes;
+    relay_write_cmd->relay_inline.stride = align(sizeof(CQPrefetchCmd) + payload_size_bytes, HUGEPAGE_ALIGNMENT);
+
+    uint32_t write_paged_cmd_idx = relay_write_idx + (sizeof(CQPrefetchCmd) / sizeof(uint32_t));
+    CQDispatchCmd *write_paged_cmd = (CQDispatchCmd*)(this->commands.data() + write_paged_cmd_idx);
+    write_paged_cmd->write_paged.is_dram = uint8_t(this->buffer.buffer_type() == BufferType::DRAM);
+    write_paged_cmd->write_paged.start_page = this->dst_page_index;
+    write_paged_cmd->write_paged.base_addr = this->buffer.address();
+    write_paged_cmd->write_paged.page_size = padded_page_size;
+    write_paged_cmd->write_paged.pages = this->pages_to_write;
+}
+
 void EnqueueWriteBufferCommand::process() {
-    // uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
-    // uint32_t system_memory_temporary_storage_address = write_ptr + DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND;
+    this->assemble_device_commands(0);
 
-    // this->assemble_device_commands(system_memory_temporary_storage_address);
-    // DeviceCommand cmd;
-    // uint32_t data_size_in_bytes = cmd.get_issue_data_size();
+    uint32_t padded_page_size = align(this->buffer.page_size(), 32);
+    uint32_t data_size_in_bytes = this->pages_to_write * padded_page_size;
+    uint32_t fetch_size_bytes = (this->commands.size() * sizeof(uint32_t)) + data_size_in_bytes;
 
-    // uint32_t cmd_size = DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND + data_size_in_bytes;
-    // this->manager.issue_queue_reserve_back(cmd_size, this->command_queue_id);
+    // TODO: move this into the command queue interface
+    TT_ASSERT(fetch_size_bytes <= MAX_PREFETCH_COMMAND_SIZE, "Generated prefetcher command exceeds max command size");
+    TT_ASSERT((fetch_size_bytes >> PREFETCH_Q_LOG_MINSIZE) < 0xFFFF, "FetchQ command too large to represent");
 
-    // this->manager.cq_write(cmd.data(), DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND, write_ptr);
-    // uint32_t unpadded_src_offset = this->dst_page_index * this->buffer.page_size();
-    // if (this->buffer.page_size() % 32 != 0 and this->buffer.page_size() != this->buffer.size()) {
-    //     // If page size is not 32B-aligned, we cannot do a contiguous write
-    //     uint32_t src_address_offset = unpadded_src_offset;
-    //     uint32_t padded_page_size = align(this->buffer.page_size(), 32);
-    //     for (uint32_t sysmem_address_offset = 0; sysmem_address_offset < data_size_in_bytes;
-    //          sysmem_address_offset += padded_page_size) {
-    //         this->manager.cq_write(
-    //             (char*)this->src + src_address_offset,
-    //             this->buffer.page_size(),
-    //             system_memory_temporary_storage_address + sysmem_address_offset);
-    //         src_address_offset += this->buffer.page_size();
-    //     }
-    // } else {
-    //     this->manager.cq_write(
-    //         (char*)this->src + unpadded_src_offset, data_size_in_bytes, system_memory_temporary_storage_address);
-    // }
-    // this->manager.issue_queue_push_back(cmd_size, detail::LAZY_COMMAND_QUEUE_MODE, this->command_queue_id);
+    // Wrap issue queue if necessary
+    if (this->manager.get_issue_queue_write_ptr(this->command_queue_id) + fetch_size_bytes >=
+        this->manager.get_issue_queue_limit(this->command_queue_id)) {
+        this->manager.wrap_issue_queue_wr_ptr(this->command_queue_id);
+    }
+
+    // move the wrap logic in here
+    this->manager.fetch_queue_reserve_back(this->command_queue_id);
+
+    uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
+
+    std::cout << "size of prefetch and dispatch cmd B: " << (sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd)) << std::endl;
+    this->manager.cq_write(this->commands.data(), sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), write_ptr);
+    uint32_t data_write_ptr = write_ptr + (sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd));
+
+    uint32_t unpadded_src_offset = this->dst_page_index * this->buffer.page_size();
+    if (this->buffer.page_size() % 32 != 0 and this->buffer.page_size() != this->buffer.size()) {
+        // If page size is not 32B-aligned, we cannot do a contiguous write
+        uint32_t src_address_offset = unpadded_src_offset;
+        uint32_t padded_page_size = align(this->buffer.page_size(), 32);
+        for (uint32_t sysmem_address_offset = 0; sysmem_address_offset < data_size_in_bytes;
+             sysmem_address_offset += padded_page_size) {
+            this->manager.cq_write(
+                (char*)this->src + src_address_offset,
+                this->buffer.page_size(),
+                data_write_ptr + sysmem_address_offset);
+            src_address_offset += this->buffer.page_size();
+        }
+    } else {
+        this->manager.cq_write((char*)this->src + unpadded_src_offset, data_size_in_bytes, data_write_ptr);
+    }
+
+    this->manager.fetch_queue_push_back(fetch_size_bytes, this->command_queue_id);
 }
 
 EnqueueProgramCommand::EnqueueProgramCommand(
@@ -548,59 +602,46 @@ void HWCommandQueue::enqueue_write_buffer(std::variant<std::reference_wrapper<Bu
 
 void HWCommandQueue::enqueue_write_buffer(const Buffer& buffer, const void* src, bool blocking) {
     ZoneScopedN("HWCommandQueue_write_buffer");
-    // TODO(agrebenisan): Fix these asserts after implementing multi-core CQ
-    // TODO (abhullar): Use eth mem l1 size when issue queue interface kernel is on ethernet core
-    // TT_ASSERT(
-    //     buffer.page_size() < get_cq_data_buffer_size(false),
-    //     "Buffer pages must fit within the command queue data section");
 
-    // if (buffer.buffer_layout() == TensorMemoryLayout::WIDTH_SHARDED or
-    //     buffer.buffer_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
-    //     convert_interleaved_to_sharded_on_host(src, buffer);
-    // }
+    if (buffer.buffer_layout() == TensorMemoryLayout::WIDTH_SHARDED or
+        buffer.buffer_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
+        convert_interleaved_to_sharded_on_host(src, buffer);
+    }
 
-    // uint32_t padded_page_size = align(buffer.page_size(), 32);
-    // uint32_t total_pages_to_write = buffer.num_pages();
-    // const uint32_t command_issue_limit = this->manager.get_issue_queue_limit(this->id);
-    // uint32_t dst_page_index = 0;
-    // while (total_pages_to_write > 0) {
-    //     int32_t num_pages_available =
-    //         (int32_t(command_issue_limit - this->manager.get_issue_queue_write_ptr(this->id)) -
-    //          int32_t(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND)) /
-    //         int32_t(padded_page_size);
-    //     // If not even a single device command fits, we hit this edgecase
-    //     num_pages_available = std::max(num_pages_available, 0);
+    uint32_t padded_page_size = align(buffer.page_size(), 32);
+    uint32_t total_pages_to_write = buffer.num_pages();
+    const uint32_t command_issue_limit = this->manager.get_issue_queue_limit(this->id);
+    uint32_t dst_page_index = 0;
+    while (total_pages_to_write > 0) {
+        int32_t num_pages_available =
+            (int32_t(command_issue_limit - this->manager.get_issue_queue_write_ptr(this->id)) -
+             int32_t(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd))) /
+            int32_t(padded_page_size);
 
-    //     uint32_t pages_to_write = std::min(total_pages_to_write, (uint32_t)num_pages_available);
-    //     if (pages_to_write == 0) {
-    //         // No space for command and data
-    //         // this->issue_wrap();
-    //         num_pages_available = (int32_t(command_issue_limit - this->manager.get_issue_queue_write_ptr(this->id)) -
-    //                                int32_t(DeviceCommand::NUM_BYTES_IN_DEVICE_COMMAND)) /
-    //                               int32_t(padded_page_size);
-    //         pages_to_write = std::min(total_pages_to_write, (uint32_t)num_pages_available);
-    //     }
+        uint32_t pages_to_write = std::min(total_pages_to_write, (uint32_t)num_pages_available);
 
-    //     tt::log_debug(tt::LogDispatch, "EnqueueWriteBuffer for channel {}", this->id);
-    //     uint32_t event = this->manager.get_next_event(this->id);
-    //     if (is_sharded(buffer.buffer_layout())) {
-    //         auto command = EnqueueWriteShardedBufferCommand(
-    //             this->id, this->device, buffer, src, this->manager, event, dst_page_index, pages_to_write);
-    //         this->enqueue_command(command, false);
-    //     } else {
-    //         auto command = EnqueueWriteInterleavedBufferCommand(
-    //             this->id, this->device, buffer, src, this->manager, event, dst_page_index, pages_to_write);
-    //         this->enqueue_command(command, false);
-    //     }
-    //     this->manager.next_completion_queue_push_back(align(EVENT_PADDED_SIZE, 32), this->id);
+        tt::log_debug(tt::LogDispatch, "EnqueueWriteBuffer for channel {}", this->id);
+        uint32_t event = this->manager.get_next_event(this->id);
+        if (is_sharded(buffer.buffer_layout())) {
+            TT_THROW("Sharded buffers are currently unsupported in FD2.0");
+            auto command = EnqueueWriteShardedBufferCommand(
+                this->id, this->device, buffer, src, this->manager, dst_page_index, pages_to_write);
+            this->enqueue_command(command, false);
+        } else {
+            auto command = EnqueueWriteInterleavedBufferCommand(
+                this->id, this->device, buffer, src, this->manager, dst_page_index, pages_to_write);
+            this->enqueue_command(command, false);
+        }
 
-    //     total_pages_to_write -= pages_to_write;
-    //     dst_page_index += pages_to_write;
-    // }
+        total_pages_to_write -= pages_to_write;
+        dst_page_index += pages_to_write;
+    }
 
-    // if (blocking) {
-    //     this->finish();
-    // }
+    // TODO: ADD enqueue_record_event
+
+    if (blocking) {
+        this->finish();
+    }
 }
 
 void HWCommandQueue::enqueue_program(

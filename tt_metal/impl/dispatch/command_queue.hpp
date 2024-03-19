@@ -163,6 +163,7 @@ class EnqueueWriteBufferCommand : public Command {
     Device* device;
     const Buffer& buffer;
     uint32_t dst_page_index;
+    static std::vector<uint32_t> commands;
    public:
     EnqueueWriteBufferCommand(
         uint32_t command_queue_id,
@@ -173,7 +174,7 @@ class EnqueueWriteBufferCommand : public Command {
         uint32_t dst_page_index = 0,
         std::optional<uint32_t> pages_to_write = std::nullopt);
 
-    const void assemble_device_commands(uint32_t src_address);
+    const void assemble_device_commands(uint32_t);
 
     void process();
 
