@@ -4,6 +4,7 @@
 *.log
 *.csv
 *.xlsx
+*.png
 /tt-perf*
 test_hlk_args_init_gen
 tt_build
@@ -76,6 +77,9 @@ venv/
 
 # exclude pytorch binaries
 *.pt
+
+# exclude binaries
+*.bin
 
 # releases
 dist
