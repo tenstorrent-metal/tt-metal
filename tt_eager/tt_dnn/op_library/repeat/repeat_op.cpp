@@ -71,7 +71,7 @@ operation::ProgramWithCallbacks Repeat::create_program(
     };
 }
 
-Tensor repeat(const Tensor &input_tensor, const Shape &shape, const MemoryConfig &output_mem_config) {
+Tensor repeat(const Tensor &input_tensor, const Shape &shape, std::optional<Tensor> output_tensor, const MemoryConfig &output_mem_config) {
     uint32_t input_rank = input_tensor.get_legacy_shape().rank();
     TT_FATAL(shape.rank() == input_rank, "Number of repeat dims must be equal to number of tensor dims");
     Tensor output = input_tensor;
@@ -85,7 +85,7 @@ Tensor repeat(const Tensor &input_tensor, const Shape &shape, const MemoryConfig
                 (input_tensor.get_legacy_shape()[dim] * input_tensor.element_size()) % ADDRESS_ALIGNMENT == 0,
                 "Current repeat implementation requires aligned last dim when repeating on last dim");
         }
-        output = operation::run_without_autoformat(Repeat{dim, shape[dim], output_mem_config}, {output}).at(0);
+        output = operation::run_without_autoformat(Repeat{dim, shape[dim], output_tensor, output_mem_config}, {output}).at(0);
     }
     return output;
 }

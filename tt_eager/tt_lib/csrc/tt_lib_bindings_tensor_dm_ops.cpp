@@ -89,7 +89,7 @@ namespace tt::tt_metal::detail{
         )doc");
 
         m_tensor.def("repeat", &tt::tt_metal::repeat,
-            py::arg("input"), py::arg("size"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
+            py::arg("input"), py::arg("size"), py::arg("output_tensor"), py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG, R"doc(
                     Returns a new tensor filled with repetition of input ``input`` tensor according to number of times specified in ``size``. The rank of ``size`` should be less than or equal to the rank of tensor ``input_a``.
 
                     Output tensor will have same data type as input.

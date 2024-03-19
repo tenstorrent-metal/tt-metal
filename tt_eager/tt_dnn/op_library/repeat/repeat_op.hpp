@@ -16,6 +16,7 @@ enum class RepeatOpParallelizationStrategy { SINGLE_CORE = 0, MULTI_CORE = 1 };
 struct Repeat {
     const uint32_t repeat_dim;
     const uint32_t num_repeats;
+    std::optional<Tensor> output_tensor;
     const MemoryConfig output_mem_config;
     void validate(const std::vector<Tensor> &input_tensors) const;
     std::vector<tt::tt_metal::Shape> compute_output_shapes(const std::vector<Tensor> &input_tensors) const;
@@ -39,6 +40,7 @@ operation::ProgramWithCallbacks repeat_single_core(
 Tensor repeat(
     const Tensor &input_tensor,
     const Shape &shape,
+    std::optional<Tensor> output_tensor = std::nullopt,
     const MemoryConfig &output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
 }  // namespace tt_metal

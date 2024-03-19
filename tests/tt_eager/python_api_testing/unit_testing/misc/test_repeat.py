@@ -37,7 +37,8 @@ def run_repeat(input_shape, repeats, device, layout, dtype, input_mem_config, ou
 
     tt_cpu = input.repeat(torch.Size(repeats))
 
-    tt = ttl.tensor.repeat(tt_input, ttl.tensor.Shape(repeats), output_mem_config)
+    tt_output_tensor = None
+    tt = ttl.tensor.repeat(tt_input, ttl.tensor.Shape(repeats), tt_output_tensor, output_mem_config)
 
     tt_dev = tt.cpu().to(ttl.tensor.Layout.ROW_MAJOR).to_torch().to(torch.bfloat16)
 
