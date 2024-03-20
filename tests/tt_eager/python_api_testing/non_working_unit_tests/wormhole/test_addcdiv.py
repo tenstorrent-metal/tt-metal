@@ -22,6 +22,7 @@ def run_eltwise_addcdiv_tests(input_shape, dtype, dlayout, in_mem_config, out_me
     x = torch.Tensor(size=input_shape).uniform_(-100, 100)
     y = torch.Tensor(size=input_shape).uniform_(-100, 100)
     z = torch.Tensor(size=input_shape).uniform_(-100, 100)
+    output_tensor = torch.Tensor(size=input_shape).uniform_(-100, 100)
 
     # get referent value
     ref_value = pt_eltwise_addcdiv(x, y, z, scalar=scalar)
@@ -33,6 +34,7 @@ def run_eltwise_addcdiv_tests(input_shape, dtype, dlayout, in_mem_config, out_me
         y=y,
         z=z,
         scalar=scalar,
+        output_tensor=output_tensor,
         device=device,
         dtype=[dtype, dtype, dtype],
         layout=[dlayout, dlayout, dlayout],
