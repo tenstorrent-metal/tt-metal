@@ -653,6 +653,7 @@ void py_module(py::module& m_primary) {
         py::arg("input").noconvert(),
         py::arg("normalized_dims").noconvert(),
         py::arg("eps").noconvert() = 1e-5f,
+        py::arg("output_tensor").noconvert() = std::nullopt,
         py::arg("gamma").noconvert() = std::nullopt,
         py::arg("beta").noconvert() = std::nullopt,
         py::kw_only(),

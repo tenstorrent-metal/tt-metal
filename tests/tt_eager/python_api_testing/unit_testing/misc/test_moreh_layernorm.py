@@ -107,9 +107,11 @@ def tt_layernorm(input, *, normalized_dims=1, eps=1e-5, gamma=None, beta=None, d
     cpu_rstd = torch.full(mean_rstd_shape, float("nan"), dtype=cpu_dtype)
     npu_rstd = to_npu(cpu_rstd, device)
 
+    tt_output_tensor = None
+
     # Forward
     npu_output = ttl.operations.primary.moreh_layernorm(
-        npu_input, normalized_dims, eps, npu_gamma, npu_beta, mean=npu_mean, rstd=npu_rstd
+        npu_input, normalized_dims, eps, tt_output_tensor, npu_gamma, npu_beta, mean=npu_mean, rstd=npu_rstd
     )
 
     tt_output = to_cpu(npu_output, input_shape)

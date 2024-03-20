@@ -55,10 +55,11 @@ Tensor moreh_layernorm(
     const Tensor &input,
     uint32_t normalized_dims,
     float eps,
-    const std::optional<std::reference_wrapper<const Tensor>> gamma = std::nullopt,
-    const std::optional<std::reference_wrapper<const Tensor>> beta = std::nullopt,
-    const std::optional<std::reference_wrapper<const Tensor>> mean = std::nullopt,
-    const std::optional<std::reference_wrapper<const Tensor>> rstd = std::nullopt,
+    const std::optional<Tensor> output_tensor = std::nullopt,
+    const std::optional<Tensor> gamma = std::nullopt,
+    const std::optional<Tensor> beta = std::nullopt,
+    const std::optional<Tensor> mean = std::nullopt,
+    const std::optional<Tensor> rstd = std::nullopt,
     const MemoryConfig &output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
 }  // namespace primary
@@ -71,10 +72,11 @@ Tensor moreh_layernorm(
     const Tensor &input,
     uint32_t normalized_dims,
     float eps,
-    const std::optional<std::reference_wrapper<const Tensor>> gamma = std::nullopt,
-    const std::optional<std::reference_wrapper<const Tensor>> beta = std::nullopt,
-    const std::optional<std::reference_wrapper<const Tensor>> mean = std::nullopt,
-    const std::optional<std::reference_wrapper<const Tensor>> rstd = std::nullopt,
+    const std::optional<Tensor> output_tensor = std::nullopt,
+    const std::optional<Tensor> gamma = std::nullopt,
+    const std::optional<Tensor> beta = std::nullopt,
+    const std::optional<Tensor> mean = std::nullopt,
+    const std::optional<Tensor> rstd = std::nullopt,
     const MemoryConfig &output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
 }  // namespace tt_metal
