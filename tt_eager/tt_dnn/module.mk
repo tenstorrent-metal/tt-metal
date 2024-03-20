@@ -6,6 +6,8 @@ TT_DNN_SRCS = \
 	tt_eager/tt_dnn/op_library/all_gather/multi_core/all_gather_op_multi_core.cpp \
 	tt_eager/tt_dnn/op_library/sharded/sharded_op.cpp \
 	tt_eager/tt_dnn/op_library/sharded/multi_core/sharded_op_multi_core.cpp \
+	tt_eager/tt_dnn/op_library/sharded_partial/sharded_op_partial.cpp \
+	tt_eager/tt_dnn/op_library/sharded_partial/multi_core/sharded_op_partial_multi_core.cpp \
 	tt_eager/tt_dnn/op_library/copy/copy_op.cpp \
 	tt_eager/tt_dnn/op_library/copy/single_core/copy_op_single_core.cpp \
 	tt_eager/tt_dnn/op_library/copy/multi_core/copy_op_multi_core.cpp \
@@ -20,6 +22,7 @@ TT_DNN_SRCS = \
 	tt_eager/tt_dnn/op_library/eltwise_unary/eltwise_unary_op.cpp \
 	tt_eager/tt_dnn/op_library/eltwise_unary/single_core/eltwise_unary_op_single_core.cpp \
 	tt_eager/tt_dnn/op_library/eltwise_unary/multi_core/eltwise_unary_op_multi_core.cpp \
+	tt_eager/tt_dnn/op_library/eltwise_unary/multi_core/eltwise_unary_op_multi_core_height_block_sharded.cpp \
 	tt_eager/tt_dnn/op_library/pad/pad_op.cpp \
 	tt_eager/tt_dnn/op_library/pad/pad_op_multi_core.cpp \
 	tt_eager/tt_dnn/op_library/unpad/single_core/unpad_op_single_core.cpp \
