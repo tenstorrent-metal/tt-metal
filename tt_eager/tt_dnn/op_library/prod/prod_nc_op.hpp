@@ -44,7 +44,7 @@ Tensor prod_nc(
     const Tensor &input,
     const Tensor &output,
     std::vector<int64_t> &dims,
-    const MemoryConfig &mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
+    const MemoryConfig &output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG);
 
 }  // namespace primary
 

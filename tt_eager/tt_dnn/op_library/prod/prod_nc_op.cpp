@@ -17,12 +17,12 @@ namespace primary {
 //                         Prod
 ////////////////////////////////////////////////////////////////////////////
 void Prod::validate(const std::vector<Tensor>& inputs) const {
-    TT_ASSERT((dim >= 0 && dim <= 3), "dim should be 0 - 3");
+    TT_FATAL((dim >= 0 && dim <= 3), "dim should be 0 - 3");
     const auto& input = inputs.at(0);
     const auto& output = inputs.at(1);
 
     auto input_shape = input.get_legacy_shape();
-    TT_ASSERT((input_shape.rank() == 4), "rank should be 4");
+    TT_FATAL((input_shape.rank() == 4), "rank should be 4");
     const auto& output_shape = output.get_legacy_shape();
     auto input_shape_wo_padding = input.get_legacy_shape().without_padding();
     const auto& output_shape_wo_padding = output.get_legacy_shape().without_padding();
@@ -96,7 +96,7 @@ Tensor prod_nc(
     const Tensor& input,
     const Tensor& output,
     std::vector<int64_t>& dims,
-    const MemoryConfig& mem_config) {
+    const MemoryConfig& output_mem_config) {
     // reduce for all dims
     if (dims.empty()) {
         dims = {0, 1, 2, 3};
@@ -108,7 +108,7 @@ Tensor prod_nc(
     auto temp_input = input;
     for (uint32_t i = dims.size() - 1; i > 0; i--) {
         log_debug(LogTest, "{}:{} dim {}", __func__, __LINE__, sorted_dims[i]);
-        auto temp_output = prod_(temp_input, sorted_dims[i], mem_config);
+        auto temp_output = prod_(temp_input, sorted_dims[i], output_mem_config);
         temp_input = temp_output;
     }
     log_debug(LogTest, "{}:{} dim {}", __func__, __LINE__, sorted_dims.front());

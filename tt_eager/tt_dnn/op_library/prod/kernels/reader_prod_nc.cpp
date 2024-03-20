@@ -8,7 +8,20 @@
 #include "tt_eager/tt_dnn/kernels/dataflow/moreh_common.hpp"
 
 inline uint32_t get_read_tile_id(uint32_t tile_id, uint32_t dim, uint32_t input_tile_offset, uint32_t HtWt) {
-    return (dim == 0 ) ? (tile_id) : (tile_id / HtWt * input_tile_offset) + (tile_id % HtWt);
+    if(dim == 0){
+        return tile_id;
+    }else {
+        uint32_t a = 0 ;
+        while (tile_id >= HtWt){
+            tile_id-= HtWt;
+            a = a + 1;
+        }
+        uint32_t b = 0;
+        for (uint32_t i = 0; i < input_tile_offset; ++i) {
+            b = b + a;
+        }
+        return b + tile_id;
+    }
 }
 
 void kernel_main() {
@@ -17,7 +30,7 @@ void kernel_main() {
     const auto num_output_tiles = get_arg_val<uint32_t>(2);
     const auto input_tile_offset = get_arg_val<uint32_t>(3);
     const auto start_id = get_arg_val<uint32_t>(4);
-    const auto input_is_dram = (get_arg_val<uint32_t>(5) == 1);
+    const auto input_is_dram = get_compile_time_arg_val(0) == 1;
     const auto HtWt = get_arg_val<uint32_t>(6);
     const auto CHtWt = get_arg_val<uint32_t>(7);
     const auto dim = get_arg_val<uint32_t>(8);
@@ -36,9 +49,7 @@ void kernel_main() {
     uint32_t l1_write_addr_in0;
     uint32_t input_tile_bytes = get_tile_size(cb_id_in0);
     const auto input_data_format = get_dataformat(cb_id_in0);
-    const InterleavedAddrGenFast<true> dram_input_addrg = {
-        .bank_base_address = input_addr, .page_size = input_tile_bytes, .data_format = input_data_format};
-    const InterleavedAddrGenFast<false> l1_input_addrg = {
+    const InterleavedAddrGenFast<input_is_dram> dram_input_addrg = {
         .bank_base_address = input_addr, .page_size = input_tile_bytes, .data_format = input_data_format};
 
     for (uint32_t i = start_id; i < start_id + num_output_tiles; i++) {
@@ -46,14 +57,11 @@ void kernel_main() {
         for (uint32_t j = 0; j < num_input_tiles; ++j) {
             cb_reserve_back(cb_id_in0, onetile);
             l1_write_addr_in0 = get_write_ptr(cb_id_in0);
-            if (input_is_dram) {
-                noc_async_read_tile(read_tile_id, dram_input_addrg, l1_write_addr_in0);
-            } else {
-                noc_async_read_tile(read_tile_id, l1_input_addrg, l1_write_addr_in0);
-            }
+            noc_async_read_tile(read_tile_id, dram_input_addrg, l1_write_addr_in0);
             noc_async_read_barrier();
             cb_push_back(cb_id_in0, onetile);
             read_tile_id += input_tile_offset;
         }
     }
+
 }

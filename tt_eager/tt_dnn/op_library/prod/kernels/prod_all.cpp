@@ -10,8 +10,15 @@
 #include "compute_kernel_api/eltwise_unary/sfpu_split_includes.h"
 #include "compute_kernel_api/eltwise_unary/negative.h"
 
-ALWI void ACQ() { acquire_dst(tt::DstMode::Half); }
-ALWI void REL() { release_dst(tt::DstMode::Half); }
+ALWI void ACQ() {
+    tile_regs_acquire();
+    tile_regs_wait();
+}
+ALWI void REL() {
+    tile_regs_commit();
+    tile_regs_release();
+}
+
 namespace NAMESPACE {
 void MAIN {
 
@@ -35,16 +42,14 @@ void MAIN {
                 cb_reserve_back(tt::CB::c_intermed0, 1);
                 copy_tile_to_dst_init_short();
                 copy_tile(tt::CB::c_in0, 0, 0); // copy from c_in[0] to DST[0]
-                if (num_tiles == 1)
+                if constexpr (num_tiles == 1)
                     pack_tile(0, tt::CB::c_out0);
                 else
                 {
                     pack_tile(0, tt::CB::c_intermed0);
                     cb_push_back(tt::CB::c_intermed0, 1);
                 }
-            }
-            if (!once)
-            {
+            }else {
                 REL();
                 ACQ();
                 mul_tiles_init();

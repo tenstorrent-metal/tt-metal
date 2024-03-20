@@ -88,8 +88,15 @@ operation::ProgramWithCallbacks prod_nc_format(const Tensor &input, const Tensor
     ////////////////////////////////////////////////////////////////////////////
     //                      DataMovementKernel SetUp
     ////////////////////////////////////////////////////////////////////////////
-    std::vector<uint32_t> reader_compile_time_args;
-    std::vector<uint32_t> writer_compile_time_args;
+
+    tt_metal::Buffer *input_buffer_type = input.buffer();
+    bool input_is_dram = input_buffer_type->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
+    std::vector<uint32_t> reader_compile_time_args = {(std::uint32_t) input_is_dram};
+
+    tt_metal::Buffer *output_buffer_type = output.buffer();
+    bool output_is_dram = output_buffer_type->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
+    std::vector<uint32_t> writer_compile_time_args = {(std::uint32_t) output_is_dram};
+
     const auto reader_kernel_file = "tt_eager/tt_dnn/op_library/prod/kernels/reader_prod_nc.cpp";
     const auto writer_kernel_file = "tt_eager/tt_dnn/op_library/prod/kernels/writer_prod_nc.cpp";
     const auto reader_kernel_id = CreateReadKernel(program, reader_kernel_file, all_cores, reader_compile_time_args);
