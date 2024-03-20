@@ -85,11 +85,11 @@ def run_test_FalconAttention_inference(
         layer_past = None
 
         tt_attention_input_host = torch2tt_tensor(
-            attention_input.unsqueeze(1), None, tt_dtype=model_config["LN_ATTN_OUTPUT_DTYPE"]
+            attention_input.unsqueeze(1), None, tt_dtype=model_config["ATTN_INPUT_DTYPE"]
         )
         tt_attention_input = []
         for device in devices:
-            tt_attention_input.append(tt_attention_input_host.to(device, model_config["LN_ATTN_OUTPUT_MEMCFG"]))
+            tt_attention_input.append(tt_attention_input_host.to(device, model_config["ATTN_INPUT_MEMCFG"]))
 
         attention_mask_heads_dim = (
             configuration.num_attention_heads if model_config["ATTN_MASK_MEMCFG"].is_sharded() else len(devices)

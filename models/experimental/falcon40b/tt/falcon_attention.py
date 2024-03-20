@@ -376,7 +376,7 @@ class TtFalconAttention:
 
         # Reshard
         hidden_states = convert_to_layout(
-            hidden_states, self.model_config["LN_ATTN_OUTPUT_MEMCFG"], self.model_config["FUSED_QKV_MM_INPUT_MEMCFG"]
+            hidden_states, self.model_config["ATTN_INPUT_MEMCFG"], self.model_config["FUSED_QKV_MM_INPUT_MEMCFG"]
         )
 
         #################

@@ -25,6 +25,7 @@ OP_KEYS = (
     "SIN_CACHED_WEIGHTS",
     "COS_CACHED_WEIGHTS",
     # Attention
+    "ATTN_INPUT",
     "FUSED_QKV_MM_WEIGHTS",
     "FUSED_QKV_MM_INPUT",
     "FUSED_QKV_MM_OUTPUT",
@@ -52,6 +53,7 @@ OP_KEYS = (
     # Decoder Cont
     "PARALLEL_ATTN_ADD_OUTPUT",
     "DROPOUT_ADD_OUTPUT",
+    "DECODER_ALL_GATHER_OUTPUT",
     # Model
     "LN_F_WEIGHTS",
     "LN_F_BIAS",
@@ -203,12 +205,62 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
         row_height = batch
 
     if mem_config_str in ["DRAM", "L1"]:
+        # Exceptions that are sharded also here
+        shard_width_hidden_dim_across_32_cores = hidden_size // 32
+        shard_spec_32_cores_grid = ttl.tensor.CoreRangeSet(
+            {
+                ttl.tensor.CoreRange(
+                    ttl.tensor.CoreCoord(0, 0),
+                    ttl.tensor.CoreCoord(7, 3),
+                ),
+            }
+        )
+        model_config["LN_ATTN_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+            ttl.tensor.BufferType.L1,
+            ttl.tensor.ShardSpec(
+                shard_spec_32_cores_grid,
+                [
+                    row_height,
+                    shard_width_hidden_dim_across_32_cores,
+                ],
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+                False,
+            ),
+        )
+        model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+            ttl.tensor.BufferType.L1,
+            ttl.tensor.ShardSpec(
+                shard_spec_32_cores_grid,
+                [
+                    row_height,
+                    shard_width_hidden_dim_across_32_cores,
+                ],
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+                False,
+            ),
+        )
+        model_config["LN_MLP_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+            ttl.tensor.BufferType.L1,
+            ttl.tensor.ShardSpec(
+                shard_spec_32_cores_grid,
+                [
+                    row_height,
+                    shard_width_hidden_dim_across_32_cores,
+                ],
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+                False,
+            ),
+        )
+
         # Specify program configs
         # Layernorm
         model_config["LN_ATTN_PROGCFG"] = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
             compute_with_storage_grid_size=[8, 4],
             subblock_w=8,
-            block_h=1,
+            block_h=row_height // 32,
             block_w=8,
             math_fidelity=ttl.tensor.MathFidelity.HiFi4,
             im_data_format=ttl.tensor.DataType.BFLOAT16,
@@ -218,7 +270,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
         model_config["LN_MLP_PROGCFG"] = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
             compute_with_storage_grid_size=[8, 4],
             subblock_w=8,
-            block_h=1,
+            block_h=row_height // 32,
             block_w=8,
             math_fidelity=ttl.tensor.MathFidelity.HiFi4,
             im_data_format=ttl.tensor.DataType.BFLOAT16,
@@ -511,6 +563,19 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
 
         # Decoder
         model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+            ttl.tensor.BufferType.L1,
+            ttl.tensor.ShardSpec(
+                shard_spec_32_cores_grid,
+                [
+                    row_height,
+                    shard_width_hidden_dim_across_32_cores,
+                ],
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+                False,
+            ),
+        )
+        model_config["LN_ATTN_INPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
             ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
             ttl.tensor.BufferType.L1,
             ttl.tensor.ShardSpec(
