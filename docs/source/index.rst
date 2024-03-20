@@ -32,6 +32,7 @@ Welcome to TT-Metalium documentation!
    ttnn/adding_new_ttnn_operation
    ttnn/profiling_ttnn_operations
    ttnn/dependencies/index.rst
+   ttnn/sweeps/index.rst
 
 .. toctree::
    :caption: Models

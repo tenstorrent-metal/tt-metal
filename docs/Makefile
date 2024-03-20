@@ -16,7 +16,7 @@ DOCS_VERSION       	?= latest
 BRANCH = $(shell git rev-parse --abbrev-ref HEAD)
 
 GITHUB_TOKEN    ?= INSERT_TOKEN_HERE
-TTNN_SWEEPS_DIR = $(HTMLDIR)/ttnn_sweeps
+TTNN_SWEEPS_DIR = $(SOURCEDIR)/ttnn/sweeps
 
 # Put it first so that "make" without argument is like "make help".
 help:
@@ -46,7 +46,7 @@ ttnn_sweeps/check_directory:
 
 ttnn_sweeps:
 	@echo "Note that GITHUB_TOKEN must be set before calling this"
-	@cd .. && python tests/ttnn/sweep_tests/build_html_sweep_results.py --dir docs/$(TTNN_SWEEPS_DIR) --token $(GITHUB_TOKEN)
+	@cd .. && python tests/ttnn/sweep_tests/build_rst_sweep_results.py --dir docs/$(TTNN_SWEEPS_DIR) --token $(GITHUB_TOKEN)
 
 server:
 	@echo "Navigate to: \033[4;33mlocalhost:$(PORT)/index.html\033[0m"
