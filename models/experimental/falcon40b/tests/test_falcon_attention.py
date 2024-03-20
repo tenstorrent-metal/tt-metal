@@ -91,8 +91,12 @@ def run_test_FalconAttention_inference(
         for device in devices:
             tt_attention_input.append(tt_attention_input_host.to(device, model_config["LN_ATTN_OUTPUT_MEMCFG"]))
 
+        attention_mask_heads_dim = (
+            configuration.num_attention_heads if model_config["ATTN_MASK_MEMCFG"].is_sharded() else len(devices)
+        )
+
         attention_mask_bool_chunks = torch.chunk(
-            (attention_mask_bool * -100000).expand(-1, configuration.num_attention_heads, -1, -1),
+            (attention_mask_bool * -100000).expand(-1, attention_mask_heads_dim, -1, -1),
             len(devices),
             1,
         )
@@ -326,9 +330,10 @@ def run_test_FalconAttention_inference(
     (
         ("prefill", 1, 32, 0),
         ("prefill", 1, 64, 0),
+        ("prefill", 1, 256, 0),
         ("decode", 32, 1, 128),
     ),
-    ids=["prefill_seq32", "prefill_seq64", "decode_batch32"],
+    ids=["prefill_seq32", "prefill_seq64", "prefill_seq256", "decode_batch32"],
 )
 @pytest.mark.parametrize(
     "model_version",
@@ -337,8 +342,13 @@ def run_test_FalconAttention_inference(
 )
 @pytest.mark.parametrize(
     "model_config_str, out_pcc, cache_pcc, token_pcc",
-    [("BFLOAT8_B-SHARDED", 0.99, 0.99, 0.99), ("BFLOAT16-SHARDED", 0.99, 0.99, 0.99)],
-    ids=["BFLOAT8_B-SHARDED", "BFLOAT16-SHARDED"],
+    [
+        ("BFLOAT8_B-SHARDED", 0.99, 0.99, 0.99),
+        ("BFLOAT16-SHARDED", 0.99, 0.99, 0.99),
+        ("BFLOAT8_B-DRAM", 0.99, 0.99, 0.99),
+        ("BFLOAT16-DRAM", 0.99, 0.99, 0.99),
+    ],
+    ids=["BFLOAT8_B-SHARDED", "BFLOAT16-SHARDED", "BFLOAT8_B-DRAM", "BFLOAT16-DRAM"],
 )
 def test_FalconAttention_inference(
     num_devices,
@@ -356,8 +366,8 @@ def test_FalconAttention_inference(
     all_devices,
     # use_program_cache, # TODO: enable program cache as soon as multi chip correctness is verified
 ):
-    if llm_mode == "prefill" and model_config_str == "BFLOAT16-SHARDED":
-        pytest.skip("Prefill is only tested for BFLOAT8_B!")
+    if llm_mode == "prefill" and model_config_str in ["BFLOAT16-SHARDED", "BFLOAT8_B-SHARDED"] and seq_len != 32:
+        pytest.skip("Sharded prefill is only supported for sequence length 32!")
 
     input_shape = [batch, seq_len]
     model_config = get_model_config(model_config_str, llm_mode, input_shape, num_devices)
