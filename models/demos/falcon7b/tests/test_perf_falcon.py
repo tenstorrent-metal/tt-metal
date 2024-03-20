@@ -155,6 +155,10 @@ def run_test_FalconCausalLM_end_to_end(
     profiler.start("first_model_run_with_compile", force_enable=True)
     if llm_mode == "prefill":
         tt_outs = []
+        # Embedding time is included in model run time for prefill
+        tt_embeddings, tt_attention_mask = generate_embeddings(
+            llm_mode, tt_FalconCausalLM, model_input, kv_cache_len, seq_len, batch, kv_len
+        )
         for user_id in range(batch):
             tt_out, tt_layer_present = tt_FalconCausalLM(
                 input_embeddings=tt_embeddings[user_id],
@@ -227,6 +231,10 @@ def run_test_FalconCausalLM_end_to_end(
     profiler.start(f"model_run_for_inference")
     if llm_mode == "prefill":
         tt_outs = []
+        # Embedding time is included in model run time for prefill
+        tt_embeddings, tt_attention_mask = generate_embeddings(
+            llm_mode, tt_FalconCausalLM, model_input, kv_cache_len, seq_len, batch, kv_len
+        )
         for user_id in range(batch):
             tt_out, tt_layer_present = tt_FalconCausalLM(
                 input_embeddings=tt_embeddings[user_id],
@@ -402,7 +410,7 @@ class TestParametrized:
             expected_inference_time,
         )
 
-    @pytest.mark.parametrize("num_devices", (1, 4))
+    @pytest.mark.parametrize("num_devices", (1, 2, 4))
     @pytest.mark.parametrize(
         "llm_mode, batch, seq_len, kv_cache_len, expected_inference_time",
         (
@@ -439,7 +447,7 @@ class TestParametrized:
     ):
         devices = get_devices_for_t3000(all_devices, num_devices)
         if num_devices > 1:
-            pytest.skip(f"num_devices={num_devices} is not supported yet")
+            pytest.skip(f"num_devices={num_devices} is not supported on CI yet")
 
         model_config = get_model_config(model_config_str)
         tt_cache_path = get_tt_cache_path(model_version)
