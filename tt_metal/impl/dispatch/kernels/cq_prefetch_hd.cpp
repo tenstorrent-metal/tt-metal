@@ -89,6 +89,7 @@ void read_from_pcie(volatile tt_l1_ptr uint16_t *& prefetch_q_rd_ptr,
         pcie_read_ptr = pcie_base;
     }
 
+    // DPRINT << "Reading from issue queue at " << pcie_read_ptr << ENDL();
     uint64_t host_src_addr = get_noc_addr_helper(NOC_XY_ENCODING(PCIE_NOC_X, PCIE_NOC_Y), pcie_read_ptr);
     noc_async_read(host_src_addr, fence, size);
     pending_read_size = size;
@@ -168,6 +169,7 @@ static void get_cmds(uint32_t& fence, uint32_t& cmd_ptr) {
             // Nothing to fetch, nothing pending, nothing available, stall on host
             DEBUG_STATUS('H', 'Q', 'W');
             DPRINT << "prefetcher stall" << ENDL();
+            // DPRINT << "fetch size: " << fetch_size << " prefetch_q_rd_ptr " << (uint32_t)prefetch_q_rd_ptr << " val " << *prefetch_q_rd_ptr << ENDL();
             while ((fetch_size = *prefetch_q_rd_ptr) == 0);
             DPRINT << "recurse" << ENDL();
             get_cmds(fence, cmd_ptr);
@@ -468,9 +470,13 @@ void kernel_main() {
 
     DPRINT << "prefetcher" << ENDL();
 
+    // DPRINT << "cmd_ptr: " << cmd_ptr << " fence: " << fence << ENDL();
+
     bool done = false;
     while (!done) {
         get_cmds(fence, cmd_ptr);
+
+        // DPRINT << "cmd ptr " << cmd_ptr << " fence " << fence << ENDL();
 
         volatile CQPrefetchCmd tt_l1_ptr *cmd = (volatile CQPrefetchCmd tt_l1_ptr *)cmd_ptr;
 
