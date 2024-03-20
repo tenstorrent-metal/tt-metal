@@ -268,10 +268,7 @@ class TtMambaSSM(torch.nn.Module):
         B_proj_weights = ttnn.to_memory_config(self.B_proj_weights, memory_config=ttnn.L1_MEMORY_CONFIG)
         B0 = ttnn.linear(x, B_proj_weights, memory_config=ttnn.L1_MEMORY_CONFIG)
         ttnn.deallocate(B_proj_weights)
-        B_intermediate_weights = ttnn.to_memory_config(self.B_intermediate, memory_config=self.configs["sharded_large"])
-        print('**********B0 shape', B0.shape, B_intermediate_weights.shape)
-        B1 = ttnn.linear(B0, B_intermediate_weights, memory_config=ttnn.L1_MEMORY_CONFIG)
-        ttnn.deallocate(B_intermediate_weights)
+        B1 = ttnn.repeat(B0, ttnn.Shape([1, 1, 1, self.hidden_size], [1, 1, 32, self.hidden_size]))
         ttnn.deallocate(B0)
         B2 = ttnn.to_memory_config(B1, memory_config=self.configs["sharded_large"])
         #ttnn.deallocate(B1)
@@ -326,10 +323,10 @@ class TtMambaSSM(torch.nn.Module):
         '''
 
         # hidden state @ C
-        hidden_state2 = ttnn.to_memory_config(hidden_state1, memory_config=ttnn.L1_MEMORY_CONFIG)
+        hidden_state1 = ttnn.to_memory_config(hidden_state1, memory_config=ttnn.L1_MEMORY_CONFIG)
+        #ttnn.deallocate(hidden_state1)
+        hidden_state3 = ttnn.to_torch(hidden_state1)
         ttnn.deallocate(hidden_state1)
-        hidden_state3 = ttnn.to_torch(hidden_state2)
-        ttnn.deallocate(hidden_state2)
         #hidden_state3 = ttnn.reshape(hidden_state2, (1, self.num_users, self.hidden_size, self.n))  # b, d, 32
         hidden_state3 = hidden_state3.reshape(1, self.num_users, self.hidden_size, self.n)  # b, d, 32
         hidden_state3 = ttnn.from_torch(hidden_state3, layout=ttnn.TILE_LAYOUT, device=self.device, memory_config=ttnn.L1_MEMORY_CONFIG, dtype=ttnn.bfloat16)
