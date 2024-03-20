@@ -322,7 +322,7 @@ void Device::compile_command_queue_programs() {
     uint32_t dispatch_buffer_pages = DISPATCH_BUFFER_BLOCK_SIZE_PAGES * DISPATCH_BUFFER_SIZE_BLOCKS;
     constexpr uint32_t dispatch_cb_sem = 0;
     uint32_t dispatch_buffer_base = get_dispatch_buffer_base(false);
-    uint32_t dev_hugepage_base = 0; // what is this????
+    uint32_t dev_hugepage_base = CQ_START;
     uint32_t prefetch_q_base = L1_UNRESERVED_BASE;
     uint32_t prefetch_q_rd_ptr_addr = CQ_PREFETCH_Q_RD_PTR;
     uint32_t prefetch_q_size = PREFETCH_Q_ENTRIES * sizeof(uint16_t);
@@ -356,6 +356,14 @@ void Device::compile_command_queue_programs() {
                 CoreCoord prefetcher_physical_core = get_physical_core_coordinate(prefetcher_location, dispatch_core_type);
                 CoreCoord completion_q_physical_core = get_physical_core_coordinate(completion_q_writer_location, dispatch_core_type);
                 CoreCoord dispatch_physical_core = get_physical_core_coordinate(dispatch_location, dispatch_core_type);
+
+                std::cout << "Prefetch location: " << prefetcher_location.str() << " physical location: " << prefetcher_physical_core.str() << std::endl;
+                std::cout << "Dispatcher location: " << dispatch_location.str() << " physical location: " << dispatch_physical_core.str() << std::endl;
+
+
+                uint32_t issue_queue_size = tt::round_up((cq_size - CQ_START) * SystemMemoryCQInterface::default_issue_queue_split, 32);
+                uint32_t completion_queue_start_addr = CQ_START + issue_queue_size + get_absolute_cq_offset(channel, cq_id, cq_size);
+                uint32_t completion_queue_size = (cq_size - CQ_START) - issue_queue_size;
 
                 // CoreCoord consumer_physical_core = completion_q_physical_core;
                 // CoreCoord producer_physical_core = prefetcher_physical_core;
@@ -442,6 +450,8 @@ void Device::compile_command_queue_programs() {
                         DISPATCH_BUFFER_SIZE_BLOCKS * DISPATCH_BUFFER_BLOCK_SIZE_PAGES,
                         dispatch_cb_sem,
                         DISPATCH_BUFFER_SIZE_BLOCKS,
+                        completion_queue_start_addr,
+                        completion_queue_size
                     };
 
                     tt::tt_metal::CreateKernel(
@@ -808,7 +818,7 @@ bool Device::close() {
     tt::Cluster::instance().set_internal_routing_info_for_ethernet_cores(false);
 
     if (llrt::OptionsG.get_clear_l1()) {
-        this->clear_l1_state();
+        // this->clear_l1_state();
     }
     tt::Cluster::instance().l1_barrier(id_);
     allocator::clear(*this->allocator_);
