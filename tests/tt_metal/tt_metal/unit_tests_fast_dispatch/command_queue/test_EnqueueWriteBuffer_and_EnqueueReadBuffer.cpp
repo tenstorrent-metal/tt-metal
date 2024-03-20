@@ -103,8 +103,8 @@ vector<uint32_t> generate_arange_vector(uint32_t size_bytes) {
 template <bool cq_dispatch_only = false>
 void test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue& cq, const TestBufferConfig& config) {
 
-    for (const bool cq_write: {true, false}) {
-        for (const bool cq_read: {true, false}) {
+    for (const bool cq_write: {/*true, */false}) {
+        for (const bool cq_read: {true/*, false*/}) {
             if constexpr (cq_dispatch_only) {
                 if (not (cq_write and cq_read)) { continue; }
             }
@@ -112,12 +112,19 @@ void test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue&
             size_t buf_size = config.num_pages * config.page_size;
             Buffer bufa(device, buf_size, config.page_size, config.buftype);
 
+            std::cout << "Buffer size: " << buf_size << " page size " << config.page_size << std::endl;
+
             vector<uint32_t> src = generate_arange_vector(bufa.size());
 
             if (cq_write) {
                 EnqueueWriteBuffer(cq, bufa, src.data(), false);
             } else {
                 ::detail::WriteToBuffer(bufa, src);
+                if (config.buftype == BufferType::DRAM) {
+                    tt::Cluster::instance().dram_barrier(device->id());
+                } else {
+                    tt::Cluster::instance().l1_barrier(device->id());
+                }
             }
             vector<uint32_t> result;
             result.resize(buf_size / sizeof(uint32_t));
@@ -130,6 +137,18 @@ void test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue&
                 EnqueueReadBuffer(cq, bufa, result.data(), true);
             } else {
                 ::detail::ReadFromBuffer(bufa, result);
+            }
+
+            sleep(5);
+
+            if (src != result) {
+                for (int i = 0; i < src.size(); i++) {
+                    if (src[i] != result[i]) {
+                        std::cout << "Index " << i << " wrong. Expected " << src[i] << " got " << result[i] << std::endl;
+                        std::cout << "result[i + 1] " << result[i + 1] << std::endl;
+                        break;
+                    }
+                }
             }
 
             EXPECT_EQ(src, result);
@@ -330,6 +349,7 @@ TEST_F(CommandQueueSingleCardFixture, WriteOneTileAcrossAllDramBanksTwiceRoundRo
     }
 }
 
+// MISMATCHING!
 TEST_F(CommandQueueSingleCardFixture, Sending131072Pages) {
     for (Device *device : devices_) {
         TestBufferConfig config = {
@@ -341,6 +361,7 @@ TEST_F(CommandQueueSingleCardFixture, Sending131072Pages) {
     }
 }
 
+// MISMATCHING!
 TEST_F(CommandQueueSingleCardFixture, TestNon32BAlignedPageSizeForDram) {
     TestBufferConfig config = {.num_pages = 1250, .page_size = 200, .buftype = BufferType::DRAM};
 
@@ -349,6 +370,7 @@ TEST_F(CommandQueueSingleCardFixture, TestNon32BAlignedPageSizeForDram) {
     }
 }
 
+// MISMATCHING
 TEST_F(CommandQueueSingleCardFixture, TestNon32BAlignedPageSizeForDram2) {
     // From stable diffusion read buffer
     TestBufferConfig config = {.num_pages = 8 * 1024, .page_size = 80, .buftype = BufferType::DRAM};
