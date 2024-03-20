@@ -688,7 +688,6 @@ void HWCommandQueue::enqueue_record_event(std::shared_ptr<Event> event) {
 
     auto command = EnqueueRecordEventCommand(this->id, this->device, this->manager, event->event_id);
     this->enqueue_command(command, false);
-    // this->manager.next_completion_queue_push_back(align(EVENT_PADDED_SIZE, 32), this->id); // DO WE NEED THIS????
 }
 
 void HWCommandQueue::enqueue_wait_for_event(std::shared_ptr<Event> event) {
@@ -733,6 +732,7 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
         this->manager.completion_queue_wait_front(this->id, this->exit_condition);
 
         if (this->exit_condition) {
+            std::cout << "got exit condition" << std::endl;
             break;
         }
 
@@ -742,10 +742,10 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
 
         completion_q_data.resize(bytes_xfered / sizeof(uint32_t));
 
-        std::cout << "completion q write ptr: " << completion_q_write_ptr
-                  << " bytes_xfered " << bytes_xfered
-                  << " num_pages_xfered: " << num_pages_xfered
-                  << " reading from " << read_data_ptr << std::endl;
+        // std::cout << "completion q write ptr: " << completion_q_write_ptr
+        //           << " bytes_xfered " << bytes_xfered
+        //           << " num_pages_xfered: " << num_pages_xfered
+        //           << " reading from " << read_data_ptr << std::endl;
 
 
         tt::Cluster::instance().read_sysmem(
@@ -759,14 +759,16 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
         if (buffer_layout == TensorMemoryLayout::INTERLEAVED or
             buffer_layout == TensorMemoryLayout::HEIGHT_SHARDED) {
             void* contiguous_dst = (void*)(uint64_t(dst) + contig_dst_offset);
-            std::cout << "Writing to dst offset: " << contig_dst_offset << std::endl;
+            // std::cout << "Writing to dst offset: " << contig_dst_offset << std::endl;
             if ((page_size % 32) == 0) {
 
                 uint32_t data_bytes_xfered = (contig_dst_offset == 0) ? (bytes_xfered - sizeof(CQDispatchCmd)) : bytes_xfered;
 
-                std::cout << "Data bytes xfered: " << data_bytes_xfered << std::endl;
+                // std::cout << "Data bytes xfered: " << data_bytes_xfered << std::endl;
 
-                memcpy(contiguous_dst, completion_q_data.data() + (sizeof(CQDispatchCmd) / sizeof(uint32_t)), data_bytes_xfered);
+                uint32_t offset_in_completion_q_data = (contig_dst_offset == 0) ? (sizeof(CQDispatchCmd) / sizeof(uint32_t)) : 0;
+
+                memcpy(contiguous_dst, completion_q_data.data() + offset_in_completion_q_data, data_bytes_xfered);
                 contig_dst_offset += data_bytes_xfered;
 
             } else {
