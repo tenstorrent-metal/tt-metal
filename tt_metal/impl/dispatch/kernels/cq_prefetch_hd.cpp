@@ -89,7 +89,7 @@ void read_from_pcie(volatile tt_l1_ptr uint16_t *& prefetch_q_rd_ptr,
         pcie_read_ptr = pcie_base;
     }
 
-    // DPRINT << "Reading from issue queue at " << pcie_read_ptr << ENDL();
+    DPRINT << "Prefetcher reading from issue queue at " << pcie_read_ptr << ENDL();
     uint64_t host_src_addr = get_noc_addr_helper(NOC_XY_ENCODING(PCIE_NOC_X, PCIE_NOC_Y), pcie_read_ptr);
     noc_async_read(host_src_addr, fence, size);
     pending_read_size = size;
