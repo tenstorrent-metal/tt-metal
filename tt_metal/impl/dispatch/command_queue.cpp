@@ -314,64 +314,95 @@ EnqueueRecordEventCommand::EnqueueRecordEventCommand(
     uint32_t command_queue_id, Device* device, SystemMemoryManager& manager, uint32_t event_id):
     command_queue_id(command_queue_id), device(device), manager(manager), event_id(event_id) {
 
+    // TODO: ADD A WAIT!!
     if (this->commands.empty()) {
-        uint32_t stride = align(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), HUGEPAGE_ALIGNMENT);
+        // uint32_t stride = align(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), HUGEPAGE_ALIGNMENT);
 
-        CQPrefetchCmd relay_wait;
-        relay_wait.base.cmd_id = CQ_PREFETCH_CMD_RELAY_INLINE;
-        relay_wait.relay_inline.length = sizeof(CQDispatchCmd);
-        relay_wait.relay_inline.stride = stride;
+        uint32_t dispatch_event_payload = sizeof(CQDispatchCmd) + EVENT_PADDED_SIZE;
+        // Command to write event to L1
+        CQPrefetchCmd relay_event_l1;
+        relay_event_l1.base.cmd_id = CQ_PREFETCH_CMD_RELAY_INLINE;
+        relay_event_l1.relay_inline.length = dispatch_event_payload;
+        relay_event_l1.relay_inline.stride = align(sizeof(CQPrefetchCmd) + dispatch_event_payload, HUGEPAGE_ALIGNMENT);
 
-        uint32_t *relay_wait_ptr = (uint32_t *)&relay_wait;
+        uint32_t *relay_event_l1_ptr = (uint32_t *)&relay_event_l1;
         for (int i = 0; i < sizeof(CQPrefetchCmd) / sizeof(uint32_t); i++) {
-            this->commands.push_back(*relay_wait_ptr++);
+            this->commands.push_back(*relay_event_l1_ptr++);
         }
 
-        CQDispatchCmd dispatch_wait;
-        dispatch_wait.base.cmd_id = CQ_DISPATCH_CMD_WAIT;
-        dispatch_wait.wait.addr = DISPATCH_MESSAGE_ADDR;
-        dispatch_wait.wait.count = 0; // ????? TODO: SHOULD THIS BE NUM WORKERS IN THE LAST OUTSTANDING ENQUEUED PROGRAM?????
+        uint8_t num_hw_cqs = this->device->num_hw_cqs();
+        uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(this->device->id());
+        tt_cxy_pair dispatch_location = dispatch_core_manager::get(num_hw_cqs).dispatcher_core(this->device->id(), channel, this->command_queue_id);
+        CoreCoord dispatch_physical_core = get_physical_core_coordinate(dispatch_location, CoreType::WORKER);
 
-        uint32_t *dispatch_wait_ptr = (uint32_t *)&dispatch_wait;
+        CQDispatchCmd write_event_l1_cmd;
+        write_event_l1_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE;
+        write_event_l1_cmd.write.num_mcast_dests = 0;
+        write_event_l1_cmd.write.noc_xy_addr = NOC_XY_ENCODING(dispatch_physical_core.x, dispatch_physical_core.y);
+        write_event_l1_cmd.write.addr = CQ_COMPLETION_LAST_EVENT;
+        write_event_l1_cmd.write.length = EVENT_PADDED_SIZE;
+
+        uint32_t *write_event_l1_cmd_ptr = (uint32_t *)&write_event_l1_cmd;
         for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
-            this->commands.push_back(*dispatch_wait_ptr++);
+            this->commands.push_back(*write_event_l1_cmd_ptr++);
         }
 
-        uint32_t pad_size_bytes = stride;
-        for (int i = 0; i < pad_size_bytes / sizeof(uint32_t); i++) {
+        for (int i = 0; i < EVENT_PADDED_SIZE / sizeof(uint32_t); i++) {
             this->commands.push_back(0);
         }
 
-        CQPrefetchCmd relay_event;
-        relay_event.base.cmd_id = CQ_PREFETCH_CMD_RELAY_INLINE;
-        relay_event.relay_inline.length = sizeof(CQDispatchCmd);
-        relay_event.relay_inline.stride = stride;
+        uint32_t padding;
+        if ((padding = (sizeof(CQPrefetchCmd) + dispatch_event_payload) % HUGEPAGE_ALIGNMENT) != 0) {
+            for (int i = 0; i < padding / sizeof(uint32_t); i++) {
+                this->commands.push_back(0);
+            }
+        }
 
-        uint32_t *relay_event_ptr = (uint32_t *)&relay_event;
+        // Command to write event to completion queue
+        CQPrefetchCmd relay_event_host;
+        relay_event_host.base.cmd_id = CQ_PREFETCH_CMD_RELAY_INLINE;
+        relay_event_host.relay_inline.length = dispatch_event_payload;
+        relay_event_host.relay_inline.stride = align(sizeof(CQPrefetchCmd) + dispatch_event_payload, HUGEPAGE_ALIGNMENT);
+
+        uint32_t *relay_event_host_ptr = (uint32_t *)&relay_event_host;
         for (int i = 0; i < sizeof(CQPrefetchCmd) / sizeof(uint32_t); i++) {
-            this->commands.push_back(*relay_event_ptr++);
+            this->commands.push_back(*relay_event_host_ptr++);
         }
 
-        CQDispatchCmd write_event_cmd;
-        write_event_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_EVENT;
-        write_event_cmd.write_event.event_id = 0;
+        CQDispatchCmd write_event_host_cmd;
+        write_event_host_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_HOST;
+        write_event_host_cmd.write_host.length = EVENT_PADDED_SIZE;
 
-        uint32_t *write_event_cmd_ptr = (uint32_t *)&write_event_cmd;
+        uint32_t *write_event_host_cmd_ptr = (uint32_t *)&write_event_host_cmd;
         for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
-            this->commands.push_back(*write_event_cmd_ptr++);
+            this->commands.push_back(*write_event_host_cmd_ptr++);
         }
 
-        for (int i = 0; i < pad_size_bytes / sizeof(uint32_t); i++) {
+        for (int i = 0; i < EVENT_PADDED_SIZE / sizeof(uint32_t); i++) {
             this->commands.push_back(0);
+        }
+
+        if ((padding = (sizeof(CQPrefetchCmd) + dispatch_event_payload) % HUGEPAGE_ALIGNMENT) != 0) {
+            for (int i = 0; i < padding / sizeof(uint32_t); i++) {
+                this->commands.push_back(0);
+            }
         }
     }
 }
 
 const void EnqueueRecordEventCommand::assemble_device_commands(uint32_t) {
-    uint32_t write_event_idx = (align(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), HUGEPAGE_ALIGNMENT) + sizeof(CQPrefetchCmd)) / sizeof(uint32_t);
+    uint32_t event_payload_offset = sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd);
+    uint32_t write_event_l1_idx = event_payload_offset / sizeof(uint32_t);
 
-    CQDispatchCmd *write_event_cmd = (CQDispatchCmd*)(this->commands.data() + write_event_idx);
-    write_event_cmd->write_event.event_id = this->event_id;
+    uint32_t *event_l1_location = (uint32_t*)(this->commands.data() + write_event_l1_idx);
+    *event_l1_location = this->event_id;
+
+    uint32_t write_host_cmd_offset = align(event_payload_offset + EVENT_PADDED_SIZE, HUGEPAGE_ALIGNMENT);
+
+    uint32_t write_event_host_idx = (write_host_cmd_offset + event_payload_offset) / sizeof(uint32_t);
+
+    uint32_t *event_host_location = (uint32_t*)(this->commands.data() + write_event_host_idx);
+    *event_host_location = this->event_id;
 }
 
 void EnqueueRecordEventCommand::process() {
@@ -383,18 +414,14 @@ void EnqueueRecordEventCommand::process() {
     TT_ASSERT(fetch_size_bytes <= MAX_PREFETCH_COMMAND_SIZE, "Generated prefetcher command exceeds max command size");
     TT_ASSERT((fetch_size_bytes >> PREFETCH_Q_LOG_MINSIZE) < 0xFFFF, "FetchQ command too large to represent");
 
-    // Wrap issue queue if necessary
-    if (this->manager.get_issue_queue_write_ptr(this->command_queue_id) + fetch_size_bytes >=
-        this->manager.get_issue_queue_limit(this->command_queue_id)) {
-        this->manager.wrap_issue_queue_wr_ptr(this->command_queue_id);
-    }
-
     this->manager.fetch_queue_reserve_back(this->command_queue_id);
 
     uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
     this->manager.cq_write(this->commands.data(), fetch_size_bytes, write_ptr);
+    this->manager.issue_queue_push_back(fetch_size_bytes, this->command_queue_id);
 
-    this->manager.fetch_queue_push_back(fetch_size_bytes, this->command_queue_id);
+    uint16_t fetch_size_16B = fetch_size_bytes >> PREFETCH_Q_LOG_MINSIZE;
+    this->manager.fetch_queue_push_back(fetch_size_16B, this->command_queue_id);
 }
 
 EnqueueWaitForEventCommand::EnqueueWaitForEventCommand(
@@ -527,7 +554,6 @@ void HWCommandQueue::enqueue_read_buffer(std::shared_ptr<Buffer> buffer, void* d
 }
 
 // Read buffer command is enqueued in the issue region and device writes requested buffer data into the completion region
-// THIS NEEDS TO BE UPDATED WHEN INTEGRATING WITH AUSTINS CHANGES!
 void HWCommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blocking) {
     ZoneScopedN("HWCommandQueue_read_buffer");
 
@@ -544,15 +570,17 @@ void HWCommandQueue::enqueue_read_buffer(Buffer& buffer, void* dst, bool blockin
     // this is a streaming command so we don't need to break down to multiple
     auto command = EnqueueReadInterleavedBufferCommand(
         this->id, this->device, buffer, dst, this->stall_before_read, this->manager, src_page_index, pages_to_read);
-    this->enqueue_command(command, false);
 
     this->issued_completion_q_reads.push(
         detail::ReadBufferDescriptor(buffer, padded_page_size, dst, unpadded_dst_offset, pages_to_read, src_page_index)
     );
     this->num_entries_in_completion_q++;
 
-    if (blocking) {
-        this->finish();
+    this->enqueue_command(command, blocking);
+
+    if (not blocking) { // should this be unconditional?
+        std::shared_ptr<Event> event = std::make_shared<Event>();
+        this->enqueue_record_event(event);
     }
 }
 
@@ -674,12 +702,11 @@ void HWCommandQueue::enqueue_record_event(std::shared_ptr<Event> event) {
     event->device = this->device;
     event->ready = true; // what does this mean???
 
+    auto command = EnqueueRecordEventCommand(this->id, this->device, this->manager, event->event_id);
+    this->enqueue_command(command, false);
 
     this->issued_completion_q_reads.push(detail::ReadEventDescriptor(event->event_id));
     this->num_entries_in_completion_q++;
-
-    auto command = EnqueueRecordEventCommand(this->id, this->device, this->manager, event->event_id);
-    this->enqueue_command(command, false);
 }
 
 void HWCommandQueue::enqueue_wait_for_event(std::shared_ptr<Event> event) {
@@ -712,71 +739,80 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
         // read_data_ptr += align(CQ_DISPATCH_CMD_SIZE, HUGEPAGE_ALIGNMENT);
     }
 
-    std::cout << "Num pages read " << num_pages_read << std::endl;
+    std::cout << "Num pages read " << num_pages_read << " page size " << page_size << " padded page size " << padded_page_size << std::endl;
 
     uint32_t padded_num_bytes = (num_pages_read * padded_page_size) + sizeof(CQDispatchCmd);
-    uint32_t bytes_read = 0;
     uint32_t contig_dst_offset = dst_offset;
+    uint32_t remaining_bytes_to_read = padded_num_bytes;
 
     static std::vector<uint32_t> completion_q_data;
 
-    while (bytes_read != padded_num_bytes) {
+    while (remaining_bytes_to_read != 0) {
         this->manager.completion_queue_wait_front(this->id, this->exit_condition);
 
         if (this->exit_condition) {
-            std::cout << "got exit condition" << std::endl;
             break;
         }
 
         uint32_t completion_q_write_ptr = this->manager.get_completion_queue_write_ptr(this->id);
-        uint32_t bytes_xfered = (completion_q_write_ptr - read_data_ptr) > padded_num_bytes ? padded_num_bytes : (completion_q_write_ptr - read_data_ptr);
+        uint32_t bytes_xfered = std::min(padded_num_bytes, completion_q_write_ptr - read_data_ptr);
+        bytes_xfered = std::min(bytes_xfered, remaining_bytes_to_read);
         uint32_t num_pages_xfered = (bytes_xfered + TRANSFER_PAGE_SIZE - 1) / TRANSFER_PAGE_SIZE;
 
         completion_q_data.resize(bytes_xfered / sizeof(uint32_t));
 
-        // std::cout << "completion q write ptr: " << completion_q_write_ptr
-        //           << " bytes_xfered " << bytes_xfered
-        //           << " num_pages_xfered: " << num_pages_xfered
-        //           << " reading from " << read_data_ptr << std::endl;
+        std::cout << "remaining bytes to read: " << remaining_bytes_to_read
+                  << " completion q write ptr: " << completion_q_write_ptr
+                  << " bytes_xfered " << bytes_xfered
+                  << " num_pages_xfered: " << num_pages_xfered
+                  << " reading from " << read_data_ptr << std::endl;
 
 
         tt::Cluster::instance().read_sysmem(
             completion_q_data.data(), bytes_xfered, read_data_ptr, mmio_device_id, channel);
 
+
+        bool first_iter = remaining_bytes_to_read == padded_num_bytes;
+
         this->manager.completion_queue_pop_front(num_pages_xfered, this->id);
         read_data_ptr += bytes_xfered;
-        bytes_read += bytes_xfered;
-
+        remaining_bytes_to_read -= bytes_xfered;
 
         if (buffer_layout == TensorMemoryLayout::INTERLEAVED or
             buffer_layout == TensorMemoryLayout::HEIGHT_SHARDED) {
             void* contiguous_dst = (void*)(uint64_t(dst) + contig_dst_offset);
-            // std::cout << "Writing to dst offset: " << contig_dst_offset << std::endl;
+            std::cout << "Writing to dst offset: " << contig_dst_offset << std::endl;
+            uint32_t offset_in_completion_q_data = (contig_dst_offset == 0) ? (sizeof(CQDispatchCmd) / sizeof(uint32_t)) : 0;
+
+            if (not first_iter) {
+                offset_in_completion_q_data = 0;
+            }
+
+            std::cout << "Offset in completion q data " << offset_in_completion_q_data << std::endl;
             if ((page_size % 32) == 0) {
-
                 uint32_t data_bytes_xfered = (contig_dst_offset == 0) ? (bytes_xfered - sizeof(CQDispatchCmd)) : bytes_xfered;
-
-                // std::cout << "Data bytes xfered: " << data_bytes_xfered << std::endl;
-
-                uint32_t offset_in_completion_q_data = (contig_dst_offset == 0) ? (sizeof(CQDispatchCmd) / sizeof(uint32_t)) : 0;
-
+                std::cout << "Data bytes xfered: " << data_bytes_xfered << std::endl;
                 memcpy(contiguous_dst, completion_q_data.data() + offset_in_completion_q_data, data_bytes_xfered);
                 contig_dst_offset += data_bytes_xfered;
-
             } else {
-                TT_THROW("UNSUPPORTED!");
                 uint32_t non_contig_dst_offset = 0;
-                uint32_t read_src = read_data_ptr;
-                // for (uint32_t offset = 0; offset < data_bytes_xfered; offset += padded_page_size) {
-                //     tt::Cluster::instance().read_sysmem(
-                //         (char*)(uint64_t(contiguous_dst) + non_contig_dst_offset),
-                //         page_size,
-                //         read_src + offset,
-                //         mmio_device_id,
-                //         channel);
-                //     non_contig_dst_offset += page_size;
-                // }
+                std::cout << "Comq data size " << completion_q_data.size() << std::endl;
+                for (uint32_t offset = offset_in_completion_q_data; offset < completion_q_data.size(); offset += (padded_page_size / sizeof(uint32_t))) {
+                    // std::cout << " non_contig_dst_offset " << non_contig_dst_offset << std::endl;
+                    // if (not first_iter) {
+                    //     std::cout << " offset in hugepage vec: " << offset << std::endl;
+                    // }
+                    memcpy(
+                        (char*)(uint64_t(contiguous_dst)),
+                        completion_q_data.data() + offset,
+                        page_size
+                    );
+                    non_contig_dst_offset += page_size;
+                }
+                std::cout << "non_contig_dst_offset " << non_contig_dst_offset << std::endl;
+                // contig_dst_offset += non_contig_dst_offset;
             }
+
         } else if (
             buffer_layout == TensorMemoryLayout::WIDTH_SHARDED or
             buffer_layout == TensorMemoryLayout::BLOCK_SHARDED) {
@@ -792,6 +828,7 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
             // }
         }
     }
+    std::cout << "Done copying into user buffer" << std::endl;
 }
 
 void HWCommandQueue::read_completion_queue() {
@@ -823,9 +860,10 @@ void HWCommandQueue::read_completion_queue() {
                         }
                         else if constexpr (std::is_same_v<T, detail::ReadEventDescriptor>) {
                             std::cout << "got read event descriptor" << std::endl;
-                            uint32_t event_read_ptr = read_ptr /*+ align(CQ_DISPATCH_CMD_SIZE, HUGEPAGE_ALIGNMENT)*/; // add offset to read pointer because dispatch kernel always writes command + data back
-                            uint32_t event_completed;
-                            tt::Cluster::instance().read_sysmem(&event_completed, 4, event_read_ptr, mmio_device_id, channel);
+                            static std::vector<uint32_t> dispatch_cmd_and_event((sizeof(CQDispatchCmd) + EVENT_PADDED_SIZE) / sizeof(uint32_t));
+                            tt::Cluster::instance().read_sysmem(
+                                dispatch_cmd_and_event.data(), sizeof(CQDispatchCmd) + EVENT_PADDED_SIZE, read_ptr, mmio_device_id, channel);
+                            uint32_t event_completed = dispatch_cmd_and_event.at(sizeof(CQDispatchCmd) / sizeof(uint32_t));
                             TT_ASSERT(event_completed == read_descriptor.event_id, "Event Order Issue: expected to read back completion signal for event {} but got {}!", read_descriptor.event_id, event_completed);
                             this->manager.completion_queue_pop_front(1, this->id);
                             this->manager.set_last_completed_event(this->id, event_completed);
@@ -846,7 +884,27 @@ void HWCommandQueue::finish() {
     ZoneScopedN("HWCommandQueue_finish");
     tt::log_debug(tt::LogDispatch, "Finish for command queue {}", this->id);
     std::shared_ptr<Event> event = std::make_shared<Event>();
-    // this->enqueue_record_event(event);
+    this->enqueue_record_event(event);
+
+    if (tt::llrt::OptionsG.get_test_mode_enabled()) {
+        while (this->num_entries_in_completion_q > this->num_completed_completion_q_reads) {
+            if (DPrintServerHangDetected()) {
+                // DPrint Server hang. Mark state and early exit. Assert in main thread.
+                this->exit_condition = true;
+                this->dprint_server_hang = true;
+                return;
+            } else if (tt::watcher_server_killed_due_to_error()) {
+                // Illegal NOC txn killed watcher. Mark state and early exit. Assert in main thread.
+                this->exit_condition = true;
+                this->illegal_noc_txn_hang = true;
+                return;
+            }
+        }
+    } else {
+        std::cout << " in completion q " << this->num_entries_in_completion_q
+                  << " completed reads " << this->num_completed_completion_q_reads << std::endl;
+        while (this->num_entries_in_completion_q > this->num_completed_completion_q_reads);
+    }
 }
 
 volatile bool HWCommandQueue::is_dprint_server_hung() {
@@ -1164,7 +1222,6 @@ void EventSynchronize(std::shared_ptr<Event> event) {
 
 void Finish(CommandQueue& cq) {
     detail::DispatchStateCheck(true);
-    TT_THROW("Finish currently unsupported in FD2.0");
     cq.run_command(CommandInterface{
         .type = EnqueueCommandType::FINISH,
         .blocking = true

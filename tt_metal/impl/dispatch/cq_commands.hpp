@@ -39,7 +39,6 @@ enum CQDispatchCmdId : uint8_t {
     CQ_DISPATCH_CMD_DEBUG = 8,              // log waypoint data to watcher, checksum
     CQ_DISPATCH_CMD_DELAY = 9,              // insert delay (for testing)
     CQ_DISPATCH_CMD_TERMINATE = 10,         // quit
-    CQ_DISPATCH_CMD_WRITE_EVENT = 11,        // write event to host and L1
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -142,14 +141,6 @@ struct CQDispatchWritePackedMulticastSubCmd {
     uint32_t num_mcast_dests;
 } __attribute__((packed));
 
-struct CQDispatchWriteEventCmd {
-    uint8_t pad1;
-    uint16_t pad2;
-    uint32_t pad3;
-    uint32_t pad4;
-    uint32_t event_id;
-} __attribute__((packed));
-
 struct CQDispatchWaitCmd {
     uint8_t barrier;          // if true, issue write barrier
     uint8_t notify_prefetch;    // if true, inc prefetch sem
@@ -172,7 +163,6 @@ struct CQDispatchCmd {
         CQDispatchWriteHostCmd write_linear_host;
         CQDispatchWritePagedCmd write_paged;
         CQDispatchWritePackedCmd write_packed;
-        CQDispatchWriteEventCmd write_event;
         CQDispatchWaitCmd wait;
         CQGenericDebugCmd debug;
         CQDispatchDelayCmd delay;
