@@ -97,8 +97,8 @@ operation::ProgramWithCallbacks prod_nc_format(const Tensor &input, const Tensor
     bool output_is_dram = output_buffer_type->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
     std::vector<uint32_t> writer_compile_time_args = {(std::uint32_t) output_is_dram};
 
-    const auto reader_kernel_file = "tt_eager/tt_dnn/op_library/prod/kernels/reader_prod_nc.cpp";
-    const auto writer_kernel_file = "tt_eager/tt_dnn/op_library/prod/kernels/writer_prod_nc.cpp";
+    const auto reader_kernel_file = "tt_eager/tt_dnn/op_library/prod/kernels/dataflow/reader_prod_nc.cpp";
+    const auto writer_kernel_file = "tt_eager/tt_dnn/op_library/prod/kernels/dataflow/writer_prod_nc.cpp";
     const auto reader_kernel_id = CreateReadKernel(program, reader_kernel_file, all_cores, reader_compile_time_args);
     const auto writer_kernel_id = CreateWriteKernel(program, writer_kernel_file, all_cores, writer_compile_time_args);
 
@@ -107,7 +107,7 @@ operation::ProgramWithCallbacks prod_nc_format(const Tensor &input, const Tensor
     ////////////////////////////////////////////////////////////////////////////
     const std::vector<uint32_t> compute_args_group_1{num_cols_per_core_group_1};
     std::map<string, string> compute_defines;
-    const auto compute_kernel_file = "tt_eager/tt_dnn/op_library/prod/kernels/prod_nc.cpp";
+    const auto compute_kernel_file = "tt_eager/tt_dnn/op_library/prod/kernels/compute/prod_nc.cpp";
     const auto compute_kernel_1_id = CreateComputeKernel(
         program, compute_kernel_file, {core_group_1, num_cols_per_core_group_1, compute_args_group_1}, compute_defines);
 
