@@ -195,8 +195,8 @@ def run_falcon_demo_kv(
     prefill_on_host,
 ):
     torch.manual_seed(0)
-    for device in devices:
-        device.enable_program_cache()
+    # for device in devices:
+    #     device.enable_program_cache()
 
     configuration = FalconConfig(**model_config_entries)
 
@@ -296,7 +296,7 @@ def run_falcon_demo_kv(
 
     profiler.disable()
     # TODO: Is this safe? Disabling kernel caching disable program caching as well?
-    enable_persistent_kernel_cache()
+    # enable_persistent_kernel_cache()
 
     ### First prefill run with compile ###
     use_cache = True
@@ -424,8 +424,8 @@ def run_falcon_demo_kv(
 
     print_output_prompts(generated_ids, tokenizer)
 
-    for device in devices:
-        device.disable_and_clear_program_cache()
+    # for device in devices:
+    #     device.disable_and_clear_program_cache()
 
     del user_output_ids
     del output_ids
@@ -591,12 +591,12 @@ def test_demo(
     model_location_generator,
     get_tt_cache_path,
     all_devices,
-    use_program_cache,
+    # use_program_cache,
 ):
-    num_devices = 4
+    num_devices = 8
     devices = get_devices_for_t3000(all_devices, num_devices)
 
-    # disable_persistent_kernel_cache()
+    disable_persistent_kernel_cache()
     disable_compilation_reports()
     tt_lib.profiler.set_profiler_location(f"tt_metal/tools/profiler/logs/falcon40b")
 
