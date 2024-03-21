@@ -48,7 +48,7 @@ class TtFalconCausalLM(TtFalconModelShared):
             tt_cache_path,
             lm_head_str,
             weight_config_str="LM_HEAD_MM_WEIGHTS",
-            weights_to_cache=torch.transpose(self.state_dict[f"lm_head.weight"], -2, -1),
+            weights_to_cache=(torch.transpose(self.state_dict[f"lm_head.weight"], -2, -1) if self.state_dict else None),
         )
 
     def forward(

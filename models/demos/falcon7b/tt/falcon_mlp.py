@@ -38,7 +38,7 @@ class TtFalconMLP(nn.Module):
             tt_cache_path,
             dense_h_to_4h_str,
             weight_config_str="DENSE_H_TO_4H_MM_WEIGHTS",
-            weights_to_cache=torch.transpose(state_dict[dense_h_to_4h_str], -2, -1),
+            weights_to_cache=(torch.transpose(state_dict[dense_h_to_4h_str], -2, -1) if state_dict else None),
         )
         self.dense_4h_to_h_weights = get_weights_cached(
             devices,
@@ -46,7 +46,7 @@ class TtFalconMLP(nn.Module):
             tt_cache_path,
             dense_4h_to_h_str,
             weight_config_str="DENSE_4H_TO_H_MM_WEIGHTS",
-            weights_to_cache=torch.transpose(state_dict[dense_4h_to_h_str], -2, -1),
+            weights_to_cache=(torch.transpose(state_dict[dense_4h_to_h_str], -2, -1) if state_dict else None),
         )
 
     def forward(self, x: tt_lib.tensor.Tensor) -> tt_lib.tensor.Tensor:

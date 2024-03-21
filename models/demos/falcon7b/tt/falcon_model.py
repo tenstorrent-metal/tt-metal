@@ -76,7 +76,7 @@ class TtFalconModelShared(torch.nn.Module):
             tt_cache_path,
             layernorm_weights_str,
             weight_config_str="LN_F_WEIGHTS",
-            weights_to_cache=self.state_dict[layernorm_weights_str],
+            weights_to_cache=(self.state_dict[layernorm_weights_str] if self.state_dict else None),
             padzero=True,
         )
         self.layernorm_beta = get_weights_cached(
@@ -85,7 +85,7 @@ class TtFalconModelShared(torch.nn.Module):
             tt_cache_path,
             layernorm_bias_str,
             weight_config_str="LN_F_BIAS",
-            weights_to_cache=self.state_dict[layernorm_bias_str],
+            weights_to_cache=(self.state_dict[layernorm_bias_str] if self.state_dict else None),
             padzero=True,
         )
 

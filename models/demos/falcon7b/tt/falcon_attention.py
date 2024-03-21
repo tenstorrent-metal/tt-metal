@@ -147,7 +147,7 @@ class TtFalconAttention(nn.Module):
             tt_cache_path,
             query_key_value_str,
             weight_config_str="FUSED_QKV_MM_WEIGHTS",
-            weights_to_cache=torch.transpose(state_dict[query_key_value_str], -2, -1),
+            weights_to_cache=(torch.transpose(state_dict[query_key_value_str], -2, -1) if state_dict else None),
         )
         self.dense_weights = get_weights_cached(
             devices,
@@ -155,7 +155,7 @@ class TtFalconAttention(nn.Module):
             tt_cache_path,
             selfout_str,
             weight_config_str="SELFOUT_MM_WEIGHTS",
-            weights_to_cache=torch.transpose(state_dict[selfout_str], -2, -1),
+            weights_to_cache=(torch.transpose(state_dict[selfout_str], -2, -1) if state_dict else None),
         )
 
         self.rotary_embedding = TtFalconRotaryEmbedding(
