@@ -397,11 +397,12 @@ def run_test_FalconCausalLM_end_to_end(
 @pytest.mark.parametrize(
     "llm_mode, batch, seq_len, kv_cache_len",
     (
+        ("prefill", 1, 32, 0),
         ("prefill", 2, 32, 0),
-        ("prefill", 2, 64, 0),
+        ("prefill", 1, 64, 0),
         ("decode", 32, 1, 128),
     ),
-    ids=["prefill_seq32", "prefill_seq64", "decode_batch32"],
+    ids=["prefill_seq32", "prefill_seq32_batch2", "prefill_seq64", "decode_batch32"],
 )
 @pytest.mark.parametrize(
     "num_layers, out_pcc, cache_pcc, token_pcc",
@@ -413,7 +414,7 @@ def run_test_FalconCausalLM_end_to_end(
     ("tiiuae/falcon-40b-instruct",),
     ids=["falcon_40b"],
 )
-@pytest.mark.parametrize("model_config_str", ("BFLOAT8_B-SHARDED",))
+@pytest.mark.parametrize("model_config_str", ("BFLOAT8_B-SHARDED", "BFLOAT8_B-DRAM"))
 def test_FalconCausalLM_end_to_end_with_program_cache(
     num_devices,
     model_version,
