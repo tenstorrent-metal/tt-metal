@@ -20,6 +20,7 @@ from models.demos.falcon40b.tt.model_config import get_model_config, model_confi
 from models.utility_functions import (
     disable_compilation_reports,
     disable_persistent_kernel_cache,
+    enable_memory_reports,
     enable_persistent_kernel_cache,
     profiler,
     torch2tt_tensor,
@@ -192,6 +193,9 @@ def run_falcon_demo_kv(
     model_location_generator,
     tt_cache_path,
     devices,
+    devices_dict,
+    num_devices,
+    reset_devices,
     prefill_on_host,
 ):
     torch.manual_seed(0)
@@ -336,11 +340,76 @@ def run_falcon_demo_kv(
             user_output_ids = post_processor(logits=logits, index=num_input_tokens - 1)
             output_ids[user_id] = user_output_ids
 
+        if reset_devices:
+            pt_kv_cache = []
+            for i in range(num_layers):
+                tt_layer_pres = (
+                    [tt2torch_tensor(tt_layer_p) for tt_layer_p in kv_cache[i][0]],
+                    [tt2torch_tensor(tt_layer_p) for tt_layer_p in kv_cache[i][1]],
+                )
+
+                for j in range(8):
+                    kv_cache[i][0][j].deallocate(True)
+                    kv_cache[i][1][j].deallocate(True)
+
+                pt_kv_cache.append(tt_layer_pres)
+
+            del kv_cache
+            del tt_FalconCausalLM
+
+            # close the devices
+            for device in devices:
+                tt_lib.device.Synchronize(device)
+                # tt_lib.device.DeallocateBuffers(device)
+
+            tt_lib.device.CloseDevices(devices_dict)
+
+            devices_dict = tt_lib.device.CreateDevices([i for i in range(num_devices)])
+            all_devices = [devices_dict[i] for i in range(num_devices)]
+
+            devices = get_devices_for_t3000(all_devices, num_devices)
+
+            # create falcon causal
+            tt_FalconCausalLM = TtFalconCausalLM(
+                devices,
+                state_dict,
+                base_url,
+                num_layers,
+                configuration,
+                max_seq_len,
+                model_config,
+                tt_cache_path,
+                use_global_cos_sin_cache,
+            )
+
+            kv_cache = []
+            for i in range(num_layers):
+                tt_k_cache = []
+                tt_v_cache = []
+                for j in range(len(devices)):
+                    tt_k_cache.append(
+                        torch2tt_tensor(
+                            pt_kv_cache[i][0][j],
+                            devices[j],
+                            tt_lib.tensor.Layout.TILE,
+                            model_config["KV_CACHE_MEMCFG"],
+                            model_config["KV_CACHE_DTYPE"],
+                        )
+                    )
+                    tt_v_cache.append(
+                        torch2tt_tensor(
+                            pt_kv_cache[i][1][j],
+                            devices[j],
+                            tt_lib.tensor.Layout.TILE,
+                            model_config["KV_CACHE_MEMCFG"],
+                            model_config["KV_CACHE_DTYPE"],
+                        )
+                    )
+                kv_cache += ((tt_k_cache, tt_v_cache),)
+
     # TODO: Should the concat be removed since output token for prefill shouldn't be used
     generated_ids = torch.concat((prefill_ids[..., :num_input_tokens], output_ids), dim=1)
 
-    for device in devices:
-        tt_lib.device.Synchronize(device)
     logger.info("Finished 1st run prefill stage with compile!")
 
     ### First run decode stage with compile ###
@@ -433,6 +502,11 @@ def run_falcon_demo_kv(
     del generated_ids
     del decode_ids
     del user_decode_id
+
+    for device in devices_dict.values():
+        tt_lib.device.DeallocateBuffers(device)
+
+    tt_lib.device.CloseDevices(devices_dict)
 
     return
 
@@ -590,14 +664,19 @@ def test_demo(
     user_input,
     model_location_generator,
     get_tt_cache_path,
-    all_devices,
+    # all_devices,
     # use_program_cache,
 ):
     num_devices = 8
+    devices_dict = tt_lib.device.CreateDevices([i for i in range(num_devices)])
+    all_devices = [devices_dict[i] for i in range(num_devices)]
+
     devices = get_devices_for_t3000(all_devices, num_devices)
 
-    disable_persistent_kernel_cache()
+    # disable_persistent_kernel_cache()
     disable_compilation_reports()
+    # enable_memory_reports()
+
     tt_lib.profiler.set_profiler_location(f"tt_metal/tools/profiler/logs/falcon40b")
 
     # Set it up for prefill initially and change the model_config to decode
@@ -619,5 +698,8 @@ def test_demo(
         model_location_generator=model_location_generator,
         tt_cache_path=tt_cache_path,
         devices=devices,
+        devices_dict=devices_dict,
+        num_devices=num_devices,
+        reset_devices=True,
         prefill_on_host=False,
     )
