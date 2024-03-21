@@ -2596,6 +2596,7 @@ def rotary_embedding(
 
     return ttnn_tensor_to_torch(t2)
 
+
 def nextafter(
     x,
     y,
