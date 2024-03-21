@@ -141,14 +141,6 @@ struct CQDispatchWritePackedMulticastSubCmd {
     uint32_t num_mcast_dests;
 } __attribute__((packed));
 
-struct CQDispatchWriteEventCmd {
-    uint8_t pad1;
-    uint16_t pad2;
-    uint32_t pad3;
-    uint32_t pad4;
-    uint32_t event_id;
-} __attribute__((packed));
-
 struct CQDispatchWaitCmd {
     uint8_t barrier;          // if true, issue write barrier
     uint8_t notify_prefetch;    // if true, inc prefetch sem
@@ -171,7 +163,6 @@ struct CQDispatchCmd {
         CQDispatchWriteHostCmd write_linear_host;
         CQDispatchWritePagedCmd write_paged;
         CQDispatchWritePackedCmd write_packed;
-        CQDispatchWriteEventCmd write_event;
         CQDispatchWaitCmd wait;
         CQGenericDebugCmd debug;
         CQDispatchDelayCmd delay;
