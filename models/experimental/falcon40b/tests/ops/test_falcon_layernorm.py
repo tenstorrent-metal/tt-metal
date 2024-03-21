@@ -41,9 +41,9 @@ class PytorchFalconLayernorm(torch.nn.Module):
 
 
 def run_test_FalconLayernorm_inference(pcc, devices, model_location_generator, get_tt_cache_path):
-    is_sharded = False
+    is_sharded = True
 
-    seqlen = 32
+    seqlen = 64
     num_chips = 8
 
     # Prepare input

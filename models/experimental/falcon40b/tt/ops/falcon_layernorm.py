@@ -67,15 +67,48 @@ class TtFalconLayernorm:
 
     def __call__(self, x: tt_lib.tensor.Tensor) -> tt_lib.tensor.Tensor:
         if self.is_sharded:
+            row_height = x.get_legacy_shape()[2]
+            shard_width_hidden_dim_across_32_cores = x.get_legacy_shape()[3] // 32
+            shard_spec_32_cores_grid = tt_lib.tensor.CoreRangeSet(
+                {
+                    tt_lib.tensor.CoreRange(
+                        tt_lib.tensor.CoreCoord(0, 0),
+                        tt_lib.tensor.CoreCoord(7, 3),
+                    ),
+                }
+            )
             out = tt_lib.operations.primary.layernorm(
                 x,
                 self.layernorm_eps,
                 self.ln_attn_gamma[0],
                 self.ln_attn_beta[0],
-                self.model_config["LN_ATTN_OUTPUT_MEMCFG"],
-                self.model_config["LN_ATTN_PROGCFG"],
+                # self.model_config["LN_ATTN_OUTPUT_MEMCFG"],
+                tt_lib.tensor.MemoryConfig(
+                    tt_lib.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+                    tt_lib.tensor.BufferType.L1,
+                    tt_lib.tensor.ShardSpec(
+                        shard_spec_32_cores_grid,
+                        [
+                            row_height,
+                            shard_width_hidden_dim_across_32_cores,
+                        ],
+                        tt_lib.tensor.ShardOrientation.ROW_MAJOR,
+                        False,
+                    ),
+                ),
+                # self.model_config["LN_ATTN_PROGCFG"],
+                tt_lib.operations.primary.LayerNormShardedMultiCoreProgramConfig(
+                    compute_with_storage_grid_size=[8, 4],
+                    subblock_w=8,
+                    block_h=row_height // 32,
+                    block_w=8,
+                    math_fidelity=tt_lib.tensor.MathFidelity.HiFi4,
+                    im_data_format=tt_lib.tensor.DataType.BFLOAT16,
+                    out_data_format=self.model_config["LN_ATTN_OUTPUT_DTYPE"],
+                    inplace=False,
+                ),
             )
-        else:
+        else:  # Interleaved does not work for falcon40b dims [32, 8192] since once one core per tile-height is used to process the whole row
             # Option 1: uses only one core; runs out of L1
             # E           Statically allocated circular buffers on core range {} grow to {} B which is beyond max L1 size of {} B
             # E           [(x=0,y=0) - (x=1,y=0)]
