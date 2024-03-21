@@ -1056,6 +1056,10 @@ Backward Operations
 
 .. autofunction:: tt_lib.tensor.real_bw
 
+.. autofunction:: tt_lib.tensor.complex_add_bw
+
+.. autofunction:: tt_lib.tensor.complex_sub_bw
+
 .. autofunction:: tt_lib.tensor.multigammaln_bw
 
 Loss Functions
