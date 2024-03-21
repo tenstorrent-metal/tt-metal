@@ -8,16 +8,16 @@ from loguru import logger
 
 import tt_lib as ttl
 import ttnn
-from models.demos.falcon40b.tt.ops.falcon_nlp_create_qkv_heads import TtFalconCreateQKVHeads
+from models.experimental.falcon40b.tt.ops.falcon_nlp_create_qkv_heads import TtFalconCreateQKVHeads
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_pcc,
 )
 from models.utility_functions import torch2tt_tensor, tt2torch_tensor, skip_for_grayskull, get_devices_for_t3000
-from models.demos.falcon40b.tt.model_config import (
+from models.experimental.falcon40b.tt.model_config import (
     get_model_config,
 )
 
-from models.demos.falcon40b.reference.hf_modeling_falcon import (
+from models.experimental.falcon40b.reference.hf_modeling_falcon import (
     FalconForCausalLM,
 )
 
