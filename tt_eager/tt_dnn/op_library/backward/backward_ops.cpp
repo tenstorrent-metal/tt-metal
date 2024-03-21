@@ -11,6 +11,7 @@
 #include "tt_dnn/op_library/math.hpp"
 #include "tt_dnn/op_library/unpad/unpad_op.hpp"
 #include "tt_dnn/op_library/complex/complex_ops.hpp"
+#include "tt_dnn/op_library/split/split_last_dim_two_chunks_tiled.hpp"
 
 namespace tt {
 
@@ -1679,6 +1680,41 @@ std::vector<Tensor> _real_bw(const Tensor& grad, const Tensor& input, const Memo
 std::vector<Tensor> real_bw(const Tensor& grad, const Tensor& input, const MemoryConfig& output_mem_config)
 {
     return operation::decorate_as_composite(__func__, _real_bw)(grad, input, output_mem_config);
+}
+
+// complex mul
+// grad_input.real = grad.real * other.real + grad.imag * other.imag
+// grad_input.imag = grad.imag * other.real - grad.real * other.imag
+// grad_other.real = grad.real * input.real + grad.imag * input.imag
+// grad_other.imag = grad.imag * input.real - grad.real * input.imag
+std::vector<Tensor> _complex_mul_bw(const Tensor& grad, const Tensor& input, const Tensor& other, const MemoryConfig& output_mem_config) {
+    CHECK_FOR_COMPLEX(input);
+    CHECK_FOR_COMPLEX(other);
+    CHECK_FOR_COMPLEX(grad);
+    std::vector<Tensor> grad_tensor;
+    std::vector<Tensor> ab = split_last_dim_two_chunks_tiled(input,output_mem_config);
+    std::vector<Tensor> cd = split_last_dim_two_chunks_tiled(other,output_mem_config);
+    std::vector<Tensor> pq = split_last_dim_two_chunks_tiled(grad,output_mem_config);
+    Tensor grad_a_re_part = add( mul(pq[0],cd[0],{},output_mem_config), mul(pq[1],cd[1],{},output_mem_config), {}, output_mem_config );
+    Tensor grad_a_im_part = sub( mul(pq[1],cd[0],{},output_mem_config), mul(pq[0],cd[1],{},output_mem_config), {}, output_mem_config );
+    Tensor grad_a = mk_complex( grad_a_re_part, grad_a_im_part, output_mem_config);
+    grad_a_re_part.deallocate();
+    grad_a_im_part.deallocate();
+    cd.clear();
+    grad_tensor.emplace_back(grad_a);
+    Tensor grad_b_re_part = add( mul(pq[0],ab[0],{},output_mem_config), mul(pq[1],ab[1],{},output_mem_config), {}, output_mem_config );
+    Tensor grad_b_im_part = sub( mul(pq[1],ab[0],{},output_mem_config), mul(pq[0],ab[1],{},output_mem_config), {}, output_mem_config );
+    Tensor grad_b = mk_complex( grad_b_re_part, grad_b_im_part, output_mem_config);
+    grad_b_re_part.deallocate();
+    grad_b_im_part.deallocate();
+    ab.clear();
+    pq.clear();
+    grad_tensor.emplace_back(grad_b);
+    return grad_tensor;
+}
+std::vector<Tensor> complex_mul_bw(const Tensor& grad, const Tensor& input, const Tensor& other, const MemoryConfig& output_mem_config)
+{
+    return operation::decorate_as_composite(__func__, _complex_mul_bw)(grad, input, other, output_mem_config);
 }
 
 #undef CHECK_FOR_COMPLEX
