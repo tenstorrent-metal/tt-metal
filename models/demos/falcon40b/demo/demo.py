@@ -619,5 +619,5 @@ def test_demo(
         model_location_generator=model_location_generator,
         tt_cache_path=tt_cache_path,
         devices=devices,
-        prefill_on_host=True,
+        prefill_on_host=False,
     )
