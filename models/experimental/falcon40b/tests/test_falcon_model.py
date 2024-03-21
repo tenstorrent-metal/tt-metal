@@ -307,10 +307,12 @@ def run_test_FalconModel_inference(
 @pytest.mark.parametrize(
     "llm_mode, batch, seq_len, kv_cache_len",
     (
+        ("prefill", 1, 32, 0),
         ("prefill", 2, 32, 0),
+        ("prefill", 1, 64, 0),
         ("decode", 32, 1, 128),
     ),
-    ids=["prefill_seq32", "decode_batch32"],
+    ids=["prefill_seq32", "prefill_seq32_batch2", "prefill_seq64", "decode_batch32"],
 )
 @pytest.mark.parametrize(
     "num_layers",
@@ -324,7 +326,13 @@ def run_test_FalconModel_inference(
 )
 @pytest.mark.parametrize(
     "model_config_str, out_pcc, cache_pcc, token_pcc",
-    [("BFLOAT8_B-SHARDED", 0.99, 0.99, 0.99), ("BFLOAT16-SHARDED", 0.99, 0.99, 0.99)],
+    [
+        ("BFLOAT8_B-SHARDED", 0.99, 0.99, 0.99),
+        ("BFLOAT16-SHARDED", 0.99, 0.99, 0.99),
+        ("BFLOAT8_B-DRAM", 0.99, 0.99, 0.99),
+        ("BFLOAT16-DRAM", 0.99, 0.99, 0.99),
+    ],
+    ids=["BFLOAT8_B-SHARDED", "BFLOAT16-SHARDED", "BFLOAT8_B-DRAM", "BFLOAT16-DRAM"],
 )
 def test_FalconModel_inference(
     num_devices,

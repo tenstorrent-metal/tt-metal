@@ -61,6 +61,7 @@ OP_KEYS = (
     # LM Head
     "LM_HEAD_MM_WEIGHTS",
     "LM_HEAD_MM_OUTPUT",
+    "FINAL_ALL_GATHER_OUTPUT",
 )
 
 NO_MEMCFG = ("SOFTMAX_OUTPUT",)
@@ -215,6 +216,8 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 ),
             }
         )
+
+        # Decoder layer layernorm
         model_config["LN_ATTN_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
             ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
             ttl.tensor.BufferType.L1,
@@ -242,6 +245,34 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
             ),
         )
         model_config["LN_MLP_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+            ttl.tensor.BufferType.L1,
+            ttl.tensor.ShardSpec(
+                shard_spec_32_cores_grid,
+                [
+                    row_height,
+                    shard_width_hidden_dim_across_32_cores,
+                ],
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+                False,
+            ),
+        )
+
+        # Model final layernorm
+        model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+            ttl.tensor.BufferType.L1,
+            ttl.tensor.ShardSpec(
+                shard_spec_32_cores_grid,
+                [
+                    row_height,
+                    shard_width_hidden_dim_across_32_cores,
+                ],
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+                False,
+            ),
+        )
+        model_config["LN_F_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
             ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
             ttl.tensor.BufferType.L1,
             ttl.tensor.ShardSpec(
@@ -413,7 +444,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
         model_config["LN_F_PROGCFG"] = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
             compute_with_storage_grid_size=[8, 4],
             subblock_w=8,
-            block_h=1,
+            block_h=row_height // 32,
             block_w=8,
             math_fidelity=ttl.tensor.MathFidelity.HiFi4,
             im_data_format=ttl.tensor.DataType.BFLOAT16,
@@ -429,7 +460,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 in0_block_w=8,
                 out_subblock_h=1,
                 out_subblock_w=4,
-                per_core_M=1,
+                per_core_M=row_height // 32,
                 per_core_N=16,
                 fuse_batch=True,
                 fused_activation=None,
@@ -441,7 +472,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 in0_block_w=8,
                 out_subblock_h=1,
                 out_subblock_w=4,
-                per_core_M=1,
+                per_core_M=row_height // 32,
                 per_core_N=8,
                 fuse_batch=True,
                 fused_activation=None,

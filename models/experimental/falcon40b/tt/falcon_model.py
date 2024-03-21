@@ -16,6 +16,10 @@ from models.utility_functions import (
     nearest_32,
 )
 
+from models.experimental.falcon40b.tt.model_utils import (
+    convert_to_layout,
+)
+
 
 class TtFalconModelShared:
     @abstractmethod
@@ -153,19 +157,17 @@ class TtFalconModelShared:
                 for i in range(len(self.devices))
             ]
 
-            attention_mask_bool = torch.ones(batch_size, 1, sequence_size, num_input_tokens, dtype=bool)
+            attention_mask_bool = torch.ones(batch_size, 1, sequence_size, sequence_size, dtype=bool)
             attention_mask_bool = attention_mask_bool.triu(diagonal=1)
 
-            attention_mask_bool_padded = torch.cat(
-                (
-                    attention_mask_bool,
-                    torch.ones(batch_size, 1, sequence_size, sequence_size - num_input_tokens, dtype=bool),
-                ),
-                dim=-1,
+            attention_mask_heads_dim = (
+                self.config.num_attention_heads
+                if self.model_config["ATTN_MASK_MEMCFG"].is_sharded()
+                else len(self.devices)
             )
 
             attention_mask_bool_chunks = torch.chunk(
-                (attention_mask_bool_padded * -1e3).expand(-1, self.config.num_attention_heads, -1, -1),
+                (attention_mask_bool * -100000).expand(-1, attention_mask_heads_dim, -1, -1),
                 len(self.devices),
                 1,
             )
@@ -250,20 +252,26 @@ class TtFalconModelShared:
             presents += layer_output[1:]
             layer_output = layer_output[0]
 
-        for i in range(len(layer_output)):
-            layer_output[i] = tt_lib.tensor.sharded_to_interleaved(
-                layer_output[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
-            )
+        layer_output = convert_to_layout(
+            layer_output, self.model_config["DROPOUT_ADD_OUTPUT_MEMCFG"], self.model_config["DEFAULT_MEMCFG"]
+        )
+        # for i in range(len(layer_output)):
+        #     layer_output[i] = tt_lib.tensor.sharded_to_interleaved(
+        #         layer_output[i], output_mem_config=self.model_config["DEFAULT_MEMCFG"]
+        #     )
         layer_output = tt_lib.tensor.all_gather(
             layer_output,
             dim=3,
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             output_mem_config=self.model_config["DEFAULT_MEMCFG"],
         )
-        for i in range(len(layer_output)):
-            layer_output[i] = tt_lib.tensor.interleaved_to_sharded(
-                layer_output[i], sharded_mem_config=self.model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"]
-            )
+        layer_output = convert_to_layout(
+            layer_output, self.model_config["DEFAULT_MEMCFG"], self.model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"]
+        )
+        # for i in range(len(layer_output)):
+        #     layer_output[i] = tt_lib.tensor.interleaved_to_sharded(
+        #         layer_output[i], sharded_mem_config=self.model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"]
+        #     )
 
         # apply final norm layer
         for i in range(len(layer_output)):
@@ -275,6 +283,9 @@ class TtFalconModelShared:
                 self.model_config["LN_F_OUTPUT_MEMCFG"],
                 self.model_config["LN_F_PROGCFG"],
             )
+        layer_output = convert_to_layout(
+            layer_output, self.model_config["LN_F_OUTPUT_MEMCFG"], self.model_config["DEFAULT_MEMCFG"]
+        )
 
         return layer_output, presents
 
