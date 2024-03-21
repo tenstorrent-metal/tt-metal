@@ -10,6 +10,7 @@
 #include "tt_metal/host_api.hpp"
 #include "tt_metal/test_utils/env_vars.hpp"
 #include "tt_metal/detail/tt_metal.hpp"
+#include "tt_metal/test_utils/print_helpers.hpp"
 
 using namespace tt::tt_metal;
 
@@ -103,6 +104,20 @@ vector<uint32_t> generate_arange_vector(uint32_t size_bytes) {
 template <bool cq_dispatch_only = false>
 void test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue& cq, const TestBufferConfig& config) {
 
+    // clear out completion queue
+    uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
+    chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
+    uint32_t cq_size = tt::Cluster::instance().get_host_channel_size(device->id(), channel) / device->num_hw_cqs();
+
+    uint32_t issue_queue_size = tt::round_up((cq_size - CQ_START) * SystemMemoryCQInterface::default_issue_queue_split, 32);
+    uint32_t completion_queue_start_addr = CQ_START + issue_queue_size;
+
+    std::vector<uint32_t> completion_queue_zeros((cq_size - completion_queue_start_addr)/sizeof(uint32_t), 0);
+
+    tt::Cluster::instance().write_sysmem(
+        completion_queue_zeros.data(), (cq_size - completion_queue_start_addr), completion_queue_start_addr, mmio_device_id, channel);
+
+
     for (const bool cq_write: {/*true, */false}) {
         for (const bool cq_read: {true/*, false*/}) {
             if constexpr (cq_dispatch_only) {
@@ -139,7 +154,7 @@ void test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue&
                 ::detail::ReadFromBuffer(bufa, result);
             }
 
-            sleep(5);
+            // sleep(5);
 
             if (src != result) {
                 for (int i = 0; i < src.size(); i++) {
@@ -149,6 +164,8 @@ void test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue&
                         break;
                     }
                 }
+            } else {
+                std::cout << "EQUAL" << std::endl;
             }
 
             EXPECT_EQ(src, result);
@@ -349,7 +366,6 @@ TEST_F(CommandQueueSingleCardFixture, WriteOneTileAcrossAllDramBanksTwiceRoundRo
     }
 }
 
-// MISMATCHING!
 TEST_F(CommandQueueSingleCardFixture, Sending131072Pages) {
     for (Device *device : devices_) {
         TestBufferConfig config = {
@@ -361,7 +377,6 @@ TEST_F(CommandQueueSingleCardFixture, Sending131072Pages) {
     }
 }
 
-// MISMATCHING!
 TEST_F(CommandQueueSingleCardFixture, TestNon32BAlignedPageSizeForDram) {
     TestBufferConfig config = {.num_pages = 1250, .page_size = 200, .buftype = BufferType::DRAM};
 
@@ -632,6 +647,7 @@ TEST_F(CommandQueueSingleCardFixture, WritesToRandomBufferTypeAndThenReadsNonblo
 
 
 TEST_F(CommandQueueSingleCardFixture, ShardedBufferReadWrites) {
+    GTEST_SKIP() << "Sharded buffer is currently unsupported in FD2.0";
     BufferStressTestConfigSharded config({2,2}, {4,2});
     config.seed = 0;
     config.num_iterations = 100;

@@ -740,18 +740,15 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
     const auto& [buffer_layout, page_size, padded_page_size, dev_page_to_host_page_mapping, dst, dst_offset, num_pages_read, cur_host_page_id] = read_buffer_descriptor;
 
     uint32_t read_data_ptr = read_ptr;
-    if (dst_offset == 0) {
-        // First piece of buffer data written to completion queue will be prepended with the dispatcher command
-        //  because data is inlined with command coming into dispatcher
-
-        // read_data_ptr += align(CQ_DISPATCH_CMD_SIZE, HUGEPAGE_ALIGNMENT);
-    }
 
     std::cout << "Num pages read " << num_pages_read << " page size " << page_size << " padded page size " << padded_page_size << std::endl;
 
     uint32_t padded_num_bytes = (num_pages_read * padded_page_size) + sizeof(CQDispatchCmd);
     uint32_t contig_dst_offset = dst_offset;
     uint32_t remaining_bytes_to_read = padded_num_bytes;
+
+    // track the amount of bytes read in the last non-aligned page
+    uint32_t remaining_bytes_of_nonaligned_page = 0;
 
     static std::vector<uint32_t> completion_q_data;
 
@@ -779,9 +776,6 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
         tt::Cluster::instance().read_sysmem(
             completion_q_data.data(), bytes_xfered, read_data_ptr, mmio_device_id, channel);
 
-
-        bool first_iter = remaining_bytes_to_read == padded_num_bytes;
-
         this->manager.completion_queue_pop_front(num_pages_xfered, this->id);
         read_data_ptr += bytes_xfered;
         remaining_bytes_to_read -= bytes_xfered;
@@ -791,11 +785,6 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
             void* contiguous_dst = (void*)(uint64_t(dst) + contig_dst_offset);
             std::cout << "Writing to dst offset: " << contig_dst_offset << std::endl;
             uint32_t offset_in_completion_q_data = (contig_dst_offset == 0) ? (sizeof(CQDispatchCmd) / sizeof(uint32_t)) : 0;
-
-            if (not first_iter) {
-                offset_in_completion_q_data = 0;
-            }
-
             std::cout << "Offset in completion q data " << offset_in_completion_q_data << std::endl;
             if ((page_size % 32) == 0) {
                 uint32_t data_bytes_xfered = (contig_dst_offset == 0) ? (bytes_xfered - sizeof(CQDispatchCmd)) : bytes_xfered;
@@ -803,24 +792,37 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
                 memcpy(contiguous_dst, completion_q_data.data() + offset_in_completion_q_data, data_bytes_xfered);
                 contig_dst_offset += data_bytes_xfered;
             } else {
-                uint32_t non_contig_dst_offset = 0;
-                std::cout << "Comq data size " << completion_q_data.size() << std::endl;
-                for (uint32_t offset = offset_in_completion_q_data; offset < completion_q_data.size(); offset += (padded_page_size / sizeof(uint32_t))) {
-                    // std::cout << " non_contig_dst_offset " << non_contig_dst_offset << std::endl;
-                    // if (not first_iter) {
-                    //     std::cout << " offset in hugepage vec: " << offset << std::endl;
-                    // }
-                    memcpy(
-                        (char*)(uint64_t(contiguous_dst)),
-                        completion_q_data.data() + offset,
-                        page_size
-                    );
-                    non_contig_dst_offset += page_size;
-                }
-                std::cout << "non_contig_dst_offset " << non_contig_dst_offset << std::endl;
-                // contig_dst_offset += non_contig_dst_offset;
-            }
+                uint32_t src_offset = offset_in_completion_q_data;
+                uint32_t dst_offset_bytes = 0;
+                while (src_offset < completion_q_data.size()) {
 
+                    uint32_t src_offset_increment = (padded_page_size / sizeof(uint32_t));
+                    uint32_t num_bytes_to_copy;
+                    if (remaining_bytes_of_nonaligned_page > 0) {
+                        // Case 1: Portion of the page was copied into user buffer on the previous completion queue pop.
+                        num_bytes_to_copy = remaining_bytes_of_nonaligned_page;
+                        remaining_bytes_of_nonaligned_page = 0;
+                        src_offset_increment = (num_bytes_to_copy/sizeof(uint32_t)) + ((padded_page_size - page_size)/sizeof(uint32_t));
+                    } else if (src_offset + src_offset_increment >= completion_q_data.size()) {
+                        // Case 2: Last page of data that was popped off the completion queue
+                        uint32_t num_bytes_remaining = (completion_q_data.size() - src_offset) * sizeof(uint32_t);
+                        num_bytes_to_copy = std::min(num_bytes_remaining, page_size );
+                        remaining_bytes_of_nonaligned_page = page_size - num_bytes_to_copy;
+                    } else {
+                        num_bytes_to_copy = page_size;
+                    }
+
+                    memcpy(
+                        (char*)(uint64_t(contiguous_dst) + dst_offset_bytes),
+                        completion_q_data.data() + src_offset,
+                        num_bytes_to_copy
+                    );
+
+                    src_offset += src_offset_increment;
+                    dst_offset_bytes += num_bytes_to_copy;
+                    contig_dst_offset += num_bytes_to_copy;
+                }
+            }
         } else if (
             buffer_layout == TensorMemoryLayout::WIDTH_SHARDED or
             buffer_layout == TensorMemoryLayout::BLOCK_SHARDED) {
