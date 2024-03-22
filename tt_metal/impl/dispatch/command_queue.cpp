@@ -739,7 +739,7 @@ void HWCommandQueue::enqueue_trace() {
 void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &read_buffer_descriptor, uint32_t read_ptr, chip_id_t mmio_device_id, uint16_t channel) {
     const auto& [buffer_layout, page_size, padded_page_size, dev_page_to_host_page_mapping, dst, dst_offset, num_pages_read, cur_host_page_id] = read_buffer_descriptor;
 
-    uint32_t read_data_ptr = read_ptr;
+    // uint32_t read_data_ptr = read_ptr;
 
     std::cout << "Num pages read " << num_pages_read << " page size " << page_size << " padded page size " << padded_page_size << std::endl;
 
@@ -760,7 +760,17 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
         }
 
         uint32_t completion_q_write_ptr = this->manager.get_completion_queue_write_ptr(this->id);
-        uint32_t bytes_xfered = std::min(padded_num_bytes, completion_q_write_ptr - read_data_ptr);
+        uint32_t completion_q_write_toggle = this->manager.get_completion_queue_write_toggle(this->id); // toggle checks needed??
+        uint32_t completion_q_read_ptr = this->manager.get_completion_queue_read_ptr(this->id);
+        uint32_t completion_q_read_toggle = this->manager.get_completion_queue_read_toggle(this->id); // toggle checks needed??
+
+        // Completion queue write pointer on device wrapped but read pointer is lagging behind.
+        //  In this case read up until the end of the completion queue first
+        uint32_t bytes_avail_in_completion_queue = (completion_q_write_ptr > completion_q_read_ptr) ?
+            (completion_q_write_ptr - completion_q_read_ptr) : (this->manager.get_completion_queue_limit(this->id) - completion_q_read_ptr);
+
+        // completion queue write ptr on device could have wrapped but our read ptr is lagging behind
+        uint32_t bytes_xfered = std::min(padded_num_bytes, bytes_avail_in_completion_queue);
         bytes_xfered = std::min(bytes_xfered, remaining_bytes_to_read);
         uint32_t num_pages_xfered = (bytes_xfered + TRANSFER_PAGE_SIZE - 1) / TRANSFER_PAGE_SIZE;
 
@@ -768,16 +778,28 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
 
         std::cout << "remaining bytes to read: " << remaining_bytes_to_read
                   << " completion q write ptr: " << completion_q_write_ptr
+                  << " completion q read ptr: " << completion_q_read_ptr
+                  << " bytes avail in completion q: " << bytes_avail_in_completion_queue
                   << " bytes_xfered " << bytes_xfered
-                  << " num_pages_xfered: " << num_pages_xfered
-                  << " reading from " << read_data_ptr << std::endl;
+                  << " num_pages_xfered: " << num_pages_xfered << std::endl;
 
 
         tt::Cluster::instance().read_sysmem(
-            completion_q_data.data(), bytes_xfered, read_data_ptr, mmio_device_id, channel);
+            completion_q_data.data(), bytes_xfered, completion_q_read_ptr, mmio_device_id, channel);
+
+
+        std::vector<uint32_t> tester(bytes_avail_in_completion_queue / sizeof(uint32_t));
+        tt::Cluster::instance().read_sysmem(
+            tester.data(), bytes_avail_in_completion_queue, completion_q_read_ptr, mmio_device_id, channel);
+
+        if (num_pages_xfered == 1) {
+            for (int i = 0; i < tester.size(); i++) {
+                std::cout  << i << " : " << tester.at(i) << std::endl;
+            }
+        }
 
         this->manager.completion_queue_pop_front(num_pages_xfered, this->id);
-        read_data_ptr += bytes_xfered;
+        // read_data_ptr += bytes_xfered;
         remaining_bytes_to_read -= bytes_xfered;
 
         if (buffer_layout == TensorMemoryLayout::INTERLEAVED or
@@ -840,7 +862,7 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
             buffer_layout == TensorMemoryLayout::BLOCK_SHARDED) {
             TT_THROW("Reading width sharded or block sharded buffers is unsupported in FD2.0");
             uint32_t host_page_id = cur_host_page_id;
-            uint32_t read_src = read_data_ptr;
+            // uint32_t read_src = completion_q_read_ptr;
             // for (uint32_t offset = 0; offset < data_bytes_xfered; offset += padded_page_size) {
             //     uint32_t device_page_id = dev_page_to_host_page_mapping[host_page_id];
             //     void* page_dst = (void*)(uint64_t(dst) + device_page_id * page_size);
@@ -870,7 +892,11 @@ void HWCommandQueue::read_completion_queue() {
                     return;
                 }
 
+                uint32_t completion_q_write_ptr = this->manager.get_completion_queue_write_ptr(this->id);
+
                 uint32_t read_ptr = this->manager.get_completion_queue_read_ptr(this->id);
+
+
 
                 std::visit(
                     [&](auto&& read_descriptor)
@@ -883,6 +909,7 @@ void HWCommandQueue::read_completion_queue() {
                         else if constexpr (std::is_same_v<T, detail::ReadEventDescriptor>) {
                             std::cout << "got read event descriptor" << std::endl;
                             static std::vector<uint32_t> dispatch_cmd_and_event((sizeof(CQDispatchCmd) + EVENT_PADDED_SIZE) / sizeof(uint32_t));
+                            std::cout << "\tcomp q wr " << completion_q_write_ptr << " read_ptr " << read_ptr << std::endl;
                             tt::Cluster::instance().read_sysmem(
                                 dispatch_cmd_and_event.data(), sizeof(CQDispatchCmd) + EVENT_PADDED_SIZE, read_ptr, mmio_device_id, channel);
                             uint32_t event_completed = dispatch_cmd_and_event.at(sizeof(CQDispatchCmd) / sizeof(uint32_t));
