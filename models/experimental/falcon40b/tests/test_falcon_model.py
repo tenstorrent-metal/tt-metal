@@ -310,9 +310,10 @@ def run_test_FalconModel_inference(
         ("prefill", 1, 32, 0),
         ("prefill", 2, 32, 0),
         ("prefill", 1, 64, 0),
+        ("prefill", 1, 128, 0),
         ("decode", 32, 1, 128),
     ),
-    ids=["prefill_seq32", "prefill_seq32_batch2", "prefill_seq64", "decode_batch32"],
+    ids=["prefill_seq32", "prefill_seq32_batch2", "prefill_seq64", "prefill_seq128", "decode_batch32"],
 )
 @pytest.mark.parametrize(
     "num_layers",
@@ -355,7 +356,7 @@ def test_FalconModel_inference(
         if model_config_str == "BFLOAT16-SHARDED":
             pytest.skip("Prefill is only tested for BFLOAT8_B!")
         elif model_config_str == "BFLOAT8_B-SHARDED":
-            # TODO: Investigate why PCC is lower for prefill?
+            # TODO: Investigate why PCC is lower for prefill sharded?
             out_pcc = 0.95
 
     input_shape = [batch, seq_len]
