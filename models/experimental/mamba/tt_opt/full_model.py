@@ -17,9 +17,6 @@ class TtTensorLoader:
         self.tt_cache_path = tt_cache_path
         self.device = device
 
-        if len(tt_cache_path) > 0 and not os.path.exists(self.tt_cache_path):
-            os.makedirs(self.tt_cache_path)
-
     def get_tensor_loader(self, layer_num):
         def load_tt_tensor(
             name: str,
@@ -33,53 +30,41 @@ class TtTensorLoader:
         ):
             tensor_name = f"layers.{layer_num}.{name}"
 
-            tensor_cache_filepath = Path(self.tt_cache_path) / (tensor_name + postfix + ".bin")
-
-            if tensor_cache_filepath.exists() and (len(self.tt_cache_path) > 0):
-                tt_tensor = ttnn.load_tensor(str(tensor_cache_filepath)).to(device, tt_memory_config)
-            else:
-                if torch_tensor is None:
-                    torch_tensor = self.state_dict[tensor_name]
-                torch_tensor = tm_fn(torch_tensor)
-                tt_tensor = ttnn.as_tensor(
-                    torch_tensor,
-                    device=device,
-                    layout=tt_layout,
-                    memory_config=tt_memory_config,
-                    dtype=tt_dtype,
-                    cache_file_name=str(tensor_cache_filepath),
-                )
-                if len(self.tt_cache_path) > 0:
-                    ttnn.dump_tensor(
-                        str(tensor_cache_filepath),
-                        tt_tensor.cpu(),
-                    )
+            tensor_cache_filepath = Path(self.tt_cache_path) / (tensor_name + postfix)
+            if torch_tensor is None:
+                torch_tensor = self.state_dict[tensor_name]
+            torch_tensor = tm_fn(torch_tensor)
+            tt_tensor = ttnn.as_tensor(
+                torch_tensor,
+                device=device,
+                layout=tt_layout,
+                memory_config=tt_memory_config,
+                dtype=tt_dtype,
+                cache_file_name=str(tensor_cache_filepath),
+            )
             return tt_tensor
 
         return load_tt_tensor
 
 
 class MambaTT(torch.nn.Module):
-    def __init__(
-        self,
-        reference_model,
-        tt_cache_path,
-        num_layers,
-        device,
-        num_users,
-        hidden_size,
-        configs
-    ):
+    def __init__(self, reference_model, device: ttnn.device, configs, tt_cache_path: str = "", num_layers=None):
         super().__init__()
-        print(f"Initalizing MambaTT with {num_layers} layers")
         self.args = reference_model.args
         self.device = device
-        #self.embedding = reference_model.embedding
+        self.tt_cache_path = tt_cache_path
+
+        if num_layers is None:
+            self.num_layers = len(reference_model.layers)
+        else:
+            self.num_layers = num_layers
+        print(f"Initalizing MambaTT with {self.num_layers} layers")
+
+        self.embedding = reference_model.embedding
+
         loader = TtTensorLoader(reference_model.state_dict(), self.device, tt_cache_path=tt_cache_path)
 
-        self.layers = [TtResidualBlock(self.args, device, loader.get_tensor_loader(i), reference_model.layers[i].state_dict(), num_users, hidden_size, configs, tt_cache_path) for i in range(num_layers)]
-
-        self.layers = [TtResidualBlock(self.args, device, loader.get_tensor_loader(i), reference_model.layers[i].state_dict(), num_users, hidden_size, configs, tt_cache_path) for i in range(num_layers)]
+        self.layers = [TtResidualBlock(self.args, device, configs, loader.get_tensor_loader(i)) for i in range(self.num_layers)]
 
         self.norm_f = reference_model.norm_f
 
@@ -88,8 +73,8 @@ class MambaTT(torch.nn.Module):
 
 
     def forward(self, x):
-        #x = self.embedding(x)
-        #x = x.unsqueeze(1)  # (BS, 1, 1, E)
+        x = self.embedding(x)
+        x = x.squeeze(1)
         x = ttnn.from_torch(
             x,
             device=self.device,
@@ -100,8 +85,9 @@ class MambaTT(torch.nn.Module):
         for layer in self.layers:
             x = layer(x)
 
-        #x = ttnn.to_torch(x).squeeze(1).to(torch.float32)
-        #x = self.norm_f(x)
-        #x = self.lm_head(x)
+        x = ttnn.to_torch(x).to(torch.float32)
+        x = x.unsqueeze(1)
+        x = self.norm_f(x)
+        x = self.lm_head(x)
 
         return x

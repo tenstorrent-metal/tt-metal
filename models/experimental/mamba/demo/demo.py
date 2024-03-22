@@ -6,6 +6,7 @@ import time
 import argparse
 from typing import List
 from loguru import logger
+import ttnn
 
 import torch
 
@@ -34,6 +35,23 @@ def get_tt_metal_model(version: MambaPretrainedModelName, use_cache: bool, batch
     else:
         cache_path = ""
     model = MambaTT(reference_model, device, tt_cache_path=cache_path)
+    return model, device
+
+def get_tt_opt_metal_model(version: MambaPretrainedModelName, use_cache: bool, batch_size: int):
+    from models.experimental.mamba.tt_opt.full_model import MambaTT
+    from models.experimental.mamba.tt_opt import model_config
+
+    device = ttnn.open_device(device_id=0)
+    ttnn.enable_program_cache(device)
+    reference_model = get_cpu_reference_model(version, batch_size=batch_size)
+    if use_cache:
+        cache_path = f"/tmp/{version}"
+    else:
+        cache_path = None
+
+    config = model_config.create_model_config(batch_size, reference_model.args.d_model)
+    model = MambaTT(reference_model, device, config, tt_cache_path=cache_path)
+
     return model, device
 
 
@@ -78,6 +96,7 @@ def run_demo(
     use_cache: bool = True,
 ):
     batch_size = len(prompts)
+    device = None
 
     logger.info(f"Running Mamba demo (weights='{model_version}') on '{model_type.upper()}' with batch={batch_size}")
 
@@ -85,6 +104,8 @@ def run_demo(
         model = get_cpu_reference_model(model_version, batch_size)
     elif model_type == "wh":
         model, _ = get_tt_metal_model(model_version, use_cache, batch_size)
+    elif model_type == "wh-opt":
+        model, device = get_tt_opt_metal_model(model_version, use_cache, batch_size)
     else:
         raise RuntimeError("Invalid model type was encountered")
 
@@ -113,14 +134,15 @@ def run_demo(
                 # print(f"Current throughput: {throughput:.2f} tok/s")
         else:
             logger.info(f"Decoding the prompt(s)... ({idx + 1}/{sequences.shape[1]})")
-
+    if device is not None:
+        ttnn.close_device(device)
     return all_decoded_sequences
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run inference benchmarks on set of supported models")
     parser.add_argument("prompts", nargs="+")
-    parser.add_argument("--model", choices=["cpu", "wh"], default="wh", help="The model under test")
+    parser.add_argument("--model", choices=["cpu", "wh", "wh-opt"], default="wh-opt", help="The model under test")
     args = parser.parse_args()
     run_demo(args.prompts, args.model)
 
