@@ -206,109 +206,79 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
         row_height = batch
 
     if mem_config_str in ["DRAM", "L1"]:
-        # Exceptions that are sharded also here
-        shard_width_hidden_dim_across_32_cores = hidden_size // 32
-        shard_spec_32_cores_grid = ttl.tensor.CoreRangeSet(
+        # Layernorm is an exception that are sharded also here, because the interleaved OP does not fit in L1 for 40b hidden size
+        layernorm_num_cores_x = 8
+        layernorm_max_num_cores_y = 7
+        for i in range(layernorm_max_num_cores_y, 0, -1):
+            if (row_height // 32) % i == 0:
+                layernorm_num_cores_y = i
+                break
+
+        num_tiles_per_core_h = row_height // 32 // layernorm_num_cores_y
+        num_tiles_per_core_w = hidden_size // 32 // layernorm_num_cores_x
+
+        layernorm_shard_height_hidden_dim = row_height // layernorm_num_cores_y
+        layernorm_shard_width_hidden_dim = hidden_size // layernorm_num_cores_x
+
+        core_range_block_sharded_layernorm = ttl.tensor.CoreRangeSet(
             {
                 ttl.tensor.CoreRange(
                     ttl.tensor.CoreCoord(0, 0),
-                    ttl.tensor.CoreCoord(7, 3),
+                    ttl.tensor.CoreCoord(layernorm_num_cores_x - 1, layernorm_num_cores_y - 1),
                 ),
             }
         )
 
-        # Decoder layer layernorm
-        model_config["LN_ATTN_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
-            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+        layernorm_block_sharded_mem_config = ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
             ttl.tensor.BufferType.L1,
             ttl.tensor.ShardSpec(
-                shard_spec_32_cores_grid,
+                core_range_block_sharded_layernorm,
                 [
-                    row_height,
-                    shard_width_hidden_dim_across_32_cores,
-                ],
-                ttl.tensor.ShardOrientation.ROW_MAJOR,
-                False,
-            ),
-        )
-        model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
-            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
-            ttl.tensor.BufferType.L1,
-            ttl.tensor.ShardSpec(
-                shard_spec_32_cores_grid,
-                [
-                    row_height,
-                    shard_width_hidden_dim_across_32_cores,
-                ],
-                ttl.tensor.ShardOrientation.ROW_MAJOR,
-                False,
-            ),
-        )
-        model_config["LN_MLP_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
-            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
-            ttl.tensor.BufferType.L1,
-            ttl.tensor.ShardSpec(
-                shard_spec_32_cores_grid,
-                [
-                    row_height,
-                    shard_width_hidden_dim_across_32_cores,
+                    layernorm_shard_height_hidden_dim,
+                    layernorm_shard_width_hidden_dim,
                 ],
                 ttl.tensor.ShardOrientation.ROW_MAJOR,
                 False,
             ),
         )
 
-        # Model final layernorm
-        model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
-            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
-            ttl.tensor.BufferType.L1,
-            ttl.tensor.ShardSpec(
-                shard_spec_32_cores_grid,
-                [
-                    row_height,
-                    shard_width_hidden_dim_across_32_cores,
-                ],
-                ttl.tensor.ShardOrientation.ROW_MAJOR,
-                False,
-            ),
-        )
-        model_config["LN_F_OUTPUT_MEMCFG"] = ttl.tensor.MemoryConfig(
-            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
-            ttl.tensor.BufferType.L1,
-            ttl.tensor.ShardSpec(
-                shard_spec_32_cores_grid,
-                [
-                    row_height,
-                    shard_width_hidden_dim_across_32_cores,
-                ],
-                ttl.tensor.ShardOrientation.ROW_MAJOR,
-                False,
-            ),
-        )
-
-        # Specify program configs
-        # Layernorm
-        model_config["LN_ATTN_PROGCFG"] = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
-            compute_with_storage_grid_size=[8, 4],
+        layernorm_block_sharded_prg_config = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
+            compute_with_storage_grid_size=[layernorm_num_cores_x, layernorm_max_num_cores_y],
             subblock_w=8,
-            block_h=row_height // 32,
-            block_w=8,
+            block_h=num_tiles_per_core_h,
+            block_w=num_tiles_per_core_w,
             math_fidelity=ttl.tensor.MathFidelity.HiFi4,
             im_data_format=ttl.tensor.DataType.BFLOAT16,
             out_data_format=model_config["LN_ATTN_OUTPUT_DTYPE"],
             inplace=False,
         )
-        model_config["LN_MLP_PROGCFG"] = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
-            compute_with_storage_grid_size=[8, 4],
+        layernorm_block_sharded_prg_config_inplace = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
+            compute_with_storage_grid_size=[layernorm_num_cores_x, layernorm_max_num_cores_y],
             subblock_w=8,
-            block_h=row_height // 32,
-            block_w=8,
+            block_h=num_tiles_per_core_h,
+            block_w=num_tiles_per_core_w,
             math_fidelity=ttl.tensor.MathFidelity.HiFi4,
             im_data_format=ttl.tensor.DataType.BFLOAT16,
-            out_data_format=model_config["LN_MLP_OUTPUT_DTYPE"],
+            out_data_format=model_config["LN_ATTN_OUTPUT_DTYPE"],
             inplace=True,
         )
 
+        # Decoder layer layernorm
+        model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+        model_config["LN_ATTN_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+        model_config["LN_MLP_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+
+        # Model final layernorm
+        model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+        model_config["LN_F_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+
+        # Layernorm prigram config
+        model_config["LN_ATTN_PROGCFG"] = layernorm_block_sharded_prg_config
+        model_config["LN_MLP_PROGCFG"] = layernorm_block_sharded_prg_config_inplace
+        model_config["LN_F_PROGCFG"] = layernorm_block_sharded_prg_config_inplace
+
+        # Specify program configs
         # QKV Projection
         if num_devices == 4:
             model_config["QKV_MM_PROGCFG"] = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
@@ -440,20 +410,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 mcast_in0=True,
             )
 
-        # Final layernorm
-        model_config["LN_F_PROGCFG"] = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
-            compute_with_storage_grid_size=[8, 4],
-            subblock_w=8,
-            block_h=row_height // 32,
-            block_w=8,
-            math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-            im_data_format=ttl.tensor.DataType.BFLOAT16,
-            out_data_format=model_config["LN_F_OUTPUT_DTYPE"],
-            inplace=True,
-        )
-
         # LM Head
-        model_config["LM_HEAD_MM_OUTPUT_MEMCFG"] = WIDTH_SHARDED_MEMCFG
         if num_devices == 4:
             model_config["LM_HEAD_MM_PROGCFG"] = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
                 compute_with_storage_grid_size=(8, 4),
@@ -989,7 +946,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 in0_block_w=8,
                 out_subblock_h=1,
                 out_subblock_w=4,
-                per_core_M=1,
+                per_core_M=row_height // 32,
                 per_core_N=16,
                 fuse_batch=True,
                 fused_activation=None,
@@ -1001,7 +958,7 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 in0_block_w=8,
                 out_subblock_h=1,
                 out_subblock_w=4,
-                per_core_M=1,
+                per_core_M=row_height // 32,
                 per_core_N=8,
                 fuse_batch=True,
                 fused_activation=None,

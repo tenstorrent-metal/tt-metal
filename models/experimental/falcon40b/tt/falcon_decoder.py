@@ -199,7 +199,6 @@ class TtFalconDecoderLayer:
         )
 
         attn_ln_output = []
-        # if self.model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"].is_sharded():
         for i in range(len(replicated_hidden_states)):
             attn_ln_output.append(
                 tt_lib.operations.primary.layernorm(
@@ -214,51 +213,6 @@ class TtFalconDecoderLayer:
         attn_ln_output = convert_to_layout(
             attn_ln_output, self.model_config["LN_ATTN_OUTPUT_MEMCFG"], self.model_config["ATTN_INPUT_MEMCFG"]
         )
-        # else:
-        # 1st version
-        # for i in range(len(replicated_hidden_states)):
-        #     attn_ln_output.append(
-        #         tt_lib.operations.primary.layernorm(
-        #             replicated_hidden_states[i],
-        #             self.layernorm_eps,
-        #             self.ln_attn_gamma[i],
-        #             self.ln_attn_beta[i],
-        #             # self.model_config["LN_ATTN_OUTPUT_MEMCFG"],
-        #             # self.model_config["LN_ATTN_PROGCFG"],
-        #             output_mem_config=self.model_config["LN_ATTN_OUTPUT_MEMCFG"],
-        #             program_config=tt_lib.operations.primary.LayerNormInterleavedMultiCoreProgramConfig(
-        #                 math_fidelity=tt_lib.tensor.MathFidelity.HiFi4,
-        #                 im_data_format=tt_lib.tensor.DataType.BFLOAT16,
-        #                 out_data_format=tt_lib.tensor.DataType.BFLOAT8_B,
-        #             ),
-        #         )
-        #     )
-
-        # 2nd version
-        # for i in range(len(replicated_hidden_states)):
-        #     attn_ln_output.append(
-        #         tt_lib.tensor.layernorm(
-        #             replicated_hidden_states[i],
-        #             self.layernorm_eps,
-        #             output_mem_config=self.model_config["DEFAULT_MEMCFG"],
-        #         )
-        #     )
-        # for i in range(len(attn_ln_output)):
-        #     attn_ln_output[i] = tt_lib.tensor.bcast(
-        #         attn_ln_output[i],
-        #         self.ln_attn_gamma[i],
-        #         tt_lib.tensor.BcastOpMath.MUL,
-        #         tt_lib.tensor.BcastOpDim.H,
-        #         output_mem_config=self.model_config["DEFAULT_MEMCFG"],
-        #     )
-        # for i in range(len(attn_ln_output)):
-        #     attn_ln_output[i] = tt_lib.tensor.bcast(
-        #         attn_ln_output[i],
-        #         self.ln_attn_beta[i],
-        #         tt_lib.tensor.BcastOpMath.ADD,
-        #         tt_lib.tensor.BcastOpDim.H,
-        #         output_mem_config=self.model_config["DEFAULT_MEMCFG"],
-        #     )
 
         # mlp_ln is in place, no need to deallocate original
         mlp_ln_output = []
