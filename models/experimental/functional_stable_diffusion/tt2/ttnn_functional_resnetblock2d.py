@@ -236,11 +236,43 @@ class resnetBlock2D:
         in_channels = parameters.conv1.weight.shape[1]
 
         if not self.fallback_on_groupnorm:
+            print("!!!!!!! GN op")
+            # self.parameters.norm1.weight = ttnn.create_group_norm_weight_bias_rm(
+            #     ttnn.to_torch(self.parameters.norm1.weight), in_channels, self.groups
+            # )
+            # self.parameters.norm1.bias = ttnn.create_group_norm_weight_bias_rm(
+            #     ttnn.to_torch(self.parameters.norm1.bias), in_channels, self.groups
+            # )
+            if (
+                self.first_gn_expected_input_sharded_memory_config.memory_layout
+                == ttnn.types.TensorMemoryLayout.BLOCK_SHARDED
+            ):
+                num_cores_across_channel = self.first_group_norm_core_grid.y
+            elif (
+                self.first_gn_expected_input_sharded_memory_config.memory_layout
+                == ttnn.types.TensorMemoryLayout.HEIGHT_SHARDED
+            ):
+                num_cores_across_channel = 1
+            else:
+                num_cores_across_channel = int(self.first_group_norm_core_grid.x * self.first_group_norm_core_grid.y)
+
             self.parameters.norm1.weight = ttnn.create_group_norm_weight_bias_rm(
-                ttnn.to_torch(self.parameters.norm1.weight), in_channels, self.groups
+                ttnn.to_torch(self.parameters.norm1.weight), in_channels, num_cores_across_channel
             )
             self.parameters.norm1.bias = ttnn.create_group_norm_weight_bias_rm(
-                ttnn.to_torch(self.parameters.norm1.bias), in_channels, self.groups
+                ttnn.to_torch(self.parameters.norm1.bias), in_channels, num_cores_across_channel
+            )
+
+            norm1_input_mask_torch_tensor = ttnn.create_groupnorm_input_mask(
+                in_channels, self.groups, num_cores_across_channel
+            )
+
+            self.norm1_input_mask = ttnn.from_torch(
+                norm1_input_mask_torch_tensor,
+                dtype=ttnn.DataType.BFLOAT8_B,
+                layout=ttnn.TILE_LAYOUT,
+                device=device,
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
             )
 
             self.parameters.norm1.weight = ttnn.from_torch(
@@ -257,11 +289,42 @@ class resnetBlock2D:
                 device=device,
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
             )
+            # self.parameters.norm2.weight = ttnn.create_group_norm_weight_bias_rm(
+            #     ttnn.to_torch(self.parameters.norm2.weight), out_channels, self.groups
+            # )
+            # self.parameters.norm2.bias = ttnn.create_group_norm_weight_bias_rm(
+            #     ttnn.to_torch(self.parameters.norm2.bias), out_channels, self.groups
+            # )
+            if (
+                self.second_gn_expected_input_sharded_memory_config.memory_layout
+                == ttnn.types.TensorMemoryLayout.BLOCK_SHARDED
+            ):
+                num_cores_across_channel = self.second_group_norm_core_grid.y
+            elif (
+                self.second_gn_expected_input_sharded_memory_config.memory_layout
+                == ttnn.types.TensorMemoryLayout.HEIGHT_SHARDED
+            ):
+                num_cores_across_channel = 1
+            else:
+                num_cores_across_channel = int(self.second_group_norm_core_grid.x * self.second_group_norm_core_grid.y)
+
             self.parameters.norm2.weight = ttnn.create_group_norm_weight_bias_rm(
-                ttnn.to_torch(self.parameters.norm2.weight), out_channels, self.groups
+                ttnn.to_torch(self.parameters.norm2.weight), out_channels, num_cores_across_channel
             )
             self.parameters.norm2.bias = ttnn.create_group_norm_weight_bias_rm(
-                ttnn.to_torch(self.parameters.norm2.bias), out_channels, self.groups
+                ttnn.to_torch(self.parameters.norm2.bias), out_channels, num_cores_across_channel
+            )
+
+            norm2_input_mask_torch_tensor = ttnn.create_groupnorm_input_mask(
+                out_channels, self.groups, num_cores_across_channel
+            )
+
+            self.norm2_input_mask = ttnn.from_torch(
+                norm2_input_mask_torch_tensor,
+                dtype=ttnn.DataType.BFLOAT8_B,
+                layout=ttnn.TILE_LAYOUT,
+                device=device,
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
             )
 
             self.parameters.norm2.weight = ttnn.from_torch(
@@ -343,6 +406,7 @@ class resnetBlock2D:
             hidden_states = ttnn.group_norm(
                 hidden_states,
                 num_groups=groups,
+                input_mask=self.norm1_input_mask,
                 weight=self.parameters.norm1.weight,
                 bias=self.parameters.norm1.bias,
                 epsilon=eps,
@@ -456,6 +520,7 @@ class resnetBlock2D:
                 num_groups=groups,
                 weight=self.parameters.norm2.weight,
                 bias=self.parameters.norm2.bias,
+                input_mask=self.norm2_input_mask,
                 epsilon=eps,
                 memory_config=self.second_gn_expected_input_sharded_memory_config,
                 core_grid=self.second_group_norm_core_grid,
