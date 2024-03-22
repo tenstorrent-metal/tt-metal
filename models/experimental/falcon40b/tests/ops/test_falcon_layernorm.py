@@ -43,7 +43,7 @@ class PytorchFalconLayernorm(torch.nn.Module):
 def run_test_FalconLayernorm_inference(pcc, devices, model_location_generator, get_tt_cache_path):
     is_sharded = True
 
-    seqlen = 64
+    seqlen = 128
     num_chips = 8
 
     # Prepare input
@@ -53,7 +53,10 @@ def run_test_FalconLayernorm_inference(pcc, devices, model_location_generator, g
     model_version = "tiiuae/falcon-40b-instruct"
 
     if is_sharded:
-        model_config = get_model_config("BFLOAT8_B-SHARDED", "prefill", model_input_shape, num_chips)
+        # model_config = get_model_config("BFLOAT8_B-SHARDED", "prefill", model_input_shape, num_chips) # Decode sharding
+        model_config = get_model_config(
+            "BFLOAT8_B-DRAM", "prefill", model_input_shape, num_chips
+        )  # Block sharding for layernorm to work around PCC issue
     else:
         model_config = get_model_config("BFLOAT8_B-DRAM", "prefill", model_input_shape, num_chips)
 
@@ -78,8 +81,31 @@ def run_test_FalconLayernorm_inference(pcc, devices, model_location_generator, g
     input = input.to(devices[0], model_config["DEFAULT_MEMCFG"])
 
     if is_sharded:
+        # shard_spec_32_cores_grid = ttl.tensor.CoreRangeSet(
+        #         {
+        #             ttl.tensor.CoreRange(
+        #                 ttl.tensor.CoreCoord(0, 0),
+        #                 ttl.tensor.CoreCoord(7, 3),
+        #             ),
+        #         }
+        #     )
+
         input = ttl.tensor.interleaved_to_sharded(
-            input, sharded_mem_config=model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"]
+            input,
+            sharded_mem_config=model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"],
+            # sharded_mem_config=ttl.tensor.MemoryConfig(
+            # ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
+            # ttl.tensor.BufferType.L1,
+            # ttl.tensor.ShardSpec(
+            #     shard_spec_32_cores_grid,
+            #     [
+            #         32,
+            #         1024,
+            #     ],
+            #     ttl.tensor.ShardOrientation.ROW_MAJOR,
+            #     False,
+            # ),
+            # )
         )
 
     # PyTorch output --------------------------------------------------------------------
