@@ -269,6 +269,11 @@ def run_falcon_demo_kv(
     del tt_FalconCausalLM_singlelayer
     del kv_cache_singlelayer
 
+    import gc
+
+    gc.collect()
+    logger.info("deleted outputs")
+
     tt_FalconCausalLM = TtFalconCausalLM(
         [device],
         state_dict,
@@ -280,9 +285,13 @@ def run_falcon_demo_kv(
         tt_cache_path,
     )
 
+    logger.info("loaded model")
+
     ### Second prefill run without compile ###
     profiler.enable()
     enable_persistent_kernel_cache()
+
+    logger.info("enabled cache")
 
     post_processor = partial(post_process)
     use_cache = True

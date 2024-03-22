@@ -49,6 +49,24 @@ class TtFalconModelShared(torch.nn.Module):
         )
 
         # stack all decoders
+        layers = []
+        from tqdm import tqdm
+
+        for layer_num in tqdm(range(num_layers)):
+            layers.append(
+                TtFalconDecoderLayer(
+                    device=device,
+                    state_dict=state_dict,
+                    base_url=f"{base_url}.h",
+                    layer_num=layer_num,
+                    config=config,
+                    max_position_embeddings=max_position_embeddings,
+                    model_config=model_config,
+                    tt_cache_path=tt_cache_path,
+                )
+            )
+        self.layers = torch.nn.ModuleList(layers)
+        """
         self.layers = torch.nn.ModuleList(
             [
                 TtFalconDecoderLayer(
@@ -63,7 +81,7 @@ class TtFalconModelShared(torch.nn.Module):
                 )
                 for layer_num in range(num_layers)
             ]
-        )
+        )"""
 
         layer_name = f"{base_url}"
 
