@@ -438,6 +438,7 @@ TEST_F(CommandQueueSingleCardFixture, TestIssueMultipleReadWriteCommandsForOneBu
 }
 
 // Test that command queue wraps when buffer available space in completion region is less than a page
+// failing
 TEST_F(CommandQueueSingleCardFixture, TestWrapCompletionQOnInsufficientSpace) {
     uint32_t large_page_size = 8192; // page size for first and third read
     uint32_t small_page_size = 2048; // page size for second read
@@ -486,6 +487,7 @@ TEST_F(CommandQueueSingleCardFixture, TestWrapCompletionQOnInsufficientSpace) {
 }
 
 // Test that command queue wraps when buffer read needs to be split into multiple enqueue_read_buffer commands and available space in completion region is less than a page
+// failing in same way as test above
 TEST_F(CommandQueueSingleCardFixture, TestWrapCompletionQOnInsufficientSpace2) {
     // Using default 75-25 issue and completion queue split
     for (Device *device : devices_) {
@@ -505,20 +507,25 @@ TEST_F(CommandQueueSingleCardFixture, TestWrapCompletionQOnInsufficientSpace2) {
         uint32_t num_pages_for_wrapping_buffer = (avail_space_for_wrapping_buffer / page_size) + 4;
 
         auto src_1 = local_test_functions::generate_arange_vector(buff_1.size());
-        EnqueueWriteBuffer(device->command_queue(), buff_1, src_1, false);
+        // EnqueueWriteBuffer(device->command_queue(), buff_1, src_1, false);
+        ::detail::WriteToBuffer(buff_1, src_1);
+        tt::Cluster::instance().dram_barrier(device->id());
         vector<uint32_t> result_1;
         EnqueueReadBuffer(device->command_queue(), buff_1, result_1, true);
         EXPECT_EQ(src_1, result_1);
 
         Buffer wrap_buff(device, num_pages_for_wrapping_buffer * page_size, page_size, BufferType::DRAM);
         auto src_2 = local_test_functions::generate_arange_vector(wrap_buff.size());
-        EnqueueWriteBuffer(device->command_queue(), wrap_buff, src_2, false);
+        // EnqueueWriteBuffer(device->command_queue(), wrap_buff, src_2, false);
+        ::detail::WriteToBuffer(wrap_buff, src_2);
+        tt::Cluster::instance().dram_barrier(device->id());
         vector<uint32_t> result_2;
         EnqueueReadBuffer(device->command_queue(), wrap_buff, result_2, true);
         EXPECT_EQ(src_2, result_2);
     }
 }
 
+// TODO: add test for wrapping with non aligned page sizes
 
 }  // end namespace dram_tests
 
@@ -570,11 +577,15 @@ TEST_F(CommandQueueSingleCardFixture, TestBackToBackNon32BAlignedPageSize) {
     for (Device *device : devices_) {
         Buffer bufa(device, 125000, 100, buff_type);
         auto src_a = local_test_functions::generate_arange_vector(bufa.size());
-        EnqueueWriteBuffer(device->command_queue(), bufa, src_a, false);
+        // EnqueueWriteBuffer(device->command_queue(), bufa, src_a, false);
+        ::detail::WriteToBuffer(bufa, src_a);
+        tt::Cluster::instance().l1_barrier(device->id());
 
         Buffer bufb(device, 152000, 152, buff_type);
         auto src_b = local_test_functions::generate_arange_vector(bufb.size());
-        EnqueueWriteBuffer(device->command_queue(), bufb, src_b, false);
+        // EnqueueWriteBuffer(device->command_queue(), bufb, src_b, false);
+        ::detail::WriteToBuffer(bufb, src_b);
+        tt::Cluster::instance().l1_barrier(device->id());
 
         vector<uint32_t> result_a;
         EnqueueReadBuffer(device->command_queue(), bufa, result_a, true);
@@ -609,11 +620,15 @@ TEST_F(CommandQueueSingleCardFixture, TestNonblockingReads) {
     for (auto device : devices_) {
         Buffer bufa(device, 2048, 2048, buff_type);
         auto src_a = local_test_functions::generate_arange_vector(bufa.size());
-        EnqueueWriteBuffer(device->command_queue(), bufa, src_a, false);
+        // EnqueueWriteBuffer(device->command_queue(), bufa, src_a, false);
+        ::detail::WriteToBuffer(bufa, src_a);
+        tt::Cluster::instance().l1_barrier(device->id());
 
         Buffer bufb(device, 2048, 2048, buff_type);
         auto src_b = local_test_functions::generate_arange_vector(bufb.size());
-        EnqueueWriteBuffer(device->command_queue(), bufb, src_b, false);
+        // EnqueueWriteBuffer(device->command_queue(), bufb, src_b, false);
+        ::detail::WriteToBuffer(bufb, src_b);
+        tt::Cluster::instance().l1_barrier(device->id());
 
         vector<uint32_t> result_a;
         EnqueueReadBuffer(device->command_queue(), bufa, result_a, false);
