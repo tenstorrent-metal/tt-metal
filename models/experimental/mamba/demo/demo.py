@@ -130,8 +130,8 @@ def run_demo(
 
             if display:
                 display_tokens(decoded)
-                _ = count / (time.time() - start)
-                # print(f"Current throughput: {throughput:.2f} tok/s")
+                throughput = count / (time.time() - start)
+                print(f"Current throughput: {throughput:.2f} tok/s")
         else:
             logger.info(f"Decoding the prompt(s)... ({idx + 1}/{sequences.shape[1]})")
     if device is not None:
@@ -144,6 +144,9 @@ def main():
     parser.add_argument("prompts", nargs="+")
     parser.add_argument("--model", choices=["cpu", "wh", "wh-opt"], default="wh-opt", help="The model under test")
     args = parser.parse_args()
+    if args.model == "wh-opt":
+        args.prompts = args.prompts * 32
+        print("Running WH-Opt with batch size 32")
     run_demo(args.prompts, args.model)
 
 
