@@ -234,11 +234,10 @@ void process_write_host() {
         uint32_t available_data = cb_fence - data_ptr;
         uint32_t xfer_size = (length > available_data) ? available_data : length;
         uint32_t npages = (xfer_size + completion_queue_page_size - 1) / completion_queue_page_size;
-        DPRINT << "available_data: " << available_data << " cb_fence " << cb_fence << " data_ptr " << data_ptr
-               << " xfer_size " << xfer_size << " npages " << npages << ENDL();
+        // DPRINT << "available_data: " << available_data << " cb_fence " << cb_fence << " data_ptr " << data_ptr
+        //        << " xfer_size " << xfer_size << " npages " << npages << ENDL();
         completion_queue_reserve_back(npages);
         uint32_t completion_queue_write_addr = cq_write_interface.completion_fifo_wr_ptr << 4;
-        DPRINT << "completion_queue_write_addr: " << completion_queue_write_addr << ENDL();
         uint64_t host_completion_queue_write_addr = get_noc_addr_helper(pcie_noc_xy_encoding, completion_queue_write_addr);
         if (completion_queue_write_addr + xfer_size >= completion_queue_end_addr) {
             DPRINT << "WRAP!" << ENDL();
@@ -251,6 +250,7 @@ void process_write_host() {
             host_completion_queue_write_addr = get_noc_addr_helper(pcie_noc_xy_encoding, completion_queue_write_addr);
             block_noc_writes_to_clear[rd_block_idx]++; // XXXXX maybe just write the noc internal api counter
         }
+        // DPRINT << "completion_queue_write_addr: " << completion_queue_write_addr << ENDL(); // adding this dprint causes issues
         noc_async_write(data_ptr, host_completion_queue_write_addr, xfer_size);
         // This will update the write ptr on device and host
         // Since writes use static vc we don't need to barrier after writes since writes are ordered

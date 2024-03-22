@@ -404,6 +404,7 @@ class SystemMemoryManager {
         SystemMemoryCQInterface& cq_interface = this->cq_interfaces[cq_id];
         cq_interface.completion_fifo_rd_ptr += data_read_16B;
         if (cq_interface.completion_fifo_rd_ptr >= cq_interface.completion_fifo_limit) {
+            std::cout << "WRAPPING COMPLETION Q ON HOST" << std::endl;
             cq_interface.completion_fifo_rd_ptr = cq_interface.issue_fifo_limit;
             cq_interface.completion_fifo_rd_toggle = not cq_interface.completion_fifo_rd_toggle;
         }
