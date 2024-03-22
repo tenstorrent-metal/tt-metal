@@ -90,10 +90,9 @@ constexpr static uint32_t CQ_COMPLETION_LAST_EVENT = CQ_COMPLETION_READ_PTR + L1
 constexpr static uint32_t CQ_COMPLETION_16B_SCRATCH = CQ_COMPLETION_LAST_EVENT + L1_ALIGNMENT;
 
 // Host addresses in hugepage for dispatch
-static constexpr uint32_t HOST_CQ_ISSUE_READ_PTR = 0;
+static constexpr uint32_t HOST_CQ_ISSUE_READ_PTR = 0; // this seems to be unused
 static constexpr uint32_t HOST_CQ_COMPLETION_WRITE_PTR = 32;
-static constexpr uint32_t HOST_CQ_FINISH_PTR = 64;
-static constexpr uint32_t CQ_START = 96;
+static constexpr uint32_t CQ_START = 64;
 
 // Reserved DRAM addresses
 // Host writes (4B value) to and reads from DRAM_BARRIER_BASE across all channels to ensure previous writes have been committed

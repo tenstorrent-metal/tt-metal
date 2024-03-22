@@ -109,7 +109,7 @@ void test_EnqueueWriteBuffer_and_EnqueueReadBuffer(Device* device, CommandQueue&
     chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
     uint32_t cq_size = tt::Cluster::instance().get_host_channel_size(device->id(), channel) / device->num_hw_cqs();
 
-    uint32_t issue_queue_size = tt::round_up((cq_size - CQ_START) * SystemMemoryCQInterface::default_issue_queue_split, 32);
+    uint32_t issue_queue_size = 805310400;
     uint32_t completion_queue_start_addr = CQ_START + issue_queue_size;
 
     std::vector<uint32_t> completion_queue_zeros((cq_size - completion_queue_start_addr)/sizeof(uint32_t), 0);
@@ -410,7 +410,7 @@ TEST_F(CommandQueueSingleCardFixture, TestWrapHostHugepageOnEnqueueReadBuffer) {
         uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
         chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
         uint32_t command_queue_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel);
-        uint32_t command_issue_region_size = command_queue_size * 0.75;
+        uint32_t command_issue_region_size = 805310400;
 
         uint32_t max_command_size = command_issue_region_size - CQ_START;
         uint32_t buffer = 14240;
@@ -428,7 +428,7 @@ TEST_F(CommandQueueSingleCardFixture, TestIssueMultipleReadWriteCommandsForOneBu
         uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
         chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
         uint32_t command_queue_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel);
-        uint32_t num_pages = (command_queue_size / page_size) / 4;
+        uint32_t num_pages = (command_queue_size / page_size) / 2;
 
         TestBufferConfig config = {.num_pages = num_pages, .page_size = page_size, .buftype = BufferType::DRAM};
 
@@ -443,12 +443,11 @@ TEST_F(CommandQueueSingleCardFixture, TestWrapCompletionQOnInsufficientSpace) {
     uint32_t large_page_size = 8192; // page size for first and third read
     uint32_t small_page_size = 2048; // page size for second read
 
-    // Using default 75-25 issue and completion queue split
     for (Device *device : devices_) {
         uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
         chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
         uint32_t command_queue_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel);
-        uint32_t command_completion_region_size = command_queue_size * 0.25;
+        uint32_t command_completion_region_size = 268431360;
 
         uint32_t first_buffer_size = tt::round_up(command_completion_region_size * 0.95, large_page_size);
 
@@ -475,14 +474,14 @@ TEST_F(CommandQueueSingleCardFixture, TestWrapCompletionQOnInsufficientSpace) {
         EnqueueReadBuffer(device->command_queue(), buff_2, result_2, true);
         EXPECT_EQ(src_2, result_2);
 
-        // Buffer buff_3(device, 32 * large_page_size, large_page_size, BufferType::DRAM);
-        // auto src_3 = local_test_functions::generate_arange_vector(buff_3.size());
-        // // EnqueueWriteBuffer(device->command_queue(), buff_3, src_3, false);
-        // ::detail::WriteToBuffer(buff_3, src_3);
-        // tt::Cluster::instance().dram_barrier(device->id());
-        // vector<uint32_t> result_3;
-        // EnqueueReadBuffer(device->command_queue(), buff_3, result_3, true);
-        // EXPECT_EQ(src_3, result_3);
+        Buffer buff_3(device, 32 * large_page_size, large_page_size, BufferType::DRAM);
+        auto src_3 = local_test_functions::generate_arange_vector(buff_3.size());
+        // EnqueueWriteBuffer(device->command_queue(), buff_3, src_3, false);
+        ::detail::WriteToBuffer(buff_3, src_3);
+        tt::Cluster::instance().dram_barrier(device->id());
+        vector<uint32_t> result_3;
+        EnqueueReadBuffer(device->command_queue(), buff_3, result_3, true);
+        EXPECT_EQ(src_3, result_3);
     }
 }
 
@@ -494,7 +493,7 @@ TEST_F(CommandQueueSingleCardFixture, TestWrapCompletionQOnInsufficientSpace2) {
         uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device->id());
         chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(device->id());
         uint32_t command_queue_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel);
-        uint32_t command_completion_region_size = command_queue_size * 0.25;
+        uint32_t command_completion_region_size = 268431360;
 
         uint32_t num_pages_buff_1 = 9;
         uint32_t page_size_buff_1 = 2048;
