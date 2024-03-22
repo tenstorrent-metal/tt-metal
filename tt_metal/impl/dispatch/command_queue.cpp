@@ -794,23 +794,35 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
             } else {
                 uint32_t src_offset = offset_in_completion_q_data;
                 uint32_t dst_offset_bytes = 0;
+
+
+                // for (int i = 0; i < completion_q_data.size(); i++) {
+                //     std::cout  << i << " : " << completion_q_data.at(i) << std::endl;
+                // }
+
+                // std::cout << "\nDone data\n" << std::endl;
+                uint32_t pad_size_bytes = padded_page_size - page_size;
+
                 while (src_offset < completion_q_data.size()) {
 
                     uint32_t src_offset_increment = (padded_page_size / sizeof(uint32_t));
                     uint32_t num_bytes_to_copy;
                     if (remaining_bytes_of_nonaligned_page > 0) {
                         // Case 1: Portion of the page was copied into user buffer on the previous completion queue pop.
-                        num_bytes_to_copy = remaining_bytes_of_nonaligned_page;
+                        num_bytes_to_copy = remaining_bytes_of_nonaligned_page - pad_size_bytes;
                         remaining_bytes_of_nonaligned_page = 0;
-                        src_offset_increment = (num_bytes_to_copy/sizeof(uint32_t)) + ((padded_page_size - page_size)/sizeof(uint32_t));
+                        src_offset_increment = (num_bytes_to_copy/sizeof(uint32_t)) + (pad_size_bytes/sizeof(uint32_t));
                     } else if (src_offset + src_offset_increment >= completion_q_data.size()) {
                         // Case 2: Last page of data that was popped off the completion queue
                         uint32_t num_bytes_remaining = (completion_q_data.size() - src_offset) * sizeof(uint32_t);
                         num_bytes_to_copy = std::min(num_bytes_remaining, page_size );
-                        remaining_bytes_of_nonaligned_page = page_size - num_bytes_to_copy;
+                        remaining_bytes_of_nonaligned_page = padded_page_size - num_bytes_to_copy;
                     } else {
                         num_bytes_to_copy = page_size;
                     }
+
+                    // std::cout << "dst offset B " << dst_offset_bytes << " src offset " << src_offset << " num to copy B " << num_bytes_to_copy << std::endl;
+
 
                     memcpy(
                         (char*)(uint64_t(contiguous_dst) + dst_offset_bytes),
