@@ -361,9 +361,13 @@ void Device::compile_command_queue_programs() {
                 std::cout << "Dispatcher location: " << dispatch_location.str() << " physical location: " << dispatch_physical_core.str() << std::endl;
 
 
-                uint32_t issue_queue_size = tt::round_up((cq_size - CQ_START) * SystemMemoryCQInterface::default_issue_queue_split, 32);
+                uint32_t issue_queue_size = this->sysmem_manager_->get_issue_queue_size(cq_id);
                 uint32_t completion_queue_start_addr = CQ_START + issue_queue_size + get_absolute_cq_offset(channel, cq_id, cq_size);
                 uint32_t completion_queue_size = (cq_size - CQ_START) - issue_queue_size;
+
+                std::cout << "ISSUE Q SIZE " << issue_queue_size
+                          << " COMP Q START " << completion_queue_start_addr
+                          << " COMP Q SIZE " << completion_queue_size << std::endl;
 
                 // CoreCoord consumer_physical_core = completion_q_physical_core;
                 // CoreCoord producer_physical_core = prefetcher_physical_core;
@@ -707,8 +711,12 @@ void Device::configure_command_queue_programs() {
                 detail::WriteToDeviceL1(this, prefetcher_location, prefetch_q_base, prefetch_q);
 
                 // Initialize completion queue write pointer and read pointer copy
-                uint32_t issue_queue_size = tt::round_up((cq_size - CQ_START) * SystemMemoryCQInterface::default_issue_queue_split, 32);
+                uint32_t issue_queue_size = this->sysmem_manager_->get_issue_queue_size(cq_id);
                 uint32_t completion_queue_start_addr = CQ_START + issue_queue_size + get_absolute_cq_offset(curr_channel, cq_id, curr_cq_size);
+
+               std::cout << "ISSUE Q SIZE " << issue_queue_size
+                          << " COMP Q START " << completion_queue_start_addr << std::endl;
+
                 uint32_t completion_queue_start_addr_16B = completion_queue_start_addr >> 4;
                 vector<uint32_t> completion_queue_wr_ptr = {completion_queue_start_addr_16B};
                 vector<uint32_t> completion_queue_last_event = {0x0}; // Reset state in case L1 Clear is disabled.

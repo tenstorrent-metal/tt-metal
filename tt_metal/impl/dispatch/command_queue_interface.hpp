@@ -130,14 +130,31 @@ struct SystemMemoryCQInterface {
     // | issue_fifo_wr_ptr + command size B - issue_fifo_rd_ptr |
     // Space available would just be issue_fifo_limit - issue_fifo_size
     SystemMemoryCQInterface(uint16_t channel, uint8_t cq_id, uint32_t cq_size):
-      command_issue_region_size(tt::round_up((cq_size - CQ_START) * this->default_issue_queue_split, 32)),
-      command_completion_region_size((cq_size - CQ_START) - this->command_issue_region_size),
+
+      /*
+            1,073,741,824 - 64 = 1,073,741,760
+
+            ------- cq size: 1,073,741,760 -------
+
+            num_tx_pages_fit = cq_size / 4096 = 262,143
+
+            25% of this = 65,535
+
+            compleion queue size = 65,535 * 4096 = 268,431,360
+
+            issue queue size = 805,310,400
+
+      */
+
+      command_completion_region_size(268431360),
+      command_issue_region_size(805310400),
       issue_fifo_size(command_issue_region_size >> 4),
       issue_fifo_limit(((CQ_START + this->command_issue_region_size) + get_absolute_cq_offset(channel, cq_id, cq_size)) >> 4),
       completion_fifo_size(command_completion_region_size >> 4),
       completion_fifo_limit(issue_fifo_limit + completion_fifo_size),
       offset(get_absolute_cq_offset(channel, cq_id, cq_size))
      {
+        std::cout << "ISSUE Q SIZE " << this->command_issue_region_size << " COMPLETION Q SIZE " << command_completion_region_size << std::endl;
         TT_ASSERT(this->issue_fifo_limit != 0, "Cannot have a 0 fifo limit");
         // Currently read / write pointers on host and device assumes contiguous ranges for each channel
         // Device needs absolute offset of a hugepage to access the region of sysmem that holds a particular command queue
@@ -152,8 +169,8 @@ struct SystemMemoryCQInterface {
     // Percentage of the command queue that is dedicated for issuing commands. Issue queue size is rounded to be 32B aligned and remaining space is dedicated for completion queue
     // Smaller issue queues can lead to more stalls for applications that send more work to device than readback data.
     static constexpr float default_issue_queue_split = 0.75;
-    const uint32_t command_issue_region_size;
     const uint32_t command_completion_region_size;
+    const uint32_t command_issue_region_size;
 
     uint32_t issue_fifo_size;
     uint32_t issue_fifo_limit;  // Last possible FIFO address
