@@ -414,7 +414,7 @@ def _to_device_validate_input_tensors(operation_name, tensor, *args, **kwargs):
     ttnn.validate_input_tensor(
         operation_name,
         tensor,
-        ranks=(1, 2, 3, 4, 5),
+        ranks=(1, 2, 3, 4, 5, 6),
         dtypes=(ttnn.bfloat16, ttnn.bfloat8_b, ttnn.bfloat4_b, ttnn.uint16, ttnn.uint32, ttnn.float32),
         layouts=(ttnn.ROW_MAJOR_LAYOUT, ttnn.TILE_LAYOUT),
         can_be_on_device=True,
@@ -459,7 +459,7 @@ def _from_device_validate_input_tensors(operation_name, tensor, *args, **kwargs)
     ttnn.validate_input_tensor(
         operation_name,
         tensor,
-        ranks=(1, 2, 3, 4, 5),
+        ranks=(1, 2, 3, 4, 5, 6),
         dtypes=(ttnn.bfloat16, ttnn.bfloat8_b, ttnn.bfloat4_b, ttnn.uint16, ttnn.uint32, ttnn.float32),
         layouts=(ttnn.ROW_MAJOR_LAYOUT, ttnn.TILE_LAYOUT),
         can_be_on_device=True,
@@ -608,7 +608,7 @@ def _to_layout_validate_input_tensors(operation_name, input_tensor, *args, **kwa
     ttnn.validate_input_tensor(
         operation_name,
         input_tensor,
-        ranks=(1, 2, 3, 4, 5),
+        ranks=(1, 2, 3, 4, 5, 6),
         dtypes=(ttnn.bfloat16, ttnn.bfloat8_b, ttnn.bfloat4_b, ttnn.uint16, ttnn.uint32, ttnn.float32),
         layouts=(ttnn.ROW_MAJOR_LAYOUT, ttnn.TILE_LAYOUT),
         can_be_on_device=True,

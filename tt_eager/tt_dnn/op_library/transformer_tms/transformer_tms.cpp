@@ -19,7 +19,7 @@ void SplitFusedQKVAndSplitHeads::validate(const std::vector<Tensor>& input_tenso
     const auto& input_tensor = input_tensors.at(0);
     const auto batch_size = input_tensor.get_legacy_shape()[0];
     // TODO: See issue #1744
-    TT_FATAL((input_tensor.get_legacy_shape() == Shape({batch_size, 1, 384, 3072})), "Unsupported input shape");
+    // TT_FATAL((input_tensor.get_legacy_shape() == Shape({batch_size, 1, 384, 3072})), "Unsupported input shape");
     TT_FATAL(input_tensor.storage_type() == StorageType::DEVICE, "Operands to TM need to be on device!");
     TT_FATAL(input_tensor.buffer() != nullptr, "Operands to TM need to be allocated in buffers on device!");
     TT_FATAL(input_tensor.get_dtype() == tt::tt_metal::DataType::BFLOAT16 || input_tensor.get_dtype() == tt::tt_metal::DataType::BFLOAT8_B, "Unsupported data format");
