@@ -1287,8 +1287,7 @@ MatmulParallelizationStrategy Matmul::get_parallelization_strategy(const std::ve
 }
 
 Tensor matmul_1d(const Tensor &input_tensor_a, const Tensor &input_tensor_b, std::optional<const Tensor> bias, std::optional<MatmulMultiCoreReuseMultiCast1DProgramConfig> program_config, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype, std::optional<const DeviceComputeKernelConfig> compute_kernel_config, bool untilize_out) {
-    auto worker = input_tensor_a.get_worker_handle();
-    Tensor output_tensor(worker);
+    Tensor output_tensor(input_tensor_a.get_workers());
     operation::launch_op(
         [program_config, mem_config, output_dtype, compute_kernel_config, untilize_out] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) mutable -> Tensor {
             const auto& input_tensor_a = input_tensors.at(0);

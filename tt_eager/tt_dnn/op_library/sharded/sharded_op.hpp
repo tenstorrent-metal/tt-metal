@@ -57,8 +57,7 @@ inline Tensor interleaved_to_sharded(
     const TensorMemoryLayout shard_scheme,
     const ShardOrientation shard_orientation,
     const std::optional<const DataType> output_dtype = std::nullopt) {
-    auto worker = input_tensor.get_worker_handle();
-    Tensor output_tensor(worker);
+    Tensor output_tensor(input_tensor.get_workers());
     operation::launch_op(
         [grid, shard_shape, shard_scheme, shard_orientation, output_dtype] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) -> Tensor {
             const auto& input_tensor = input_tensors.at(0);
@@ -135,23 +134,24 @@ inline Tensor interleaved_to_sharded(
     const Tensor &input_tensor,
     const MemoryConfig &sharded_mem_config,
     std::optional<const DataType> output_dtype = std::nullopt) {
-    auto worker = input_tensor.get_worker_handle();
-    Tensor output_tensor(worker);
-    worker->push_work([input_tensor, output_tensor, sharded_mem_config, output_dtype] () mutable {
-        TT_FATAL(sharded_mem_config.is_sharded());
-        auto bbox = sharded_mem_config.shard_spec.value().grid.bounding_box();
-        CoreCoord grid_size(bbox.end.x + 1, bbox.end.y + 1);
-        auto local_tensor = operation::run(
-                Sharded{
-                    .grid_size = grid_size,
-                    .shard_spec = sharded_mem_config.shard_spec.value(),
-                    .sharded_op_type = ShardedOpType::InterleavedToSharded,
-                    .output_mem_config = sharded_mem_config,
-                    .output_dtype = output_dtype.value_or(input_tensor.get_dtype())},
-                {input_tensor})
-            .at(0);
-        output_tensor.deepcopy(local_tensor);
-    });
+    Tensor output_tensor(input_tensor.get_workers());
+    operation::launch_op(
+        [sharded_mem_config, output_dtype] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) -> Tensor {
+            const auto& input_tensor = input_tensors.at(0);
+            TT_FATAL(sharded_mem_config.is_sharded());
+            auto bbox = sharded_mem_config.shard_spec.value().grid.bounding_box();
+            CoreCoord grid_size(bbox.end.x + 1, bbox.end.y + 1);
+            return operation::run(
+                    Sharded{
+                        .grid_size = grid_size,
+                        .shard_spec = sharded_mem_config.shard_spec.value(),
+                        .sharded_op_type = ShardedOpType::InterleavedToSharded,
+                        .output_mem_config = sharded_mem_config,
+                        .output_dtype = output_dtype.value_or(input_tensor.get_dtype())},
+                    {input_tensor})
+                .at(0);
+        },
+    {input_tensor}, output_tensor);
     return output_tensor;
 }
 
@@ -159,8 +159,7 @@ inline Tensor sharded_to_interleaved(
     const Tensor &input_tensor,
     const MemoryConfig &output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
     std::optional<const DataType> output_dtype = std::nullopt) {
-    auto worker = input_tensor.get_worker_handle();
-    Tensor output_tensor(worker);
+    Tensor output_tensor(input_tensor.get_workers());
     operation::launch_op(
         [output_mem_config, output_dtype] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) -> Tensor {
             const auto& input_tensor = input_tensors.at(0);

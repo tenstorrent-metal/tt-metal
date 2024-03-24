@@ -37,19 +37,18 @@ Tensor::Tensor(const Storage storage, const ttnn::Shape shape, DataType dtype, L
             }
             else if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
                 TT_ASSERT(storage.buffer->device() != nullptr);
-                worker = device();
+                workers = {device()};
                 tensor_impl::validate_on_device_dtype_and_layout(storage.buffer->device(), dtype, layout);
             }
             else if constexpr (std::is_same_v<StorageType, BorrowedStorage>) {
                 // do nothing
             } else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                workers.reserve(storage.buffers.size());
                 for (const auto& buffer : storage.buffers) {
                     TT_ASSERT(buffer->device() != nullptr);
                     tensor_impl::validate_on_device_dtype_and_layout(buffer->device(), dtype, layout);
+                    workers.push_back(buffer->device());
                 }
-                // Support for async mode with multi-device tensors is not mainlined.
-                // For now, the tensor gets a single worker.
-                worker = storage.buffers[0]->device();
             } else if constexpr (std::is_same_v<StorageType, MultiDeviceHostStorage>) {
                 // do nothing
             }else {
@@ -76,9 +75,11 @@ void Tensor::deallocate(bool force) {
     // manner, depending on the setup.
     if (not deallocate_through_destructor) {
         // Get worker and synchronize
-        auto worker = this->get_worker_handle(true);
-        if (worker) {
-            worker->synchronize();
+        auto workers = this->get_workers(true);
+        for (auto worker : workers) {
+            if (worker) {
+                worker->synchronize();
+            }
         }
     }
     if (this->tensor_attributes.use_count() and this->tensor_attributes->metadata_populated) {
@@ -151,19 +152,30 @@ void Tensor::deepcopy(const Tensor& other) {
     this->tensor_attributes->metadata_populated = true;
 }
 
-Device* Tensor::get_worker_handle(bool blocking) const {
+std::vector<Device*> Tensor::get_workers(bool blocking) const {
     bool wait_for_tensor_populated = (Device::get_worker_mode() == Device::WorkerQueueMode::SYNCHRONOUS) or blocking;
-    TT_FATAL(wait_for_tensor_populated or (this->worker != nullptr), "Worker Handle for tensor must be populated or blocking = true must be set in get_worker_handle().");
-    if (this->worker == nullptr) {
+    TT_FATAL(wait_for_tensor_populated or (this->workers.size()), "Worker Handles for tensor must be populated or blocking = true must be set in get_workers().");
+    if (not this->workers.size()) {
         if (wait_for_tensor_populated) {
             while (not this->metadata_populated());
-            if (this->storage_type() != StorageType::DEVICE) {
-                return nullptr;
-            }
-            return this->device();
+            std::vector<Device*> workers = {};
+            std::visit(
+            [&] (auto&& storage) {
+                using StorageType = std::decay_t<decltype(storage)>;
+                if constexpr (std::is_same_v<StorageType, DeviceStorage>) {
+                    workers = {this->device()};
+                }
+                else if constexpr (std::is_same_v<StorageType, MultiDeviceStorage>) {
+                    workers.reserve(storage.buffers.size());
+                    for (const auto& buffer : storage.buffers) {
+                        workers.push_back(buffer->device());
+                    }
+                }
+            }, this->get_storage());
+            return workers;
         }
     }
-    return this->worker;
+    return this->workers;
 }
 
 // Getters - Spin until tensor is populated before querying tensor metadata
@@ -203,7 +215,7 @@ Tensor Tensor::to(CommandQueue & queue, const MemoryConfig & mem_config) const {
 
 Tensor Tensor::to(Device *target_device, const MemoryConfig &mem_config) const {
     ZoneScoped;
-    Tensor device_tensor(target_device);
+    Tensor device_tensor({target_device});
     target_device->push_work([*this, device_tensor, mem_config, target_device] () mutable {
         if (this->storage_type() == StorageType::DEVICE) {
             TT_ASSERT(this->device() == target_device && "Currently do not support moving between devices");
@@ -236,9 +248,7 @@ Tensor Tensor::to(DeviceMesh *device_mesh, const MemoryConfig &mem_config) const
             this->get_shape(),
             this->get_dtype(),
             this->get_layout());
-        // Async mode changes for multi-device tensors are not mainlined.
-        // Assign a single worker to the tensor.
-        multi_device_tensor.worker = &(device_mesh->get_device(0));
+        multi_device_tensor.workers = device_mesh->get_devices();
         return multi_device_tensor;
     } else if (std::holds_alternative<tt::tt_metal::MultiDeviceStorage>(this->get_storage())) {
         return *this; // already on device
@@ -250,7 +260,7 @@ Tensor Tensor::to(DeviceMesh *device_mesh, const MemoryConfig &mem_config) const
 
 Tensor Tensor::cpu(bool blocking) const {
     ZoneScoped;
-    auto worker = this->get_worker_handle(blocking);
+    auto worker = this->get_workers(blocking).at(0);
     Tensor host_tensor;
 
     worker->push_work([*this, host_tensor, blocking] () mutable {

@@ -355,7 +355,8 @@ inline void launch_op(
     const std::vector<std::optional<const Tensor>> optional_input_tensors = {}
 ) {
     // Send host side op compile and run to the worker queue
-    output_tensor.worker->push_work([op_func, input_tensors, optional_input_tensors, output_tensor] () mutable {
+    // Async mode changes for tensor-parallel execution not mainlined. Use the first worker thread.
+    output_tensor.workers.at(0)->push_work([op_func, input_tensors, optional_input_tensors, output_tensor] () mutable {
         auto local_tensor = op_func(input_tensors, optional_input_tensors);
         output_tensor.deepcopy(local_tensor);
     });

@@ -41,7 +41,7 @@ struct Tensor {
     // Can be safely passed between threads when the tensor is copied
     std::shared_ptr<TensorAttributes> tensor_attributes;
     // Tensor gets worker queue handle through the device
-    Device* worker = nullptr;
+    std::vector<Device*> workers = {};
     bool deallocate_through_destructor = false;
     // ======================================================================================
     //                                  Hi Level APIs
@@ -50,7 +50,7 @@ struct Tensor {
     Tensor(const Storage storage, const Shape shape, DataType dtype, Layout layout);
 
     // Default constructor to initialize empty tensor
-    Tensor(Device* worker = nullptr) : tensor_attributes(std::make_shared<TensorAttributes>()), worker(worker) {}
+    Tensor(std::vector<Device*> workers = {}) : tensor_attributes(std::make_shared<TensorAttributes>()), workers(workers) {}
 
     Tensor(const Tensor &other) = default;
 
@@ -65,7 +65,7 @@ struct Tensor {
 
     void deallocate(bool force = false);
 
-    Device* get_worker_handle(bool blocking = false) const;
+    std::vector<Device*> get_workers(bool blocking = false) const;
 
     Tensor to(
         Device *target_device,

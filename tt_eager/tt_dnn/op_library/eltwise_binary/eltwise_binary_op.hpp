@@ -111,8 +111,7 @@ struct make_eltwise_binary {
         std::optional<std::vector<UnaryWithParam>> fused_activations = std::nullopt,
         const MemoryConfig &output_mem_config = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
         std::optional<const DataType> output_dtype = std::nullopt) const {
-        auto worker = input_tensor_a.get_worker_handle();
-        Tensor output_tensor(worker);
+        Tensor output_tensor(input_tensor_a.get_workers());
         operation::launch_op(
             [fused_activations, output_mem_config, output_dtype] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) mutable -> Tensor {
                 Tensor in_a = input_tensors.at(0);

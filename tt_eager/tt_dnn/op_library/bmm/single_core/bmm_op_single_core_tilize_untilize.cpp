@@ -18,8 +18,7 @@ Tensor bmm_tilize_untilize(const Tensor& a, const Tensor& b, const Tensor& bias,
                            std::optional<const DeviceComputeKernelConfig> compute_kernel_config) {
 
     // NOTE: Currently only single core implementation exists.
-    auto worker = a.get_worker_handle();
-    Tensor output_tensor(worker);
+    Tensor output_tensor(a.get_workers());
     operation::launch_op(
         [out_dt, a_height_nblocks, a_width_nblocks, b_width_nblocks,
          a_block_height_ntiles, a_block_width_ntiles, b_block_width_ntiles,
