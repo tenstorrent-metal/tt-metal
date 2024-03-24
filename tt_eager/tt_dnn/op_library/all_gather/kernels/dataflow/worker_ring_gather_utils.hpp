@@ -4,23 +4,70 @@
 
 #include "dataflow_api.h"
 #include "debug/assert.h"
+#include "debug/dprint.h"
 #include "tt_eager/tt_dnn/op_library/ccl/shared_with_host/hetergeneous_data_structs.hpp"
 #include "tt_eager/tt_dnn/op_library/ccl/ccl_common.hpp"
 
 using ccl::ShardType;
 
 FORCE_INLINE void validate_sane_transaction_counters() {
+    // if (noc_reads_num_issued[noc_index] == 0) {
+    //     DPRINT << "noc_reads_num_issued WAS 0!!!!\n";
+    // }
+    if (noc_nonposted_writes_num_issued[noc_index] == 0) {
+        DPRINT << "noc_nonposted_writes_num_issued WAS 0!!!!\n";
+    }
+    if (noc_nonposted_writes_acked[noc_index] == 0) {
+        DPRINT << "noc_nonposted_writes_acked WAS 0!!!!\n";
+    }
+    if (NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) == 0) {
+        DPRINT << "NOC_STATUS_READ_REG(noc, NIU_MST_WR_ACK_RECEIVED) WAS 0!!!!\n";
+    }
+    if (NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) == 0) {
+        DPRINT << "NOC_STATUS_READ_REG(noc, NIU_MST_NONPOSTED_WR_REQ_SENT) WAS 0!!!!\n";
+    }
+
     ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) != 0);
     ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) != 0);
     ASSERT(noc_nonposted_writes_num_issued[noc_index] != 0);
     ASSERT(noc_nonposted_writes_acked[noc_index] != 0);
+    // ASSERT(noc_reads_num_issued[noc_index] != 0);
+
+
+    DPRINT << "NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED): " << NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) << "\n";
+    DPRINT << "NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT): " << NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) << "\n";
+    DPRINT << "noc_nonposted_writes_num_issued[noc_index]: " << noc_nonposted_writes_num_issued[noc_index] << "\n";
+    DPRINT << "noc_nonposted_writes_acked[noc_index]: " << noc_nonposted_writes_acked[noc_index] << "\n";
 }
 
 FORCE_INLINE void validate_sane_transaction_counters_rw() {
+    // if (noc_reads_num_issued[noc_index] == 0) {
+    //     DPRINT << "noc_reads_num_issued WAS 0!!!!\n";
+    // }
+    if (noc_nonposted_writes_num_issued[noc_index] == 0) {
+        DPRINT << "noc_nonposted_writes_num_issued WAS 0!!!!\n";
+    }
+    if (noc_nonposted_writes_acked[noc_index] == 0) {
+        DPRINT << "noc_nonposted_writes_acked WAS 0!!!!\n";
+    }
+    if (NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) == 0) {
+        DPRINT << "NOC_STATUS_READ_REG(noc, NIU_MST_WR_ACK_RECEIVED) WAS 0!!!!\n";
+    }
+    if (NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) == 0) {
+        DPRINT << "NOC_STATUS_READ_REG(noc, NIU_MST_NONPOSTED_WR_REQ_SENT) WAS 0!!!!\n";
+    }
+
     ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) != 0);
     ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) != 0);
     ASSERT(noc_nonposted_writes_num_issued[noc_index] != 0);
     ASSERT(noc_nonposted_writes_acked[noc_index] != 0);
+    // ASSERT(noc_reads_num_issued[noc_index] != 0);
+
+
+    DPRINT << "RW: NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED): " << NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) << "\n";
+    DPRINT << "RW: NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT): " << NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) << "\n";
+    DPRINT << "RW: noc_nonposted_writes_num_issued[noc_index]: " << noc_nonposted_writes_num_issued[noc_index] << "\n";
+    DPRINT << "RW: noc_nonposted_writes_acked[noc_index]: " << noc_nonposted_writes_acked[noc_index] << "\n";
 }
 
 
@@ -212,6 +259,8 @@ FORCE_INLINE void write_and_send_chunk_sharded(
     cb_wait_front(cb_id, num_pages);
     uint32_t l1_read_addr = get_read_ptr(cb_id);
     uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+    DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (upper): " << (uint32_t)((dest_worker_noc_addr >> 32) & 0xffffffff) << "\n";
+    DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (lower): " << (uint32_t)(dest_worker_noc_addr & 0xffffffff) << "\n";
     noc_async_write(l1_read_addr, remote_eth_l1_write_addr, addr_gen.get_shard_size_in_bytes());
     noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes());
     validate_sane_transaction_counters();
@@ -257,18 +306,34 @@ FORCE_INLINE void write_and_send_chunk(uint32_t& output_page_idx, uint32_t& col_
 
 template <ShardType T>
 FORCE_INLINE void write_chunk_sharded(const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t num_pages) {
+    DPRINT << "\tRW: Transfer write_chunk_sharded HEAD\n";
     for (uint32_t i = 0; i < num_pages; ++i) {
         cb_wait_front(cb_id, 1);
+        DPRINT << "\tRW: Got page\n";
         uint32_t l1_read_addr = get_read_ptr(cb_id);
         uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+        DPRINT << "\tRW: first tile 1 elem: " << *(uint32_t*)l1_read_addr << " from " << l1_read_addr << "\n";
+        DPRINT << "\tRW: second tile l1 elem: " << ((uint32_t*)l1_read_addr)[512] << "\n";
+        DPRINT << "\tRW: dest_worker_noc_addr: " << dest_worker_noc_addr << "\n";
+        DPRINT << "\tRW: write size in bytes: " << addr_gen.get_shard_size_in_bytes() << "\n";
 
         noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes());
 
+        DPRINT << "\tRW: Waiting for write barrier\n";
         // validate_sane_transaction_counters();
         validate_sane_transaction_counters_rw();
+        DPRINT << "\tRW: Waiting for write barrier\n";
         noc_async_write_barrier();
         cb_pop_front(cb_id, 1);
     }
+    DPRINT << "\tRW: done write_chunk_sharded\n";
+    // cb_wait_front(cb_id, num_pages);
+    // uint32_t l1_read_addr = get_read_ptr(cb_id);
+    // uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+    // noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes() * num_pages);
+    // // TODO(snijjar): move the semaphore inc here
+    // noc_async_write_barrier();
+    // cb_pop_front(cb_id, num_pages);
 }
 template <typename AddrGen>
 FORCE_INLINE void write_chunk(uint32_t& output_page_idx, uint32_t& col_idx, uint32_t& row_idx, const uint32_t& cb_id, const AddrGen& d, const uint32_t& num_cols, const uint32_t& num_rows, const uint32_t& col_offset, const uint32_t& row_offset, const uint32_t& num_pages, const uint32_t& page_size) {
@@ -341,6 +406,7 @@ FORCE_INLINE void read_chunk_from_output_tensor_sharded(
     cb_reserve_back(cb_id, num_pages);
     uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
     uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+    DPRINT << "SR: Reading from " << (uint32_t)(src_noc_addr&0xFFFFFFFF) << " to " << local_l1_read_dest_addr << "\n";
     noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
     validate_sane_transaction_counters();
     noc_async_read_barrier();
