@@ -650,8 +650,9 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                     auto const& input_shard_addr_generator_args = input_tensor_shard_arg_generator.generate();
                     auto const& output_shard_addr_generator_args = output_tensor_shard_arg_generator.generate();
                     std::vector<uint32_t> worker_send_reader_rt_args;
-                    worker_send_reader_rt_args.reserve(1 + input_shard_addr_generator_args.size() + output_shard_addr_generator_args.size());
+                    worker_send_reader_rt_args.reserve(2 + input_shard_addr_generator_args.size() + output_shard_addr_generator_args.size());
                     worker_send_reader_rt_args.push_back(sender_worker_reader_semaphore_addr);
+                    worker_send_reader_rt_args.push_back(pages_per_buffer.at(b));
                     std::copy(input_shard_addr_generator_args.begin(), input_shard_addr_generator_args.end(), std::back_inserter(worker_send_reader_rt_args));
                     std::copy(output_shard_addr_generator_args.begin(), output_shard_addr_generator_args.end(), std::back_inserter(worker_send_reader_rt_args));
 
@@ -1045,6 +1046,8 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
 
                     worker_receive_writer_rt_args.push_back(output_tensor_shard_arg_generator.args_struct.num_dest_cores), //pages_per_eth_l1_buffer.at(b));
                     worker_receive_writer_rt_args.push_back(num_transfers);
+                    worker_receive_writer_rt_args.push_back(pages_per_buffer.at(b));
+
 
                     std::copy(output_shard_addr_generator_args.begin(), output_shard_addr_generator_args.end(), std::back_inserter(worker_receive_writer_rt_args));
 

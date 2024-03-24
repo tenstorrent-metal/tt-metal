@@ -59,13 +59,12 @@ struct ShardAddrGenArgs final {
 
     uint32_t shards_start_address = UNINITIALIZED_VALUE_U32;
     uint32_t shard_size_in_bytes = UNINITIALIZED_VALUE_U32;
-    uint16_t chunks_per_core_before_advance = UNINITIALIZED_VALUE_U16;
+    uint16_t total_chunks_per_core = UNINITIALIZED_VALUE_U16;
 
     uint16_t starting_core_index = UNINITIALIZED_VALUE_U16;
     uint16_t starting_chunk_into_shard = UNINITIALIZED_VALUE_U16;
 
     uint16_t intra_core_stride_in_shards = UNINITIALIZED_VALUE_U16;
-    uint16_t contiguous_chunk_count = UNINITIALIZED_VALUE_U16;
     uint16_t contiguous_chunks_before_stride = UNINITIALIZED_VALUE_U16;
 
     uint16_t num_dest_cores = UNINITIALIZED_VALUE_U16;
@@ -75,9 +74,9 @@ struct ShardAddrGenArgs final {
 
     inline uint32_t get_expected_num_args() const {
         if constexpr (IS_HOST) {
-            return 10 + dest_cores.size();
+            return 9 + dest_cores.size();
         } else {
-            return 10 + this->num_dest_cores;
+            return 9 + this->num_dest_cores;
         }
     }
 };
@@ -87,8 +86,8 @@ inline void addr_gen_advance_width_sharded(
     uint16_t& curr_core_chunk_index,
     uint16_t& curr_worker_index,
     uint16_t& contiguous_chunk_count,
-    uint16_t& current_core_chunks_visited,
-    const uint16_t& chunks_per_core_before_advance,
+    // uint16_t& current_core_chunks_visited,
+    const uint16_t& total_chunks_per_core,
     const uint16_t& num_dest_cores,
     const uint16_t& intra_core_stride_in_shards,
     const uint16_t& contiguous_chunks_before_stride,
@@ -99,14 +98,14 @@ inline void addr_gen_advance_width_sharded(
         bool stride_induced_chunk_wraparound = (do_stride && curr_core_chunk_index < intra_core_stride_in_shards);
         bool do_chunk_wrap = curr_core_chunk_index == 0 || stride_induced_chunk_wraparound;
 
-        current_core_chunks_visited++;
+        // current_core_chunks_visited++;
         if (do_chunk_wrap) {
             bool do_core_wrap = curr_worker_index == 0;
-            curr_core_chunk_index = chunks_per_core_before_advance - 1;
+            curr_core_chunk_index = total_chunks_per_core - (intra_core_stride_in_shards - curr_core_chunk_index);
             contiguous_chunk_count = 1;
             if (do_core_wrap) {
                 curr_worker_index = num_dest_cores - 1;
-                current_core_chunks_visited=0;
+                // current_core_chunks_visited=0;
             } else {
                 curr_worker_index--;
             }
@@ -123,7 +122,7 @@ inline void addr_gen_advance_width_sharded(
         }
 
     } else {
-        current_core_chunks_visited++;
+        // current_core_chunks_visited++;
         if (contiguous_chunk_count == contiguous_chunks_before_stride) {
             contiguous_chunk_count = 1;
             // TT_ASSERT(curr_core_chunk_index >= intra_core_stride_in_shards);
@@ -133,10 +132,10 @@ inline void addr_gen_advance_width_sharded(
             curr_core_chunk_index++;
         }
 
-        bool do_chunk_wrap = current_core_chunks_visited >= chunks_per_core_before_advance;
+        bool do_chunk_wrap = curr_core_chunk_index >= total_chunks_per_core;
         if (do_chunk_wrap) {
-            current_core_chunks_visited = 0;
-            curr_core_chunk_index = 0;
+            // current_core_chunks_visited = 0;
+            curr_core_chunk_index = curr_core_chunk_index - total_chunks_per_core;
             curr_worker_index++;
             bool do_core_wrap = curr_worker_index == num_dest_cores;
             if (do_core_wrap) {

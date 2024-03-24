@@ -21,6 +21,7 @@ void kernel_main() {
     DPRINT << "SR: 2\n";
     uint32_t arg_index = 0;
     volatile tt_l1_ptr uint32_t* local_semaphore_address = get_arg_val<volatile tt_l1_ptr uint32_t*>(arg_index++);
+    uint32_t const num_shards_per_transfer = get_arg_val<uint32_t>(arg_index++);
     ShardAddrGen<shard_type>::build_with_placement_new(&input_tensor_shard_reader, arg_index);
     DPRINT << "SR: 3\n";
     arg_index += input_tensor_shard_reader.get_num_args_consumed();
@@ -30,20 +31,12 @@ void kernel_main() {
 
     constexpr uint32_t cb_id_in0 = tt::CB::c_in0;
 
-    uint32_t num_chunks_per_transfer =
-        input_tensor_shard_reader.get_num_dest_cores() * input_tensor_shard_reader.get_chunks_per_core_before_advance();
-
-    DPRINT << "SR: num_transfers " << num_transfers << "\n";
+        DPRINT << "SR: num_transfers " << num_transfers << "\n";
     DPRINT << "SR: input_tensor_shard_reader.get_num_dest_cores() " << input_tensor_shard_reader.get_num_dest_cores() << "\n";
-    DPRINT << "SR: input_tensor_shard_reader.get_chunks_per_core_before_advance() " << input_tensor_shard_reader.get_chunks_per_core_before_advance() << "\n";
+    DPRINT << "SR: num_shards_per_transfer " << num_shards_per_transfer << "\n";
     DPRINT << "SR: output_tensor_shard_reader.get_num_dest_cores() " << output_tensor_shard_reader.get_num_dest_cores() << "\n";
-    DPRINT << "SR: output_tensor_shard_reader.get_chunks_per_core_before_advance() " << output_tensor_shard_reader.get_chunks_per_core_before_advance() << "\n";
-    ASSERT(output_tensor_shard_reader.get_num_dest_cores() *
-            output_tensor_shard_reader.get_chunks_per_core_before_advance() ==
-        (num_transfers + 1) * num_chunks_per_transfer);
 
-    DPRINT << "SR: num_chunks_per_transfer: " << num_chunks_per_transfer << "\n";
-    for (uint32_t c = 0; c < num_chunks_per_transfer; ++c) {
+    for (uint32_t c = 0; c < num_shards_per_transfer; ++c) {
         DPRINT << "SR: Read input tensor chunk from local chip " << c << "\n";
         read_chunk_from_input_tensor_sharded(cb_id_in0, input_tensor_shard_reader, 1);
     }
@@ -53,7 +46,7 @@ void kernel_main() {
 
     for (uint32_t i = 1; i < num_transfers; ++i) {
         DPRINT << "SR: Transfer " << i << "\n";
-        for (uint32_t c = 0; c < num_chunks_per_transfer; ++c) {
+        for (uint32_t c = 0; c < num_shards_per_transfer; ++c) {
             DPRINT << "SR: Chunk " << c << "\n";
             DPRINT << "SR: Waiting for semaphore at " << (uint32_t)local_semaphore_address << "\n";
             noc_semaphore_wait_min(local_semaphore_address, sem_idx);

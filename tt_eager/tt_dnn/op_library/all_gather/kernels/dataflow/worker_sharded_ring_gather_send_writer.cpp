@@ -40,8 +40,6 @@ void kernel_main() {
 
     // one input shard per core for the local chip forward to output tensor
     const uint32_t num_input_shards_from_local_ring_index = addr_gen.get_num_dest_cores();
-    // const uint32_t num_input_tensor_shards =
-    //     addr_gen.get_chunks_per_core_before_advance() * addr_gen.get_num_dest_cores();
     const uint32_t shard_size = addr_gen.get_shard_size_in_bytes();
     DPRINT << "SW: num_input_shards_from_local_ring_index " << num_input_shards_from_local_ring_index << "\n";
     for (uint32_t i = 0; i < num_input_shards_from_local_ring_index; i += shards_per_eth_l1_buffer) {

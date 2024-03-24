@@ -83,13 +83,13 @@ struct ShardAddrGen final {
         uint32_t curr_arg_index = arg_index;
         input_args.is_clockwise = bool(get_arg_val<uint32_t>(curr_arg_index++) == 1);
         input_args.shard_size_in_bytes = get_arg_val<uint32_t>(curr_arg_index++);
-        input_args.chunks_per_core_before_advance = get_arg_val<uint32_t>(curr_arg_index++);
+        input_args.total_chunks_per_core = get_arg_val<uint32_t>(curr_arg_index++);
         input_args.shards_start_address = get_arg_val<uint32_t>(curr_arg_index++);
         input_args.starting_core_index = get_arg_val<uint32_t>(curr_arg_index++);
         input_args.starting_chunk_into_shard = get_arg_val<uint32_t>(curr_arg_index++);
 
         input_args.intra_core_stride_in_shards = get_arg_val<uint32_t>(curr_arg_index++);
-        input_args.contiguous_chunk_count = get_arg_val<uint32_t>(curr_arg_index++);
+        // input_args.contiguous_chunk_count = get_arg_val<uint32_t>(curr_arg_index++);
         input_args.contiguous_chunks_before_stride = get_arg_val<uint32_t>(curr_arg_index++);
 
         input_args.num_dest_cores = get_arg_val<uint32_t>(curr_arg_index++);
@@ -97,7 +97,7 @@ struct ShardAddrGen final {
         curr_arg_index += input_args.num_dest_cores;
 
         ASSERT(input_args.shard_size_in_bytes != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        ASSERT(input_args.chunks_per_core_before_advance != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
+        ASSERT(input_args.total_chunks_per_core != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
         ASSERT(input_args.shards_start_address != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
         ASSERT(input_args.starting_core_index != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
         ASSERT(input_args.starting_chunk_into_shard != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
@@ -117,21 +117,25 @@ struct ShardAddrGen final {
         uint8_t num_args_consumed,
         ccl::ShardAddrGenArgs<false> const& input_args) :
         dest_cores(input_args.dest_cores),
-        num_dest_cores(input_args.num_dest_cores),
         shards_start_address(input_args.shards_start_address),
         shard_size_in_bytes(input_args.shard_size_in_bytes),
-        chunks_per_core_before_advance(input_args.chunks_per_core_before_advance),
+        total_chunks_per_core(input_args.total_chunks_per_core),
         curr_worker_index(input_args.starting_core_index),
         curr_core_chunk_index(input_args.starting_chunk_into_shard),
 
         intra_core_stride_in_shards(intra_core_stride_in_shards),
-        contiguous_chunk_count(contiguous_chunk_count),
+        contiguous_chunk_count(1),
         contiguous_chunks_before_stride(contiguous_chunks_before_stride),
+        num_dest_cores(input_args.num_dest_cores),
 
-        current_core_chunks_visited(0),
+        // current_core_chunks_visited(0),
         num_args_consumed(num_args_consumed),
-        is_clockwise(input_args.is_clockwise),
-        completed_core_wrap(false){};
+        is_clockwise(input_args.is_clockwise)
+        {
+            ASSERT(this->contiguous_chunks_before_stride >= 1);
+            ASSERT(this->intra_core_stride_in_shards >= 1);
+            ASSERT(this->input_args.starting_chunk_into_shard <= this->total_chunks_per_core);
+        };
 
     static_assert(
         TYPE == ShardType::Width || TYPE == ShardType::Height || TYPE == ShardType::Block, "Invalid ShardType");
@@ -201,8 +205,8 @@ struct ShardAddrGen final {
                 this->curr_core_chunk_index,
                 this->curr_worker_index,
                 this->contiguous_chunk_count,
-                this->current_core_chunks_visited,
-                this->chunks_per_core_before_advance,
+                // this->current_core_chunks_visited,
+                this->total_chunks_per_core,
                 this->num_dest_cores,
                 this->intra_core_stride_in_shards,
                 this->contiguous_chunks_before_stride,
@@ -236,16 +240,17 @@ struct ShardAddrGen final {
     [[nodiscard]] FORCE_INLINE uint32_t get_shard_size_in_bytes() const { return this->shard_size_in_bytes; }
 
     [[nodiscard]] FORCE_INLINE uint32_t get_num_dest_cores() const { return this->num_dest_cores; }
-    [[nodiscard]] FORCE_INLINE uint32_t get_chunks_per_core_before_advance() const {
-        return this->chunks_per_core_before_advance;
+    [[nodiscard]] FORCE_INLINE uint32_t get_total_chunks_per_core() const {
+        return this->total_chunks_per_core;
     }
     [[nodiscard]] FORCE_INLINE uint32_t get_num_args_consumed() const { return this->num_args_consumed;}
 
     ccl::WorkerXY* dest_cores;
     uint32_t shards_start_address;
+    // This could be shared
     uint32_t shard_size_in_bytes;
-    uint16_t chunks_per_core_before_advance;
-    uint16_t current_core_chunks_visited;
+    uint16_t total_chunks_per_core;
+    // uint16_t current_core_chunks_visited;
     uint16_t curr_worker_index;
     uint16_t curr_core_chunk_index;
     // new fields

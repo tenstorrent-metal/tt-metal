@@ -19,6 +19,7 @@ void kernel_main() {
     uint32_t const remote_sender_reader_semaphore_addres = get_arg_val<uint32_t>(arg_index++);
     uint32_t const max_shards_per_eth_buffer = get_arg_val<uint32_t>(arg_index++);
     uint32_t const num_transfers = get_arg_val<uint32_t>(arg_index++);
+    uint32_t const shards_per_transfer = get_arg_val<uint32_t>(arg_index++);
     ShardAddrGen<shard_type>::build_with_placement_new(&output_tensor_shard_writer, arg_index);
     arg_index += output_tensor_shard_writer.get_num_args_consumed();
 
@@ -28,8 +29,7 @@ void kernel_main() {
     const uint64_t worker_send_reader_semaphore_noc_addr =
         get_noc_addr(remote_sender_worker_x, remote_sender_worker_y, remote_sender_reader_semaphore_addres);
 
-    uint32_t total_num_shards = output_tensor_shard_writer.get_num_dest_cores() *
-                             (output_tensor_shard_writer.get_chunks_per_core_before_advance() - 1);
+    uint32_t total_num_shards = shards_per_transfer * num_transfers;
     DPRINT << "RW: num_transfers: " << num_transfers << "\n";
     DPRINT << "RW: total_num_shards: " << total_num_shards << "\n";
     DPRINT << "RW: max_shards_per_eth_buffer: " << max_shards_per_eth_buffer << "\n";

@@ -46,7 +46,6 @@ void kernel_main() {
     constexpr uint32_t cb_id_in0 = tt::CB::c_in0;
 
     // -1 because we are not receiving from our local chip (local chip has num_dest_cores_worth of tiles already handled)
-    // uint32_t total_num_shards = (output_tensor_shard_writer.get_chunks_per_core_before_advance() - 1) * output_tensor_shard_writer.get_num_dest_cores();
     uint32_t shards_per_ring_index = output_tensor_shard_writer.get_num_dest_cores();
     DPRINT << "RR: shards_per_ring_index: " << shards_per_ring_index << "\n";
     // DPRINT << "RR: total_num_shards: " << total_num_shards << "\n";
