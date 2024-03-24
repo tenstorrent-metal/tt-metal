@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include "tensor/tensor.hpp"
 #include "tt_dnn/op_library/ccl/shared_with_host/hetergeneous_data_structs.hpp"
 #include "tt_metal/common/constants.hpp"
@@ -264,6 +265,31 @@ struct ShardAddrGenArgGenerator {
 };
 
 struct InputTensorShardAddrGenArgGenerator final : public ShardAddrGenArgGenerator {
+    static std::vector<CoreCoord> ctor_generate_dest_cores(
+        std::vector<CoreCoord> const& all_shard_cores,
+        uint32_t worker_index,
+        uint32_t num_workers
+    ) {
+        uint32_t num_shard_cores = all_shard_cores.size();
+        uint32_t num_dest_cores = num_shard_cores / num_workers;
+        bool has_extra_worker = worker_index < num_shard_cores % num_workers;
+        if (has_extra_worker) {
+            num_dest_cores++;
+        }
+
+        uint32_t worker_cores_start = worker_index * num_shard_cores / num_workers;
+        worker_cores_start += num_shard_cores % num_workers != 0 ?
+            std::min(num_shard_cores % num_workers, worker_index) :
+            0;
+
+        std::vector<CoreCoord> dest_cores;
+        dest_cores.reserve(num_shard_cores);
+        for (uint32_t c = worker_cores_start; c < worker_cores_start + num_dest_cores; ++c) {
+            CoreCoord const& worker_core = all_shard_cores.at(c);
+            dest_cores.push_back(worker_core);
+        }
+        return dest_cores;
+    }
     InputTensorShardAddrGenArgGenerator(
         Device const* device,
         Tensor const& input_tensor,
@@ -285,28 +311,24 @@ struct InputTensorShardAddrGenArgGenerator final : public ShardAddrGenArgGenerat
 
         this->args_struct.starting_core_index = starting_dest_core_index;
         this->args_struct.starting_chunk_into_shard = starting_chunk_into_shard;
-        this->args_struct.num_dest_cores = sharded_tensor_num_cores / num_workers;
         TT_ASSERT(sharded_tensor_num_cores > 0);
 
-        bool has_extra_worker = worker_index < sharded_tensor_num_cores % num_workers;
-        if (has_extra_worker) {
-            this->args_struct.num_dest_cores++;
-        }
-
-        uint32_t worker_cores_start = worker_index * sharded_tensor_num_cores / num_workers;
-        worker_cores_start += sharded_tensor_num_cores % num_workers != 0 ?
-            std::min(sharded_tensor_num_cores % num_workers, worker_index) :
-            worker_index;
-
-        std::vector<CoreCoord> const& all_shard_cores = input_tensor.buffer()->all_cores();
-        for (uint32_t c = worker_cores_start; c < worker_cores_start + this->args_struct.num_dest_cores; ++c) {
-            CoreCoord const& worker_core = all_shard_cores.at(c);
-            ccl::WorkerXY worker_xy(
-                static_cast<uint16_t>(device->worker_core_from_logical_core(worker_core).x),
-                static_cast<uint16_t>(device->worker_core_from_logical_core(worker_core).y));
-            this->args_struct.dest_cores.push_back(worker_xy);
-        }
+        std::vector<CoreCoord> const& dest_core_coords = ctor_generate_dest_cores(
+            input_tensor.buffer()->all_cores(),
+            worker_index,
+            num_workers
+        );
+        this->args_struct.dest_cores.reserve(dest_core_coords.size());
+        std::transform(dest_core_coords.begin(), dest_core_coords.end(), std::back_inserter(this->args_struct.dest_cores),
+            [&device](CoreCoord const& core) {
+                return ccl::WorkerXY(
+                    static_cast<uint16_t>(device->worker_core_from_logical_core(core).x),
+                    static_cast<uint16_t>(device->worker_core_from_logical_core(core).y)
+                    );
+            });
         TT_ASSERT(this->args_struct.dest_cores.size() > 0);
+
+        this->args_struct.num_dest_cores = this->args_struct.dest_cores.size();
 
         this->initialized = true;
     }
