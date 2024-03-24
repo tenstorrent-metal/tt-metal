@@ -326,12 +326,15 @@ inline Tensor matmul(
 ) {
     auto worker = input_tensor_a.get_worker_handle();
     Tensor output_tensor(worker);
-    worker->push_work([=] () mutable {
-        auto arch = input_tensor_a.device()->arch();
-        auto kernel_config_val = init_device_compute_kernel_config(arch, compute_kernel_config);
-        auto local_tensor = operation::run(Matmul{program_config, mem_config, output_dtype.value_or(input_tensor_a.get_dtype()), kernel_config_val, untilize_out}, {input_tensor_a, input_tensor_b}, {std::nullopt}).at(0);
-        output_tensor.deepcopy(local_tensor);
-    });
+    operation::launch_op(
+        [program_config, mem_config, output_dtype, compute_kernel_config, untilize_out] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) mutable -> Tensor {
+            const auto& input_tensor_a = input_tensors.at(0);
+            const auto& input_tensor_b = input_tensors.at(1);
+            auto arch = input_tensor_a.device()->arch();
+            auto kernel_config_val = init_device_compute_kernel_config(arch, compute_kernel_config);
+            return operation::run(Matmul{program_config, mem_config, output_dtype.value_or(input_tensor_a.get_dtype()), kernel_config_val, untilize_out}, {input_tensor_a, input_tensor_b}, optional_input_tensors).at(0);
+        },
+    {input_tensor_a, input_tensor_b}, output_tensor, {std::nullopt});
     return output_tensor;
 }
 
@@ -346,12 +349,15 @@ inline Tensor matmul(
     bool untilize_out = false) {
     auto worker = input_tensor_a.get_worker_handle();
     Tensor output_tensor(worker);
-    worker->push_work([=] () mutable {
-        auto arch = input_tensor_a.device()->arch();
-        auto kernel_config_val = init_device_compute_kernel_config(arch, compute_kernel_config);
-        auto local_tensor = operation::run(Matmul{program_config, mem_config, output_dtype.value_or(input_tensor_a.get_dtype()), kernel_config_val, untilize_out}, {input_tensor_a, input_tensor_b}, {bias}).at(0);
-        output_tensor.deepcopy(local_tensor);
-    });
+    operation::launch_op(
+        [program_config, mem_config, output_dtype, compute_kernel_config, untilize_out] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) mutable -> Tensor {
+            const auto& input_tensor_a = input_tensors.at(0);
+            const auto& input_tensor_b = input_tensors.at(1);
+            auto arch = input_tensor_a.device()->arch();
+            auto kernel_config_val = init_device_compute_kernel_config(arch, compute_kernel_config);
+            return operation::run(Matmul{program_config, mem_config, output_dtype.value_or(input_tensor_a.get_dtype()), kernel_config_val, untilize_out}, {input_tensor_a, input_tensor_b}, optional_input_tensors).at(0);
+        },
+    {input_tensor_a, input_tensor_b}, output_tensor, {bias});
     return output_tensor;
 }
 

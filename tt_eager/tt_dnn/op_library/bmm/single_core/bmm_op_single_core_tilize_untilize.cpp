@@ -20,11 +20,17 @@ Tensor bmm_tilize_untilize(const Tensor& a, const Tensor& b, const Tensor& bias,
     // NOTE: Currently only single core implementation exists.
     auto worker = a.get_worker_handle();
     Tensor output_tensor(worker);
-    worker->push_work([=] () mutable {
-        auto arch = a.storage_type() == StorageType::DEVICE ? a.device()->arch() : AutoFormat::GetDefaultDevice()->arch();
-        auto kernel_config_val = init_device_compute_kernel_config(arch, compute_kernel_config, MathFidelity::LoFi, true, false, false);
-
-        auto local_tensor = operation::run(BMMTilizeUntilize {
+    operation::launch_op(
+        [out_dt, a_height_nblocks, a_width_nblocks, b_width_nblocks,
+         a_block_height_ntiles, a_block_width_ntiles, b_block_width_ntiles,
+         out_subblock_height_ntiles, out_subblock_width_ntiles, tilize_in0, untilize_out, has_bias]
+         (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) {
+            const auto& a = input_tensors.at(0);
+            const auto& b = input_tensors.at(1);
+            const auto& bias = input_tensors.at(2);
+            auto arch = a.storage_type() == StorageType::DEVICE ? a.device()->arch() : AutoFormat::GetDefaultDevice()->arch();
+            auto kernel_config_val = init_device_compute_kernel_config(arch, compute_kernel_config, MathFidelity::LoFi, true, false, false);
+            return operation::run(BMMTilizeUntilize {
                             out_dt,
                             a_height_nblocks, a_width_nblocks, b_width_nblocks,
                             a_block_height_ntiles, a_block_width_ntiles, b_block_width_ntiles,
@@ -32,9 +38,10 @@ Tensor bmm_tilize_untilize(const Tensor& a, const Tensor& b, const Tensor& bias,
                             tilize_in0, untilize_out,
                             has_bias, kernel_config_val},
                             {a, b, bias},
-                            {}).at(0);
-        output_tensor.deepcopy(local_tensor);
-    });
+                            optional_input_tensors).at(0);
+
+        },
+    {a, b, bias}, output_tensor);
     return output_tensor;
 }
 

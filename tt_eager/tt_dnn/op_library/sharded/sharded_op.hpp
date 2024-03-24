@@ -59,47 +59,49 @@ inline Tensor interleaved_to_sharded(
     const std::optional<const DataType> output_dtype = std::nullopt) {
     auto worker = input_tensor.get_worker_handle();
     Tensor output_tensor(worker);
-    worker->push_work([input_tensor, output_tensor, grid, shard_shape, shard_scheme, shard_orientation, output_dtype] () mutable {
-        bool row_wise = shard_orientation == ShardOrientation::ROW_MAJOR;
-        CoreCoord grid_size;
-        CoreRangeSet grid_set({});
-        std::visit(
-            [&](const auto &grid) {
-                using GridType = std::decay_t<decltype(grid)>;
-                if constexpr (std::is_same_v<GridType, CoreCoord>) {
-                    grid_size = grid;
-                    uint32_t num_cores = 0;
-                    uint32_t total_height = input_tensor.volume() / input_tensor.get_legacy_shape()[-1];
-                    uint32_t total_width = input_tensor.get_legacy_shape()[-1];
-                    switch (shard_scheme) {
-                        case TensorMemoryLayout::HEIGHT_SHARDED: num_cores = div_up(total_height, shard_shape[0]); break;
-                        case TensorMemoryLayout::WIDTH_SHARDED: num_cores = div_up(total_width, shard_shape[1]); break;
-                        case TensorMemoryLayout::BLOCK_SHARDED:
-                            num_cores = div_up(total_height, shard_shape[0]) * div_up(total_width, shard_shape[1]);
-                            break;
-                        default: TT_ASSERT(false, "Unsupported sharding scheme");
+    operation::launch_op(
+        [grid, shard_shape, shard_scheme, shard_orientation, output_dtype] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) -> Tensor {
+            const auto& input_tensor = input_tensors.at(0);
+            bool row_wise = shard_orientation == ShardOrientation::ROW_MAJOR;
+            CoreCoord grid_size;
+            CoreRangeSet grid_set({});
+            std::visit(
+                [&](const auto &grid) {
+                    using GridType = std::decay_t<decltype(grid)>;
+                    if constexpr (std::is_same_v<GridType, CoreCoord>) {
+                        grid_size = grid;
+                        uint32_t num_cores = 0;
+                        uint32_t total_height = input_tensor.volume() / input_tensor.get_legacy_shape()[-1];
+                        uint32_t total_width = input_tensor.get_legacy_shape()[-1];
+                        switch (shard_scheme) {
+                            case TensorMemoryLayout::HEIGHT_SHARDED: num_cores = div_up(total_height, shard_shape[0]); break;
+                            case TensorMemoryLayout::WIDTH_SHARDED: num_cores = div_up(total_width, shard_shape[1]); break;
+                            case TensorMemoryLayout::BLOCK_SHARDED:
+                                num_cores = div_up(total_height, shard_shape[0]) * div_up(total_width, shard_shape[1]);
+                                break;
+                            default: TT_ASSERT(false, "Unsupported sharding scheme");
+                        }
+                        grid_set = num_cores_to_corerange_set(num_cores, grid_size, row_wise);
+                    } else if constexpr (std::is_same_v<GridType, CoreRangeSet>) {
+                        auto bbox = grid.bounding_box();
+                        grid_size = CoreCoord{bbox.end.x + 1, bbox.end.y + 1};
+                        grid_set = grid;
                     }
-                    grid_set = num_cores_to_corerange_set(num_cores, grid_size, row_wise);
-                } else if constexpr (std::is_same_v<GridType, CoreRangeSet>) {
-                    auto bbox = grid.bounding_box();
-                    grid_size = CoreCoord{bbox.end.x + 1, bbox.end.y + 1};
-                    grid_set = grid;
-                }
-            },
-            grid);
-        ShardSpec shard_spec(grid_set, shard_shape, shard_orientation);
-        MemoryConfig sharded_mem_config = MemoryConfig{.memory_layout = shard_scheme, .buffer_type = BufferType::L1};
-        auto local_tensor = operation::run(
-                Sharded{
-                    .grid_size = grid_size,
-                    .shard_spec = shard_spec,
-                    .sharded_op_type = ShardedOpType::InterleavedToSharded,
-                    .output_mem_config = sharded_mem_config,
-                    .output_dtype = output_dtype.value_or(input_tensor.get_dtype())},
-                {input_tensor})
-            .at(0);
-        output_tensor.deepcopy(local_tensor);
-    });
+                },
+                grid);
+            ShardSpec shard_spec(grid_set, shard_shape, shard_orientation);
+            MemoryConfig sharded_mem_config = MemoryConfig{.memory_layout = shard_scheme, .buffer_type = BufferType::L1};
+            return operation::run(
+                    Sharded{
+                        .grid_size = grid_size,
+                        .shard_spec = shard_spec,
+                        .sharded_op_type = ShardedOpType::InterleavedToSharded,
+                        .output_mem_config = sharded_mem_config,
+                        .output_dtype = output_dtype.value_or(input_tensor.get_dtype())},
+                    {input_tensor})
+                .at(0);
+        },
+    {input_tensor}, output_tensor);
     return output_tensor;
 }
 
@@ -159,20 +161,22 @@ inline Tensor sharded_to_interleaved(
     std::optional<const DataType> output_dtype = std::nullopt) {
     auto worker = input_tensor.get_worker_handle();
     Tensor output_tensor(worker);
-    worker->push_work([input_tensor, output_tensor, output_mem_config, output_dtype] () mutable {
-        TT_FATAL(input_tensor.shard_spec().has_value());
-        auto shard_spec = input_tensor.shard_spec().value();
-        auto local_tensor = operation::run(
-                Sharded{
-                    .grid_size = input_tensor.device()->compute_with_storage_grid_size(),
-                    .shard_spec = shard_spec,
-                    .sharded_op_type = ShardedOpType::ShardedToInterleaved,
-                    .output_mem_config = output_mem_config,
-                    .output_dtype = output_dtype.value_or(input_tensor.get_dtype())},
-                {input_tensor})
-            .at(0);
-        output_tensor.deepcopy(local_tensor);
-    });
+    operation::launch_op(
+        [output_mem_config, output_dtype] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) -> Tensor {
+            const auto& input_tensor = input_tensors.at(0);
+            TT_FATAL(input_tensor.shard_spec().has_value());
+            auto shard_spec = input_tensor.shard_spec().value();
+            return operation::run(
+                    Sharded{
+                        .grid_size = input_tensor.device()->compute_with_storage_grid_size(),
+                        .shard_spec = shard_spec,
+                        .sharded_op_type = ShardedOpType::ShardedToInterleaved,
+                        .output_mem_config = output_mem_config,
+                        .output_dtype = output_dtype.value_or(input_tensor.get_dtype())},
+                    {input_tensor})
+                .at(0);
+        },
+    {input_tensor}, output_tensor);
     return output_tensor;
 }
 

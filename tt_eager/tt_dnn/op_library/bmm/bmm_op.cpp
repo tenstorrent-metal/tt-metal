@@ -1289,14 +1289,17 @@ MatmulParallelizationStrategy Matmul::get_parallelization_strategy(const std::ve
 Tensor matmul_1d(const Tensor &input_tensor_a, const Tensor &input_tensor_b, std::optional<const Tensor> bias, std::optional<MatmulMultiCoreReuseMultiCast1DProgramConfig> program_config, const MemoryConfig& mem_config, std::optional<const DataType> output_dtype, std::optional<const DeviceComputeKernelConfig> compute_kernel_config, bool untilize_out) {
     auto worker = input_tensor_a.get_worker_handle();
     Tensor output_tensor(worker);
-    worker->push_work([input_tensor_a, input_tensor_b, output_tensor, bias, program_config, mem_config, output_dtype, compute_kernel_config, untilize_out] () mutable {
-        if (!program_config.has_value()) {
-            program_config = bmm_op_utils::get_mcast_1d_config(input_tensor_a, input_tensor_b);
-        }
-        auto kernel_config_val = init_device_compute_kernel_config(input_tensor_a.device()->arch(), compute_kernel_config);
-        auto local_tensor = operations::primary::matmul(input_tensor_a, input_tensor_b, bias, program_config.value(), mem_config, output_dtype, kernel_config_val, untilize_out);
-        output_tensor.deepcopy(local_tensor);
-    });
+    operation::launch_op(
+        [program_config, mem_config, output_dtype, compute_kernel_config, untilize_out] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) mutable -> Tensor {
+            const auto& input_tensor_a = input_tensors.at(0);
+            const auto& input_tensor_b = input_tensors.at(1);
+            if (!program_config.has_value()) {
+                program_config = bmm_op_utils::get_mcast_1d_config(input_tensor_a, input_tensor_b);
+            }
+            auto kernel_config_val = init_device_compute_kernel_config(input_tensor_a.device()->arch(), compute_kernel_config);
+            return operations::primary::matmul(input_tensor_a, input_tensor_b, optional_input_tensors.at(0), program_config.value(), mem_config, output_dtype, kernel_config_val, untilize_out);
+        },
+    {input_tensor_a, input_tensor_b}, output_tensor, {bias});
     return output_tensor;
 }
 

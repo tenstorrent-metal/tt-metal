@@ -113,37 +113,38 @@ struct make_eltwise_binary {
         std::optional<const DataType> output_dtype = std::nullopt) const {
         auto worker = input_tensor_a.get_worker_handle();
         Tensor output_tensor(worker);
-        worker->push_work([input_tensor_a, input_tensor_b, output_tensor, fused_activations, output_mem_config, output_dtype] () mutable {
-            Shape shape_a = input_tensor_a.get_legacy_shape();
-            Shape shape_b = input_tensor_b.get_legacy_shape();
-            Tensor in_a = input_tensor_a;
-            Tensor in_b = input_tensor_b;
-            if (shape_a[0] != shape_b[0])
-            {
-                if (shape_a[0] > shape_b[0])
+        operation::launch_op(
+            [fused_activations, output_mem_config, output_dtype] (const std::vector<Tensor>& input_tensors, const std::vector<std::optional<const Tensor>>& optional_input_tensors) mutable -> Tensor {
+                Tensor in_a = input_tensors.at(0);
+                Tensor in_b = input_tensors.at(1);
+                Shape shape_a = in_a.get_legacy_shape();
+                Shape shape_b = in_b.get_legacy_shape();
+                if (shape_a[0] != shape_b[0])
                 {
-                    Shape shape ({shape_a[0],1,1,1});
-                    in_b = repeat(input_tensor_b, shape, output_mem_config);
+                    if (shape_a[0] > shape_b[0])
+                    {
+                        Shape shape ({shape_a[0],1,1,1});
+                        in_b = repeat(in_b, shape, output_mem_config);
+                    }
+                    else
+                    {
+                        Shape shape ({shape_b[0],1,1,1});
+                        in_a = repeat(in_a, shape, output_mem_config);
+                    }
                 }
-                else
-                {
-                    Shape shape ({shape_b[0],1,1,1});
-                    in_a = repeat(input_tensor_a, shape, output_mem_config);
-                }
-            }
-            TT_FATAL(
-                in_a.get_legacy_shape() == in_b.get_legacy_shape(), "Input shapes must be the same!");
-            auto local_tensor = operation::run_with_autoformat(
-                    EltwiseBinary{
-                        binary_op_type,
-                        fused_activations,
-                        output_mem_config,
-                        output_dtype.value_or(input_tensor_a.get_dtype()),
-                        false},
-                    {in_a, in_b})
-                .at(0);
-            output_tensor.deepcopy(local_tensor);
-        });
+                TT_FATAL(
+                    in_a.get_legacy_shape() == in_b.get_legacy_shape(), "Input shapes must be the same!");
+                return operation::run_with_autoformat(
+                        EltwiseBinary{
+                            binary_op_type,
+                            fused_activations,
+                            output_mem_config,
+                            output_dtype.value_or(in_a.get_dtype()),
+                            false},
+                        {in_a, in_b})
+                    .at(0);
+            },
+        {input_tensor_a, input_tensor_b}, output_tensor);
         return output_tensor;
     }
 };
