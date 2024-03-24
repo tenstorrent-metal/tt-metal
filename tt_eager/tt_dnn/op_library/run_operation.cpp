@@ -268,6 +268,15 @@ std::vector<Tensor> run(
     const std::vector<Tensor>& input_tensors,
     const std::vector<std::optional<const Tensor>>& optional_input_tensors,
     const std::vector<std::optional<Tensor>>& optional_output_tensors) {
+    // Async Mode: Asserts to ensure that tensors are populated before running op
+    for (const Tensor& tensor : input_tensors) {
+        TT_ASSERT(tensor.metadata_populated(), "Input tensors must be populated before running op.");
+    }
+    for (auto& tensor : optional_input_tensors) {
+        if (tensor.has_value()) {
+            TT_ASSERT(tensor.value().metadata_populated(), "Input tensors must be populated before running op.");
+        }
+    }
     if (detail::any_tensor_on_multi_device(input_tensors)) {
         return detail::decorate_device_operation(detail::run_multi_device_operation)(
             std::make_optional(std::ref(queue)), operation, input_tensors, optional_input_tensors, optional_output_tensors);
@@ -281,6 +290,15 @@ std::vector<Tensor> run(
     const std::vector<Tensor>& input_tensors,
     const std::vector<std::optional<const Tensor>>& optional_input_tensors,
     const std::vector<std::optional<Tensor>>& optional_output_tensors) {
+    // Async Mode: Asserts to ensure that tensors are populated before running op
+    for (const Tensor& tensor : input_tensors) {
+        TT_ASSERT(tensor.metadata_populated(), "Input tensors must be populated before running op.");
+    }
+    for (auto& tensor : optional_input_tensors) {
+        if (tensor.has_value()) {
+            TT_ASSERT(tensor.value().metadata_populated(), "Input tensors must be populated before running op.");
+        }
+    }
     if (detail::any_tensor_on_multi_device(input_tensors)) {
         return detail::decorate_device_operation(detail::run_multi_device_operation)(
             std::nullopt, operation, input_tensors, optional_input_tensors, optional_output_tensors);

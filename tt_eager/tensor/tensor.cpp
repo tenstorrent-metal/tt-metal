@@ -260,17 +260,18 @@ Tensor Tensor::to(DeviceMesh *device_mesh, const MemoryConfig &mem_config) const
 
 Tensor Tensor::cpu(bool blocking) const {
     ZoneScoped;
-    auto worker = this->get_workers(blocking).at(0);
+    auto workers = this->get_workers(blocking);
+    if (not workers.size()) {
+        // Tensor is on host and does not have a worker group.
+        // Return immediately. If this is a result of .cpu() called twice,
+        // on tensor accessors will stall until tensor is populated.
+        return *this;
+    }
     Tensor host_tensor;
-
-    worker->push_work([*this, host_tensor, blocking] () mutable {
-        if (this->storage_type() == StorageType::OWNED) {
-            host_tensor.deepcopy(*this);
-        }
-        else {
-            auto local_tensor = tensor_impl::to_host_wrapper(*this, blocking);
-            host_tensor.deepcopy(local_tensor);
-        }
+    workers.at(0)->push_work([*this, host_tensor, blocking] () mutable {
+        TT_ASSERT(this->storage_type() == StorageType::DEVICE or this->storage_type() == StorageType::MULTI_DEVICE, "Can only use worker queue for cpu call if tensor is on device.");
+        auto local_tensor = tensor_impl::to_host_wrapper(*this, blocking);
+        host_tensor.deepcopy(local_tensor);
     }, blocking);
     return host_tensor;
 }
