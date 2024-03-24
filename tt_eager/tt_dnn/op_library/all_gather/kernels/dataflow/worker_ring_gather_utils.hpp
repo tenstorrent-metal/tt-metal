@@ -96,12 +96,12 @@ struct ShardAddrGen final {
         input_args.dest_cores = reinterpret_cast<ccl::WorkerXY*>(get_arg_addr(curr_arg_index));
         curr_arg_index += input_args.num_dest_cores;
 
-        ASSERT(input_args.shard_size_in_bytes != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        ASSERT(input_args.total_chunks_per_core != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        ASSERT(input_args.shards_start_address != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        ASSERT(input_args.starting_core_index != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        ASSERT(input_args.starting_chunk_into_shard != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        ASSERT(input_args.num_dest_cores != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
+        ASSERT(input_args.shard_size_in_bytes != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U32);
+        ASSERT(input_args.total_chunks_per_core != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        ASSERT(input_args.shards_start_address != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U32);
+        ASSERT(input_args.starting_core_index != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        ASSERT(input_args.starting_chunk_into_shard != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        ASSERT(input_args.num_dest_cores != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
 
         ASSERT(curr_arg_index - arg_index == input_args.get_expected_num_args());
 
@@ -123,9 +123,9 @@ struct ShardAddrGen final {
         curr_worker_index(input_args.starting_core_index),
         curr_core_chunk_index(input_args.starting_chunk_into_shard),
 
-        intra_core_stride_in_shards(intra_core_stride_in_shards),
+        intra_core_stride_in_shards(input_args.intra_core_stride_in_shards),
         contiguous_chunk_count(1),
-        contiguous_chunks_before_stride(contiguous_chunks_before_stride),
+        contiguous_chunks_before_stride(input_args.contiguous_chunks_before_stride),
         num_dest_cores(input_args.num_dest_cores),
 
         // current_core_chunks_visited(0),
@@ -134,7 +134,7 @@ struct ShardAddrGen final {
         {
             ASSERT(this->contiguous_chunks_before_stride >= 1);
             ASSERT(this->intra_core_stride_in_shards >= 1);
-            ASSERT(this->input_args.starting_chunk_into_shard <= this->total_chunks_per_core);
+            ASSERT(input_args.starting_chunk_into_shard <= this->total_chunks_per_core);
         };
 
     static_assert(
@@ -314,6 +314,7 @@ FORCE_INLINE void send_chunk_sharded(
 template <ShardType T>
 FORCE_INLINE void write_and_send_chunk_sharded(
     const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t num_pages, uint64_t remote_eth_l1_write_addr) {
+    DPRINT << "SW: cb_wait_front\n";
     cb_wait_front(cb_id, num_pages);
     uint32_t l1_read_addr = get_read_ptr(cb_id);
     uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
@@ -366,6 +367,7 @@ template <ShardType T>
 FORCE_INLINE void write_chunk_sharded(const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t num_pages) {
     DPRINT << "\tRW: Transfer write_chunk_sharded HEAD\n";
     for (uint32_t i = 0; i < num_pages; ++i) {
+        DPRINT << "\tRW: Waiting for page\n";
         cb_wait_front(cb_id, 1);
         DPRINT << "\tRW: Got page\n";
         uint32_t l1_read_addr = get_read_ptr(cb_id);
@@ -377,12 +379,13 @@ FORCE_INLINE void write_chunk_sharded(const uint32_t& cb_id, ShardAddrGen<T>& ad
 
         noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes());
 
-        DPRINT << "\tRW: Waiting for write barrier\n";
+        DPRINT << "\tvalidate_sane_transaction_counters_rw\n";
         // validate_sane_transaction_counters();
         validate_sane_transaction_counters_rw();
         DPRINT << "\tRW: Waiting for write barrier\n";
         noc_async_write_barrier();
         cb_pop_front(cb_id, 1);
+        DPRINT << "\tRW: cb_pop_front complete\n";
     }
     DPRINT << "\tRW: done write_chunk_sharded\n";
     // cb_wait_front(cb_id, num_pages);

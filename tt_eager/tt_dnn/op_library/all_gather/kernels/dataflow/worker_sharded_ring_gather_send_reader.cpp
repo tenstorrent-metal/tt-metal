@@ -31,17 +31,17 @@ void kernel_main() {
 
     constexpr uint32_t cb_id_in0 = tt::CB::c_in0;
 
-        DPRINT << "SR: num_transfers " << num_transfers << "\n";
+    DPRINT << "SR: num_transfers " << num_transfers << "\n";
     DPRINT << "SR: input_tensor_shard_reader.get_num_dest_cores() " << input_tensor_shard_reader.get_num_dest_cores() << "\n";
     DPRINT << "SR: num_shards_per_transfer " << num_shards_per_transfer << "\n";
     DPRINT << "SR: output_tensor_shard_reader.get_num_dest_cores() " << output_tensor_shard_reader.get_num_dest_cores() << "\n";
 
     for (uint32_t c = 0; c < num_shards_per_transfer; ++c) {
-        DPRINT << "SR: Read input tensor chunk from local chip " << c << "\n";
+        DPRINT << "SR: Read input tensor chunk from local chip. Shard " << c << "\n";
         read_chunk_from_input_tensor_sharded(cb_id_in0, input_tensor_shard_reader, 1);
     }
 
-    DPRINT << "SR: DONE Read input tensor chunk from local chip \n";
+    DPRINT << "SR: Finished Read input tensor chunk from local chip \n";
     uint32_t sem_idx = 1;
 
     for (uint32_t i = 1; i < num_transfers; ++i) {
@@ -54,6 +54,7 @@ void kernel_main() {
             sem_idx++;
             read_chunk_from_output_tensor_sharded(cb_id_in0, output_tensor_shard_reader, 1);  // 1 chunk == 1 page?
         }
+        DPRINT << "SR: DONE Transfer " << i << "\n";
     }
 
     DPRINT << "SR: END\n";

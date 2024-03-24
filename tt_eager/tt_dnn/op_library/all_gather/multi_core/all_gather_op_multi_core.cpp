@@ -108,8 +108,8 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
 
     auto const& sharding_info = ShardedAllGatherConfig(input_tensor, output_tensor, dim);
     bool enable_print = false; // ring_index == 0
+    all_gather_config.print();
     if (enable_print) {
-        all_gather_config.print();
     }
 
     bool is_sharded = input_tensor.is_sharded();
@@ -358,7 +358,6 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
         }
         TT_ASSERT(std::accumulate(pages_per_buffer.begin(), pages_per_buffer.end(), 0) == pages_per_link.at(i));
 
-
         uint32_t bytes_per_chunk = 0, pages_per_chunk = 0, num_full_chunks = 0, rem_bytes = 0, rem_pages = 0;
         uint32_t link_size_bytes = pages_per_link.at(i) * input_page_size;
         if (pages_per_link.at(i) >= max_pages_per_chunk) {
@@ -399,6 +398,27 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
         link_buffer_num_messages_to_send.reserve(all_gather_config.get_num_buffers_per_link());
         edm_semaphores_base_address.reserve(all_gather_config.get_num_buffers_per_link());
         link_buffer_sender_addresses.reserve(all_gather_config.get_num_buffers_per_link());
+        if (is_sharded) {
+            for(uint32_t b = 0; b < all_gather_config.get_num_buffers_per_link(); ++b) {
+                auto input_tensor_shard_arg_generator = InputTensorShardAddrGenArgGenerator(
+                                device,
+                                input_tensor,
+                                ring_index,
+                                ring_size,
+                                global_num_workers,
+                                b + i * all_gather_config.get_num_buffers(),
+                                0,
+                                0,
+                                all_gather_config.is_buffer_in_clockwise_ring(b)
+                            );
+                uint32_t max_shards_per_eth_buffer = std::min<uint32_t>(all_gather_config.get_eth_buffer_size() / input_tensor_shard_arg_generator.args_struct.shard_size_in_bytes, input_tensor_shard_arg_generator.args_struct.num_dest_cores);
+                TT_ASSERT(max_shards_per_eth_buffer > 0, "Codepath needs further generalization to support computing multiple sends per shard");
+                num_full_chunks_per_worker.at(b) = input_tensor_shard_arg_generator.args_struct.num_dest_cores < max_shards_per_eth_buffer ? 1 : input_tensor_shard_arg_generator.args_struct.num_dest_cores / max_shards_per_eth_buffer;
+                rem_pages_per_worker.at(b) = max_shards_per_eth_buffer > input_tensor_shard_arg_generator.args_struct.num_dest_cores ? 0 : input_tensor_shard_arg_generator.args_struct.num_dest_cores - (num_full_chunks_per_worker.at(b) * max_shards_per_eth_buffer);
+                TT_ASSERT(rem_pages_per_worker.at(b) == 0 || input_tensor_shard_arg_generator.args_struct.num_dest_cores >= num_full_chunks_per_worker.at(b) * max_shards_per_eth_buffer);
+                TT_ASSERT(input_tensor_shard_arg_generator.args_struct.num_dest_cores == rem_pages_per_worker.at(b) + num_full_chunks_per_worker.at(b) * max_shards_per_eth_buffer);
+            }
+        }
         for(uint32_t b = 0; b < all_gather_config.get_num_buffers_per_link(); ++b) {
             // link num messages
             link_buffer_num_messages_to_send.push_back(
@@ -764,6 +784,17 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                         // this writes the input tensor to the first output location
                         ring_index,
                         global_worker_index);
+                    auto input_tensor_shard_arg_generator = InputTensorShardAddrGenArgGenerator(
+                            device,
+                            input_tensor,
+                            ring_index,
+                            ring_size,
+                            global_num_workers,
+                            global_worker_index,
+                            0,
+                            0,
+                            all_gather_config.is_buffer_in_clockwise_ring(b)
+                        );
                     auto output_tensor_shard_arg_generator =
                         OutputTensorShardAddrGenArgGenerator(
                             all_gather_config,
@@ -788,7 +819,8 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                         static_cast<uint32_t>(device->ethernet_core_from_logical_core(worker_eth_sender_core).y), // eth_sender_noc_y
                         static_cast<uint32_t>(pages_per_eth_l1_buffer.at(b)), //output_tensor_shard_arg_generator.args_struct.num_dest_cores),//pages_per_eth_l1_buffer.at(b)),
                         static_cast<uint32_t>(sender_worker_writer_semaphore_addr), // writer_send_sem_addr
-                        static_cast<uint32_t>(num_transfers) // num_transfers
+                        static_cast<uint32_t>(num_transfers), // num_transfers
+                        static_cast<uint32_t>(input_tensor_shard_arg_generator.args_struct.num_dest_cores)
                     };
                     std::copy(output_tensor_shard_addr_gen_args.begin(), output_tensor_shard_addr_gen_args.end(), std::back_inserter(worker_writer_sender_rt_args));
 
@@ -891,20 +923,18 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                             (ring_index == ring_size - 1 ? 0 : ring_index + 1), // ring_index
                         global_worker_index);
                     CoreCoord const& worker_eth_receiver_core = is_clockwise_direction ? eth_receiver_cores.at(i) : eth_sender_cores.at(i);
-                    auto output_tensor_shard_arg_generator =
-                        OutputTensorShardAddrGenArgGenerator(
-                            all_gather_config,
+                    auto input_tensor_shard_arg_generator = InputTensorShardAddrGenArgGenerator(
                             device,
                             input_tensor,
-                            output_tensor,
                             ring_index,
                             ring_size,
                             global_num_workers,
                             global_worker_index,
-                            starting_dest_worker_index,
-                            starting_chunk_into_shard,
-                            all_gather_config.is_buffer_in_clockwise_ring(b));
-                    auto const& output_tensor_shard_addr_gen_args = output_tensor_shard_arg_generator.generate();
+                            0,
+                            0,
+                            all_gather_config.is_buffer_in_clockwise_ring(b)
+                        );
+                    auto const& output_tensor_shard_addr_gen_args = input_tensor_shard_arg_generator.generate();
                     std::vector<uint32_t> worker_reader_receiver_rt_args;
                     worker_reader_receiver_rt_args.reserve(7 + output_tensor_shard_addr_gen_args.size());
 
@@ -925,7 +955,7 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                     log_trace(tt::LogOp, "\tlocal_receiver_read_sem_addr: {}", receiver_worker_semaphore_addr);
                     log_trace(tt::LogOp, "\tnum_shards_per_eth_buf: {}", pages_per_eth_l1_buffer.at(b));
 
-                    output_tensor_shard_arg_generator.dump_to_log();
+                    input_tensor_shard_arg_generator.dump_to_log();
 
                     return worker_reader_receiver_rt_args;
                 } else {

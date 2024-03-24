@@ -21,6 +21,7 @@ void kernel_main() {
     const uint32_t shards_per_eth_l1_buffer = get_arg_val<uint32_t>(arg_index++);
     const uint32_t writer_send_sem_addr = get_arg_val<uint32_t>(arg_index++);
     const uint32_t num_transfers = get_arg_val<uint32_t>(arg_index++);
+    const uint32_t num_input_shards_from_local_ring_index = get_arg_val<uint32_t>(arg_index++);
 
     ShardAddrGen<shard_type>::build_with_placement_new(&addr_gen, arg_index);
     arg_index += addr_gen.get_num_args_consumed();
@@ -39,11 +40,12 @@ void kernel_main() {
         get_noc_addr(eth_sender_noc_x, eth_sender_noc_y, eth_sender_l1_sem_addr);
 
     // one input shard per core for the local chip forward to output tensor
-    const uint32_t num_input_shards_from_local_ring_index = addr_gen.get_num_dest_cores();
     const uint32_t shard_size = addr_gen.get_shard_size_in_bytes();
+    DPRINT << "SW: shards_per_eth_l1_buffer " << shards_per_eth_l1_buffer << "\n";
     DPRINT << "SW: num_input_shards_from_local_ring_index " << num_input_shards_from_local_ring_index << "\n";
     for (uint32_t i = 0; i < num_input_shards_from_local_ring_index; i += shards_per_eth_l1_buffer) {
         uint32_t num_shards_to_send = std::min(shards_per_eth_l1_buffer, num_input_shards_from_local_ring_index - i);
+        DPRINT << "SW: \tnum_shards_to_send " << num_shards_to_send << "\n";
         noc_semaphore_wait(writer_send_semaphore_addr_ptr, 1);
         noc_semaphore_set(writer_send_semaphore_addr_ptr, 0);
         for (uint32_t c = 0; c < num_shards_to_send; c++) {

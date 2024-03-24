@@ -26,7 +26,7 @@ class AllGatherConfig {
 
         // enable_bidirectional - currently doesn't support batch dim and multi-link (some tests are flaky with those configs)
         erisc_handshake_address(eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE),
-        enable_bidirectional(dim != 0 && dim != 1),
+        enable_bidirectional(!input_tensor.is_sharded() && dim != 0 && dim != 1),
 
         input_is_dram(input_tensor.buffer()->buffer_type() == BufferType::DRAM),
         output_is_dram(output_tensor.buffer()->buffer_type() == BufferType::DRAM)
@@ -34,10 +34,10 @@ class AllGatherConfig {
         constexpr uint32_t total_l1_buffer_space = eth_l1_mem::address_map::MAX_L1_LOADING_SIZE - eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE;
 
         this->is_sharded = input_tensor.is_sharded();
-        this->num_buffers = (this->enable_bidirectional ? 8 : 4);
+        this->num_buffers = (this->enable_bidirectional ? 8 : (this->is_sharded ? 8 : 4));
         if (this->is_sharded) {
             this->num_buffers = std::min(this->num_buffers, input_tensor.shard_spec()->num_cores());
-            log_info(tt::LogOp, "this->num_buffers: {}", this->num_buffers);
+            log_trace(tt::LogOp, "this->num_buffers: {}", this->num_buffers);
         }
         this->eth_sems_l1_base_byte_address = this->erisc_handshake_address + 16;
         this->semaphore_offset = this->semaphore_size * this->num_buffers; // TODO: Remove this once dedicated semaphore space for user kernels are added
@@ -75,9 +75,6 @@ class AllGatherConfig {
     uint32_t get_semaphore_size() const { return this->semaphore_size; }
 
     uint32_t get_num_buffers_in_clockwise_direction() const {
-        if (this->is_sharded) {
-            return 0; // Currently only support in CCW direction to make tile ordering work out.
-        }
         return this->enable_bidirectional ?
             this->num_buffers / 2 :
             this->num_buffers;
@@ -101,7 +98,7 @@ class AllGatherConfig {
     bool is_output_dram() const { return output_is_dram; }
 
     void print() const {
-        log_trace(tt::LogOp, "AllGatherConfig: {");
+        log_trace(tt::LogOp, "AllGatherConfig: (");
         log_trace(tt::LogOp, "\terisc_handshake_address: {}", erisc_handshake_address);
         log_trace(tt::LogOp, "\tnum_buffers: {}", num_buffers);
         log_trace(tt::LogOp, "\teth_buffer_size: {}", eth_buffer_size);
@@ -110,7 +107,7 @@ class AllGatherConfig {
         log_trace(tt::LogOp, "\teth_buffers_l1_base_byte_address: {}", eth_buffers_l1_base_byte_address);
         log_trace(tt::LogOp, "\teth_sems_l1_base_byte_address: {}", eth_sems_l1_base_byte_address);
         log_trace(tt::LogOp, "\tenable_bidirectional: {}", enable_bidirectional);
-        log_trace(tt::LogOp, "}");
+        log_trace(tt::LogOp, ")");
     }
 
    private:

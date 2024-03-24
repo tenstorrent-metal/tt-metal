@@ -30,34 +30,38 @@ void kernel_main() {
         get_noc_addr(remote_sender_worker_x, remote_sender_worker_y, remote_sender_reader_semaphore_addres);
 
     uint32_t total_num_shards = shards_per_transfer * num_transfers;
+    DPRINT << "RW: shards_per_transfer: " << shards_per_transfer << "\n";
     DPRINT << "RW: num_transfers: " << num_transfers << "\n";
     DPRINT << "RW: total_num_shards: " << total_num_shards << "\n";
     DPRINT << "RW: max_shards_per_eth_buffer: " << max_shards_per_eth_buffer << "\n";
 
     for (uint32_t d = 0; d < num_transfers; d++) {
-        uint32_t num_shards_to_send = std::min(max_shards_per_eth_buffer, total_num_shards);
 
         DPRINT << "RW: Transfer " << d << "th transfer" << ENDL();
-        DPRINT << "RW: \toutput_tensor_shard_writer.curr_worker_index " << output_tensor_shard_writer.curr_worker_index << "\n";
-        DPRINT << "RW: \toutput_tensor_shard_writer.num_dest_cores " << output_tensor_shard_writer.num_dest_cores << "\n";
-        write_chunk_sharded(cb_id_in0, output_tensor_shard_writer, num_shards_to_send);  // 1 shard = 1 page?
-        // write_chunk_sharded(cb_id_in0, output_tensor_shard_writer, 1);  // 1 shard = 1 page?
-        // Call above finished by we never see ths prints below
-        DPRINT << "RW: \tget_noc_addr\n";
-        DPRINT << "RW: Semaphore increment (y|x) " << (uint32_t)((remote_sender_worker_y << 16) | remote_sender_worker_x) << " " << (uint32_t)remote_sender_reader_semaphore_addres << ENDL();
-        DPRINT << "RW: \tnoc_semaphore_inc\n";
+        for (uint32_t s = 0; s <  shards_per_transfer; s += max_shards_per_eth_buffer) {
+            uint32_t num_shards_to_send = std::min(max_shards_per_eth_buffer, shards_per_transfer);
 
-        // noc_semaphore_inc(worker_send_reader_semaphore_noc_addr, 1);
-        noc_semaphore_inc(worker_send_reader_semaphore_noc_addr, num_shards_to_send);
-        DPRINT << "RW: \tdone noc_semaphore_inc\n";
-        total_num_shards -= num_shards_to_send;
+            DPRINT << "RW: \toutput_tensor_shard_writer.curr_worker_index " << output_tensor_shard_writer.curr_worker_index << "\n";
+            DPRINT << "RW: \toutput_tensor_shard_writer.num_dest_cores " << output_tensor_shard_writer.num_dest_cores << "\n";
+            write_chunk_sharded(cb_id_in0, output_tensor_shard_writer, shards_per_transfer);  // 1 shard = 1 page?
+            // write_chunk_sharded(cb_id_in0, output_tensor_shard_writer, 1);  // 1 shard = 1 page?
+            // Call above finished by we never see ths prints below
+            DPRINT << "RW: \tget_noc_addr\n";
+            DPRINT << "RW: Semaphore increment (y|x) " << (uint32_t)((remote_sender_worker_y << 16) | remote_sender_worker_x) << " " << (uint32_t)remote_sender_reader_semaphore_addres << ENDL();
+            DPRINT << "RW: \tnoc_semaphore_inc\n";
 
-        if (total_num_shards == 0) {
-            DPRINT << "RW: total_num_shards=" << total_num_shards << "\n";
-            DPRINT << "RW: d=" << d << "\n";
-            DPRINT << "RW: num_transfers=" << num_transfers << "\n";
+            // noc_semaphore_inc(worker_send_reader_semaphore_noc_addr, 1);
+            noc_semaphore_inc(worker_send_reader_semaphore_noc_addr, num_shards_to_send);
+            DPRINT << "RW: \tdone noc_semaphore_inc\n";
+
+            total_num_shards -= num_shards_to_send;
+            if (total_num_shards == 0) {
+                DPRINT << "RW: total_num_shards=" << total_num_shards << "\n";
+                DPRINT << "RW: d=" << d << "\n";
+                DPRINT << "RW: num_transfers=" << num_transfers << "\n";
+            }
+            ASSERT(total_num_shards > 0 || d == num_transfers - 1); // If we are out of shards, make sure we are on the last transfer
         }
-        ASSERT(total_num_shards > 0 || d == num_transfers - 1); // If we are out of shards, make sure we are on the last transfer
     }
 
     DEBUG_STATUS('R', 'W', 'D', 'D');
