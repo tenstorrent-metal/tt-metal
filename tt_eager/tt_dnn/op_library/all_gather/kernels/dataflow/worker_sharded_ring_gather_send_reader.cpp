@@ -38,7 +38,8 @@ void kernel_main() {
     DPRINT << "SR: input_tensor_shard_reader.get_chunks_per_core_before_advance() " << input_tensor_shard_reader.get_chunks_per_core_before_advance() << "\n";
     DPRINT << "SR: output_tensor_shard_reader.get_num_dest_cores() " << output_tensor_shard_reader.get_num_dest_cores() << "\n";
     DPRINT << "SR: output_tensor_shard_reader.get_chunks_per_core_before_advance() " << output_tensor_shard_reader.get_chunks_per_core_before_advance() << "\n";
-    ASSERT(output_tensor_shard_reader.get_num_dest_cores() * output_tensor_shard_reader.get_chunks_per_core_before_advance() ==
+    ASSERT(output_tensor_shard_reader.get_num_dest_cores() *
+            output_tensor_shard_reader.get_chunks_per_core_before_advance() ==
         (num_transfers + 1) * num_chunks_per_transfer);
 
     DPRINT << "SR: num_chunks_per_transfer: " << num_chunks_per_transfer << "\n";

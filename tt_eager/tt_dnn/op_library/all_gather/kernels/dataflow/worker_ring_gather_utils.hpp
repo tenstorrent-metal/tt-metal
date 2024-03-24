@@ -75,6 +75,8 @@ template <ShardType TYPE>
 struct ShardAddrGen final {
     ShardAddrGen()=default;
 
+
+
     FORCE_INLINE static void build_with_placement_new(ShardAddrGen* placement_new_address, const uint32_t arg_index) {
         ccl::ShardAddrGenArgs<false> input_args;
 
@@ -85,6 +87,11 @@ struct ShardAddrGen final {
         input_args.shards_start_address = get_arg_val<uint32_t>(curr_arg_index++);
         input_args.starting_core_index = get_arg_val<uint32_t>(curr_arg_index++);
         input_args.starting_chunk_into_shard = get_arg_val<uint32_t>(curr_arg_index++);
+
+        input_args.intra_core_stride_in_shards = get_arg_val<uint32_t>(curr_arg_index++);
+        input_args.contiguous_chunk_count = get_arg_val<uint32_t>(curr_arg_index++);
+        input_args.contiguous_chunks_before_stride = get_arg_val<uint32_t>(curr_arg_index++);
+
         input_args.num_dest_cores = get_arg_val<uint32_t>(curr_arg_index++);
         input_args.dest_cores = reinterpret_cast<ccl::WorkerXY*>(get_arg_addr(curr_arg_index));
         curr_arg_index += input_args.num_dest_cores;
@@ -116,6 +123,12 @@ struct ShardAddrGen final {
         chunks_per_core_before_advance(input_args.chunks_per_core_before_advance),
         curr_worker_index(input_args.starting_core_index),
         curr_core_chunk_index(input_args.starting_chunk_into_shard),
+
+        intra_core_stride_in_shards(intra_core_stride_in_shards),
+        contiguous_chunk_count(contiguous_chunk_count),
+        contiguous_chunks_before_stride(contiguous_chunks_before_stride),
+
+        current_core_chunks_visited(0),
         num_args_consumed(num_args_consumed),
         is_clockwise(input_args.is_clockwise),
         completed_core_wrap(false){};
@@ -126,40 +139,75 @@ struct ShardAddrGen final {
     // Clockwise vs counter clockwise only affects worker core traversal order (relative to canonical order). Since the
     // dest core list is a configurable list, we will, for now, require the host side kernel config code to produce the
     // correc order per worker
+
+    // uint16_t intra_core_stride_in_shards;
+    // uint16_t contiguous_chunk_count;
+    // uint16_t contiguous_chunks_before_stride;
     FORCE_INLINE void advance() {
         if constexpr (TYPE == ShardType::Width or TYPE == ShardType::Height) {
-            if (this->is_clockwise) {
-                // Read inputs in reverse order too
-                bool do_chunk_wrap = this->curr_core_chunk_index == 0;
-                if (do_chunk_wrap) {
-                    bool do_core_wrap = this->curr_worker_index == 0;
-                    this->curr_core_chunk_index = this->chunks_per_core_before_advance - 1;
-                    if (do_core_wrap) {
-                        completed_core_wrap = true;
-                        this->curr_worker_index = this->num_dest_cores - 1;
-                    } else {
-                        this->curr_worker_index--;
-                    }
-                } else {
-                    this->curr_core_chunk_index--;
-                }
+            // if (this->is_clockwise) {
+            //     // Read inputs in reverse order too
+            //     // f
+            //     bool do_chunk_wrap = this->curr_core_chunk_index == 0 ||
+            //         (contiguous_chunk_count == contiguous_chunks_before_stride  &&
+            //         this->curr_core_chunk_index < this->intra_core_stride_in_shards);
 
 
-            } else {
-                // If I analyzed it properly, then we should never be wrapping back to the first dest core *and* still have
-                // tiles/input shards to move
-                this->curr_core_chunk_index++;
-                bool do_chunk_wrap = this->curr_core_chunk_index == this->chunks_per_core_before_advance;
-                if (do_chunk_wrap) {
-                    this->curr_core_chunk_index = 0;
-                    this->curr_worker_index++;
-                    bool do_core_wrap = this->curr_worker_index == this->num_dest_cores;
-                    if (do_core_wrap) {
-                        this->curr_worker_index = 0;
-                        completed_core_wrap = true;
-                    }
-                }
-            }
+
+            //     if (do_chunk_wrap) {
+            //         bool do_core_wrap = this->curr_worker_index == 0;
+            //         this->curr_core_chunk_index = this->chunks_per_core_before_advance - 1;
+            //         this->contiguous_chunk_count = 1;
+            //         if (do_core_wrap) {
+            //             this->curr_worker_index = this->num_dest_cores - 1;
+            //         } else {
+            //             this->curr_worker_index--;
+            //         }
+            //     } else {
+            //         if (this->contiguous_chunk_count == this->contiguous_chunks_before_stride) {
+            //             this->contiguous_chunk_count = 1;
+            //             ASSERT(this->curr_core_chunk_index >= this->intra_core_stride_in_shards);
+            //             this->curr_core_chunk_index -= this->intra_core_stride_in_shards;
+            //         } else {
+            //             this->contiguous_chunk_count++;
+            //             this->curr_core_chunk_index--;
+            //         }
+            //     }
+
+            // } else {
+            //     // If I analyzed it properly, then we should never be wrapping back to the first dest core *and* still have
+            //     // tiles/input shards to move
+            //     if (this->contiguous_chunk_count == this->contiguous_chunks_before_stride) {
+            //         this->contiguous_chunk_count = 1;
+            //         ASSERT(this->curr_core_chunk_index >= this->intra_core_stride_in_shards);
+            //         this->curr_core_chunk_index -= this->intra_core_stride_in_shards;
+            //     } else {
+            //         this->contiguous_chunk_count++;
+            //         this->curr_core_chunk_index--;
+            //     }
+            //     this->curr_core_chunk_index++;
+            //     bool do_chunk_wrap = this->curr_core_chunk_index == this->chunks_per_core_before_advance;
+            //     if (do_chunk_wrap) {
+            //         this->curr_core_chunk_index = 0;
+            //         this->curr_worker_index++;
+            //         bool do_core_wrap = this->curr_worker_index == this->num_dest_cores;
+            //         if (do_core_wrap) {
+            //             this->curr_worker_index = 0;
+            //         }
+            //     }
+            // }
+
+            ccl::all_gather::addr_gen_advance_width_sharded(
+                this->curr_core_chunk_index,
+                this->curr_worker_index,
+                this->contiguous_chunk_count,
+                this->current_core_chunks_visited,
+                this->chunks_per_core_before_advance,
+                this->num_dest_cores,
+                this->intra_core_stride_in_shards,
+                this->contiguous_chunks_before_stride,
+                this->is_clockwise
+            );
         } else {
             // Unsupported
             ASSERT(false);
@@ -194,15 +242,20 @@ struct ShardAddrGen final {
     [[nodiscard]] FORCE_INLINE uint32_t get_num_args_consumed() const { return this->num_args_consumed;}
 
     ccl::WorkerXY* dest_cores;
-    uint32_t num_dest_cores;
     uint32_t shards_start_address;
     uint32_t shard_size_in_bytes;
-    uint32_t chunks_per_core_before_advance;
-    uint32_t curr_worker_index;
-    uint32_t curr_core_chunk_index;
+    uint16_t chunks_per_core_before_advance;
+    uint16_t current_core_chunks_visited;
+    uint16_t curr_worker_index;
+    uint16_t curr_core_chunk_index;
+    // new fields
+    uint16_t intra_core_stride_in_shards;
+    uint16_t contiguous_chunk_count;
+    uint16_t contiguous_chunks_before_stride;
+    ///
+    uint16_t num_dest_cores;
     uint8_t num_args_consumed;
     bool is_clockwise;
-    bool completed_core_wrap;
 };
 
 FORCE_INLINE void push_filler_pages_to_cb(const uint32_t& cb_id, uint32_t num_pages) {

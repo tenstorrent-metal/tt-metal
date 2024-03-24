@@ -6,6 +6,11 @@
 #include "tt_dnn/op_library/ccl/shared_with_host/hetergeneous_data_structs.hpp"
 #include "tt_eager/tt_dnn/op_library/all_gather/all_gather_op.hpp"
 
+
+//////////////////////////////////////////////////////
+/// InputTensorShardAddrGenArgGenerator TESTS
+//////////////////////////////////////////////////////
+
 // Col major orientation not supported yet
 TEST(AllGatherUtils, OutputTensorShardAddrGenArgGenerator_GetFirstOutputShardStartingLocation_RowMajorOrientation) {
     // tt::tt_metal::OutputTensorShardAddrGenArgGenerator::get_first_output_shard_starting_location(
@@ -329,6 +334,15 @@ TEST(AllGatherUtils, OutputTensorShardAddrGenArgGenerator_ComputeWorkerDestCores
 }
 
 
+TEST(AllGatherUtils, OutputTensorShardAddrGenArgGenerator) {
+
+}
+
+
+//////////////////////////////////////////////////////
+/// InputTensorShardAddrGenArgGenerator TESTS
+//////////////////////////////////////////////////////
+
 TEST(AllGatherUtils, InputTensorShardAddrGenArgGenerator_CtorGenerateDestCoresWidthSharding) {
     {
         std::vector<CoreCoord> all_shard_cores = {CoreCoord(0,0), CoreCoord(1,0)};
@@ -435,5 +449,64 @@ TEST(AllGatherUtils, InputTensorShardAddrGenArgGenerator_CtorGenerateDestCoresWi
         ASSERT_EQ(dest_cores.at(1), CoreCoord(5,1));
         ASSERT_EQ(dest_cores.at(2), CoreCoord(6,1));
         ASSERT_EQ(dest_cores.at(3), CoreCoord(7,1));
+    }
+}
+
+
+TEST(AllGatherUtilsDevice, AddrGenAdvanceWidthSharded) {
+    { // ring_size = 8, 2 workers, shard grid size = 2
+        bool is_clockwise = false;
+        uint16_t curr_core_chunk_index = 0;
+        uint16_t curr_worker_index = 0;
+        uint16_t contiguous_chunk_count = 1;
+        uint16_t current_core_chunks_visited = 0;
+        const uint16_t chunks_per_core_before_advance = 4;
+        const uint16_t num_dest_cores = 2;
+        const uint16_t intra_core_stride_in_shards = 2; // skip 1
+        const uint16_t contiguous_chunks_before_stride = 1;
+
+        ccl::all_gather::addr_gen_advance_width_sharded(
+            curr_core_chunk_index,curr_worker_index,contiguous_chunk_count,current_core_chunks_visited,chunks_per_core_before_advance,num_dest_cores,intra_core_stride_in_shards,contiguous_chunks_before_stride,is_clockwise);
+        ASSERT_EQ(curr_core_chunk_index, 2);
+        ASSERT_EQ(curr_worker_index, 0);
+        ASSERT_EQ(contiguous_chunk_count, 1);
+        ASSERT_EQ(current_core_chunks_visited, 1);
+
+        ccl::all_gather::addr_gen_advance_width_sharded(
+            curr_core_chunk_index,curr_worker_index,contiguous_chunk_count,current_core_chunks_visited,chunks_per_core_before_advance,num_dest_cores,intra_core_stride_in_shards,contiguous_chunks_before_stride,is_clockwise);
+        ASSERT_EQ(curr_core_chunk_index, 4);
+        ASSERT_EQ(curr_worker_index, 0);
+        ASSERT_EQ(contiguous_chunk_count, 1);
+        ASSERT_EQ(current_core_chunks_visited, 2);
+
+        ccl::all_gather::addr_gen_advance_width_sharded(
+            curr_core_chunk_index,curr_worker_index,contiguous_chunk_count,current_core_chunks_visited,chunks_per_core_before_advance,num_dest_cores,intra_core_stride_in_shards,contiguous_chunks_before_stride,is_clockwise);
+        ASSERT_EQ(curr_core_chunk_index, 6);
+        ASSERT_EQ(curr_worker_index, 0);
+        ASSERT_EQ(contiguous_chunk_count, 1);
+        ASSERT_EQ(current_core_chunks_visited, 3);
+
+        ccl::all_gather::addr_gen_advance_width_sharded(
+            curr_core_chunk_index,curr_worker_index,contiguous_chunk_count,current_core_chunks_visited,chunks_per_core_before_advance,num_dest_cores,intra_core_stride_in_shards,contiguous_chunks_before_stride,is_clockwise);
+        ASSERT_EQ(curr_core_chunk_index, 0);
+        ASSERT_EQ(curr_worker_index, 1);
+        ASSERT_EQ(contiguous_chunk_count, 1);
+        ASSERT_EQ(current_core_chunks_visited, 0);
+
+        // Should have moved to the next core
+        ccl::all_gather::addr_gen_advance_width_sharded(
+            curr_core_chunk_index,curr_worker_index,contiguous_chunk_count,current_core_chunks_visited,chunks_per_core_before_advance,num_dest_cores,intra_core_stride_in_shards,contiguous_chunks_before_stride,is_clockwise);
+        ASSERT_EQ(curr_core_chunk_index, 2);
+        ASSERT_EQ(curr_worker_index, 1);
+        ASSERT_EQ(contiguous_chunk_count, 1);
+        ASSERT_EQ(current_core_chunks_visited, 1);
+
+        // Should have moved to the next core
+        ccl::all_gather::addr_gen_advance_width_sharded(
+            curr_core_chunk_index,curr_worker_index,contiguous_chunk_count,current_core_chunks_visited,chunks_per_core_before_advance,num_dest_cores,intra_core_stride_in_shards,contiguous_chunks_before_stride,is_clockwise);
+        ASSERT_EQ(curr_core_chunk_index, 4);
+        ASSERT_EQ(curr_worker_index, 1);
+        ASSERT_EQ(contiguous_chunk_count, 1);
+        ASSERT_EQ(current_core_chunks_visited, 2);
     }
 }

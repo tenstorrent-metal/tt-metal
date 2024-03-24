@@ -221,12 +221,15 @@ struct ShardAddrGenArgGenerator {
         std::vector<uint32_t> args;
         args.reserve(7 * this->args_struct.num_dest_cores * 2);
 
-        TT_ASSERT(this->args_struct.shard_size_in_bytes != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        TT_ASSERT(this->args_struct.chunks_per_core_before_advance != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        TT_ASSERT(this->args_struct.shards_start_address != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        TT_ASSERT(this->args_struct.starting_core_index != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        TT_ASSERT(this->args_struct.starting_chunk_into_shard != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
-        TT_ASSERT(this->args_struct.num_dest_cores != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE);
+        TT_ASSERT(this->args_struct.shard_size_in_bytes != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U32);
+        TT_ASSERT(this->args_struct.chunks_per_core_before_advance != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        TT_ASSERT(this->args_struct.shards_start_address != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U32);
+        TT_ASSERT(this->args_struct.starting_core_index != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        TT_ASSERT(this->args_struct.starting_chunk_into_shard != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        TT_ASSERT(this->args_struct.intra_core_stride_in_shards != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        TT_ASSERT(this->args_struct.contiguous_chunk_count != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        TT_ASSERT(this->args_struct.contiguous_chunks_before_stride != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
+        TT_ASSERT(this->args_struct.num_dest_cores != ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16);
         TT_ASSERT(this->args_struct.dest_cores.size() != 0);
 
         args.push_back(this->args_struct.is_clockwise);
@@ -235,6 +238,9 @@ struct ShardAddrGenArgGenerator {
         args.push_back(this->args_struct.shards_start_address);
         args.push_back(this->args_struct.starting_core_index);
         args.push_back(this->args_struct.starting_chunk_into_shard);
+        args.push_back(this->args_struct.intra_core_stride_in_shards);
+        args.push_back(this->args_struct.contiguous_chunk_count);
+        args.push_back(this->args_struct.contiguous_chunks_before_stride);
         args.push_back(this->args_struct.num_dest_cores);
         for (ccl::WorkerXY const& core : this->args_struct.dest_cores) {
             args.push_back(core.to_uint32());
@@ -253,10 +259,17 @@ struct ShardAddrGenArgGenerator {
         log_trace(tt::LogOp, "\tshards_start_address: {}", this->args_struct.shards_start_address);
         log_trace(tt::LogOp, "\tstarting_core_index: {}", this->args_struct.starting_core_index);
         log_trace(tt::LogOp, "\tstarting_chunk_into_shard: {}", this->args_struct.starting_chunk_into_shard);
+        log_trace(tt::LogOp, "\tintra_core_stride_in_shards: {}", this->args_struct.intra_core_stride_in_shards);
+        log_trace(tt::LogOp, "\tcontiguous_chunk_count: {}", this->args_struct.contiguous_chunk_count);
+        log_trace(tt::LogOp, "\tcontiguous_chunks_before_stride: {}", this->args_struct.contiguous_chunks_before_stride);
         log_trace(tt::LogOp, "\tnum_dest_cores: {}", this->args_struct.num_dest_cores);
         for (auto n = 0; n < this->args_struct.num_dest_cores; ++n) {
             log_trace(tt::LogOp, "\t\tdest_core[{}]: x={},y={}", n, this->args_struct.dest_cores.at(n).x, this->args_struct.dest_cores.at(n).y);
         }
+
+        TT_ASSERT(this->args_struct.dest_cores.size() == this->args_struct.num_dest_cores);
+        TT_ASSERT(this->args_struct.starting_core_index < this->args_struct.num_dest_cores);
+        TT_ASSERT(this->args_struct.starting_core_index < this->args_struct.dest_cores.size());
     }
 
     ccl::ShardAddrGenArgs<true> args_struct;
@@ -313,6 +326,10 @@ struct InputTensorShardAddrGenArgGenerator final : public ShardAddrGenArgGenerat
         this->args_struct.starting_chunk_into_shard = starting_chunk_into_shard;
         TT_ASSERT(sharded_tensor_num_cores > 0);
 
+        this->args_struct.intra_core_stride_in_shards = 1;
+        this->args_struct.contiguous_chunk_count = 1;
+        this->args_struct.contiguous_chunks_before_stride = 1;
+
         std::vector<CoreCoord> const& dest_core_coords = ctor_generate_dest_cores(
             input_tensor.buffer()->all_cores(),
             worker_index,
@@ -329,6 +346,9 @@ struct InputTensorShardAddrGenArgGenerator final : public ShardAddrGenArgGenerat
         TT_ASSERT(this->args_struct.dest_cores.size() > 0);
 
         this->args_struct.num_dest_cores = this->args_struct.dest_cores.size();
+        TT_ASSERT(this->args_struct.starting_chunk_into_shard < this->args_struct.num_dest_cores);
+        TT_ASSERT(this->args_struct.starting_chunk_into_shard < this->args_struct.dest_cores.size());
+        TT_ASSERT(this->args_struct.dest_cores.size() == this->args_struct.num_dest_cores);
 
         this->initialized = true;
     }
@@ -466,6 +486,26 @@ struct OutputTensorShardAddrGenArgGenerator final : ShardAddrGenArgGenerator {
             serving_worker_index);
     }
 
+    static uint32_t get_num_chunks_per_core_before_advance(uint32_t ring_index) {
+        TT_ASSERT(false, "UNIMPLEMENTED");
+        return ring_index;
+    }
+
+    static uint16_t get_intra_core_stride_in_shards() {
+        return ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16;
+    }
+    static uint16_t get_contiguous_chunk_count() {
+        return ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16;
+    }
+    static uint16_t get_contiguous_chunks_before_stride() {
+        return ccl::ShardAddrGenArgs<true>::UNINITIALIZED_VALUE_U16;
+    }
+
+    // TODO: add fields:
+    // - (rename)chunks before core advance
+    // - intra core stride (if > 1 shard)
+    // - contiguous chunk before intra core stride
+
     using shard_cores_t = std::variant<std::vector<CoreCoord>, CoreRange, CoreRangeSet>;
     // TODO: consider moving the tensors into the all gather config
     OutputTensorShardAddrGenArgGenerator(
@@ -489,22 +529,15 @@ struct OutputTensorShardAddrGenArgGenerator final : ShardAddrGenArgGenerator {
         TT_ASSERT(sharded_tensor_num_cores == output_tensor.buffer()->shard_spec().grid().num_cores(), "Input and output tensor must have the same number of cores");
         this->args_struct.is_clockwise = is_worker_in_clockwise_ring;
         this->args_struct.shard_size_in_bytes = input_tensor.shard_spec()->numel() * input_tensor.element_size();
-        this->args_struct.chunks_per_core_before_advance = ring_size;
+        this->args_struct.chunks_per_core_before_advance = get_num_chunks_per_core_before_advance(ring_size);
         this->args_struct.shards_start_address = output_tensor.buffer()->address();
 
+        this->args_struct.intra_core_stride_in_shards = get_intra_core_stride_in_shards();
+        this->args_struct.contiguous_chunk_count = get_contiguous_chunk_count();
+        this->args_struct.contiguous_chunks_before_stride = get_contiguous_chunks_before_stride();
+
         this->args_struct.starting_chunk_into_shard = starting_chunk_into_shard;
-        this->args_struct.num_dest_cores = sharded_tensor_num_cores / num_workers;
         TT_ASSERT(sharded_tensor_num_cores > 0);
-
-        bool has_extra_worker = worker_index < sharded_tensor_num_cores % num_workers;
-        if (has_extra_worker) {
-            this->args_struct.num_dest_cores++;
-        }
-
-        uint32_t worker_cores_start = worker_index * sharded_tensor_num_cores / num_workers;
-        worker_cores_start += sharded_tensor_num_cores % num_workers != 0 ?
-            std::min(sharded_tensor_num_cores % num_workers, worker_index) :
-            worker_index;
 
         uint32_t input_num_shards = sharded_tensor_num_cores;
         uint32_t output_num_shards = input_num_shards * ring_size;
@@ -517,6 +550,7 @@ struct OutputTensorShardAddrGenArgGenerator final : ShardAddrGenArgGenerator {
                 num_workers,
                 worker_index,
                 is_shard_orientation_row_major);
+        this->args_struct.num_dest_cores = this->args_struct.dest_cores.size();
 
         TT_ASSERT(this->args_struct.dest_cores.size() > 0);
         std::vector<CoreCoord> const& global_shard_dest_cores = corerange_to_cores(tensor_shard_grid, std::nullopt, is_shard_orientation_row_major);
@@ -528,6 +562,9 @@ struct OutputTensorShardAddrGenArgGenerator final : ShardAddrGenArgGenerator {
         auto it = std::find(this->args_struct.dest_cores.begin(), this->args_struct.dest_cores.end(), noc0_starting_dest_core_xy);
         TT_ASSERT(it != this->args_struct.dest_cores.end(), "Didn't find starting dest core in dest cores. Internal logic error");
         this->args_struct.starting_core_index = std::distance(this->args_struct.dest_cores.begin(), it);
+        TT_ASSERT(this->args_struct.starting_core_index < this->args_struct.dest_cores.size());
+        TT_ASSERT(this->args_struct.starting_core_index < this->args_struct.num_dest_cores);
+        TT_ASSERT(this->args_struct.dest_cores.size() == this->args_struct.num_dest_cores);
 
         this->initialized = true;
 
