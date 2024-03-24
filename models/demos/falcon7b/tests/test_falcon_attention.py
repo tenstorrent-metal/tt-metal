@@ -121,7 +121,8 @@ def run_test_FalconAttention_inference(
     enable_persistent_kernel_cache()
     for device in devices:
         device.enable_program_cache()
-    N = 10
+    N_warmup = 5
+    N = 15
     total_time = 0
     for i in range(N):
         start = time.time()
@@ -138,9 +139,9 @@ def run_test_FalconAttention_inference(
         for device in devices:
             tt_lib.device.Synchronize(device)
         fwd_time = time.time() - start
-        if i != 0:
+        if i >= N_warmup:
             total_time += fwd_time
-    logger.info(f"Forward pass time: {total_time/(N-1)}")
+    logger.info(f"Forward pass time: {total_time/(N-N_warmup)}")
     for device in devices:
         device.disable_and_clear_program_cache()
     # tt_out, tt_layer_present = tt_FalconAttention_model(
