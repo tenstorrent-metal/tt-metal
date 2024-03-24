@@ -28,7 +28,7 @@ default: html
 all: clean html server
 
 clean:
-	@rm -rf $(BUILDDIR)
+	@rm -rf $(HTMLDIR)
 	@rm -rf $(DOXYGENDIR)
 
 build_doxygen: clean
