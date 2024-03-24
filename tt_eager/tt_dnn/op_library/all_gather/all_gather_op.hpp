@@ -25,7 +25,7 @@ class AllGatherConfig {
 
         // enable_bidirectional - currently doesn't support batch dim and multi-link (some tests are flaky with those configs)
         erisc_handshake_address(eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE),
-        enable_bidirectional(!input_tensor.is_sharded() && dim != 0 && dim != 1),
+        enable_bidirectional(dim != 0 && dim != 1),
 
         input_is_dram(input_tensor.buffer()->buffer_type() == BufferType::DRAM),
         output_is_dram(output_tensor.buffer()->buffer_type() == BufferType::DRAM)
@@ -36,6 +36,7 @@ class AllGatherConfig {
         this->num_buffers = (this->enable_bidirectional ? 8 : 4);
         if (this->is_sharded) {
             this->num_buffers = std::min(this->num_buffers, input_tensor.shard_spec()->num_cores());
+            log_info(tt::LogOp, "this->num_buffers: {}", this->num_buffers);
         }
         this->eth_sems_l1_base_byte_address = this->erisc_handshake_address + 16;
         this->semaphore_offset = this->semaphore_size * this->num_buffers; // TODO: Remove this once dedicated semaphore space for user kernels are added
