@@ -401,9 +401,21 @@ def run_test_FalconCausalLM_end_to_end(
         ("prefill", 2, 32, 0),
         ("prefill", 1, 64, 0),
         ("prefill", 1, 128, 0),
+        ("prefill", 1, 256, 0),
+        ("prefill", 1, 512, 0),
+        ("prefill", 1, 2048, 0),
         ("decode", 32, 1, 128),
     ),
-    ids=["prefill_seq32", "prefill_seq32_batch2", "prefill_seq64", "prefill_seq128", "decode_batch32"],
+    ids=[
+        "prefill_seq32",
+        "prefill_seq32_batch2",
+        "prefill_seq64",
+        "prefill_seq128",
+        "prefill_seq256",
+        "prefill_seq512",
+        "prefill_seq2048",
+        "decode_batch32",
+    ],
 )
 @pytest.mark.parametrize(
     "num_layers, out_pcc, cache_pcc, token_pcc",

@@ -30,17 +30,6 @@ def convert_to_layout(tensor, input_memory_layout, output_memory_layout):
             return tensor
 
 
-def memcfg_for_seqlen(memcfg, seq_len):
-    if memcfg.is_sharded() and memcfg.shard_spec is not None:
-        memcfg_shard_shape = memcfg.shard_spec.shape
-        if memcfg_shard_shape[-1] == 1337:
-            memcfg_shard_shape[-1] = seq_len
-        if memcfg_shard_shape[-2] == 1337:
-            memcfg_shard_shape[-2] = seq_len
-        memcfg.shard_spec.shape = memcfg_shard_shape
-    return memcfg
-
-
 def memcfg_1d_width_sharded_from_tensor_shape(shape, grid=ttnn.CoreGrid(x=8, y=8)):
     start_core_coord = ttl.tensor.CoreCoord(0, 0)
     end_core_coord = ttl.tensor.CoreCoord(grid.x - 1, grid.y - 1)
