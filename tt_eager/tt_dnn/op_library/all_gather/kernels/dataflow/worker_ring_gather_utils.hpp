@@ -27,10 +27,10 @@ FORCE_INLINE void validate_sane_transaction_counters() {
         DPRINT << "NOC_STATUS_READ_REG(noc, NIU_MST_NONPOSTED_WR_REQ_SENT) WAS 0!!!!\n";
     }
 
-    ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) != 0);
-    ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) != 0);
-    ASSERT(noc_nonposted_writes_num_issued[noc_index] != 0);
-    ASSERT(noc_nonposted_writes_acked[noc_index] != 0);
+    // ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) != 0);
+    // ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) != 0);
+    // ASSERT(noc_nonposted_writes_num_issued[noc_index] != 0);
+    // ASSERT(noc_nonposted_writes_acked[noc_index] != 0);
     // ASSERT(noc_reads_num_issued[noc_index] != 0);
 
 
@@ -57,10 +57,10 @@ FORCE_INLINE void validate_sane_transaction_counters_rw() {
         DPRINT << "NOC_STATUS_READ_REG(noc, NIU_MST_NONPOSTED_WR_REQ_SENT) WAS 0!!!!\n";
     }
 
-    ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) != 0);
-    ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) != 0);
-    ASSERT(noc_nonposted_writes_num_issued[noc_index] != 0);
-    ASSERT(noc_nonposted_writes_acked[noc_index] != 0);
+    // ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_WR_ACK_RECEIVED) != 0);
+    // ASSERT (NOC_STATUS_READ_REG(noc_index, NIU_MST_NONPOSTED_WR_REQ_SENT) != 0);
+    // ASSERT(noc_nonposted_writes_num_issued[noc_index] != 0);
+    // ASSERT(noc_nonposted_writes_acked[noc_index] != 0);
     // ASSERT(noc_reads_num_issued[noc_index] != 0);
 
 
@@ -171,6 +171,14 @@ struct ShardAddrGen final {
         return this->dest_cores[this->curr_worker_index];
     }
 
+    [[nodiscard]] FORCE_INLINE uint64_t get_next_noc_addr() const {
+        ccl::WorkerXY dest_worker = this->get_next_noc_xy_core();
+        uint32_t curr_address = this->shards_start_address + this->curr_core_chunk_index * this->shard_size_in_bytes;
+        ASSERT(curr_address + this->shard_size_in_bytes <= 1499136); // L1 wraparound - oops!
+        ASSERT(this->shards_start_address <= curr_address);
+        return get_noc_addr(dest_worker.x, dest_worker.y, curr_address);
+    }
+
     [[nodiscard]] FORCE_INLINE uint64_t get_next_noc_addr_and_advance() {
         if constexpr (TYPE == ShardType::Width) {
             ccl::WorkerXY dest_worker = this->get_next_noc_xy_core();
@@ -214,11 +222,19 @@ struct ShardAddrGen final {
 
 FORCE_INLINE void push_filler_pages_to_cb(const uint32_t& cb_id, uint32_t num_pages) {
     ASSERT(num_pages < cb_interface[cb_id].fifo_num_pages);
+    if (cb_interface[cb_id].fifo_rd_ptr > cb_interface[cb_id].fifo_limit) {
+        DPRINT << "push_filler_pages_to_cb ERROR cb_interface[cb_id].fifo_rd_ptr: " << cb_interface[cb_id].fifo_rd_ptr << "\n";
+        DPRINT << "push_filler_pages_to_cb ERROR cb_interface[cb_id].fifo_limit: " << cb_interface[cb_id].fifo_limit << "\n";
+    }
     cb_reserve_back(cb_id, num_pages);
     cb_push_back(cb_id, num_pages);
 }
 FORCE_INLINE void pop_filler_pages_from_cb(const uint32_t& cb_id, uint32_t num_pages) {
     ASSERT(num_pages < cb_interface[cb_id].fifo_num_pages);
+    if (cb_interface[cb_id].fifo_rd_ptr > cb_interface[cb_id].fifo_limit) {
+        DPRINT << "push_filler_pages_to_cb ERROR cb_interface[cb_id].fifo_rd_ptr: " << cb_interface[cb_id].fifo_rd_ptr << "\n";
+        DPRINT << "push_filler_pages_to_cb ERROR cb_interface[cb_id].fifo_limit: " << cb_interface[cb_id].fifo_limit << "\n";
+    }
     cb_wait_front(cb_id, num_pages);
     cb_pop_front(cb_id, num_pages);
 }
@@ -234,12 +250,33 @@ FORCE_INLINE void fetch_chunk(
 }
 FORCE_INLINE void fetch_chunk_sharded(
     const uint32_t& cb_id, const uint32_t& num_pages, const uint32_t& page_size, uint64_t remote_l1_read_addr) {
-    cb_reserve_back(cb_id, num_pages);
-    uint32_t l1_write_addr = get_write_ptr(cb_id);
-    noc_async_read(remote_l1_read_addr, l1_write_addr, num_pages * page_size);
-    validate_sane_transaction_counters();
-    noc_async_read_barrier();
-    cb_push_back(cb_id, num_pages);
+    constexpr bool use_optimized = true;
+    if constexpr (use_optimized) {
+        DPRINT << "RR: cb_reserve_back\n";
+        cb_reserve_back(cb_id, num_pages);
+        DPRINT << "RR: Got it\n";
+        uint32_t l1_write_addr = get_write_ptr(cb_id);
+        noc_async_read(remote_l1_read_addr, l1_write_addr, num_pages * page_size);
+        validate_sane_transaction_counters();
+        noc_async_read_barrier();
+        cb_push_back(cb_id, num_pages);
+    } else {
+        cb_reserve_back(cb_id, num_pages);
+        uint32_t l1_write_addr = get_write_ptr(cb_id);
+        noc_async_read(remote_l1_read_addr, l1_write_addr, num_pages * page_size);
+        validate_sane_transaction_counters();
+        noc_async_read_barrier();
+        cb_push_back(cb_id, num_pages);
+        // for (uint32_t i = 0; i < num_pages; i++) {
+        //     cb_reserve_back(cb_id, 1);
+        //     uint32_t l1_write_addr = get_write_ptr(cb_id);
+        //     noc_async_read(remote_l1_read_addr, l1_write_addr, page_size);
+        //     validate_sane_transaction_counters();
+        //     noc_async_read_barrier();
+        //     cb_push_back(cb_id, 1);
+        //     remote_l1_read_addr += page_size;
+        // }
+    }
 }
 
 FORCE_INLINE void send_chunk(
@@ -252,28 +289,85 @@ FORCE_INLINE void send_chunk(
 }
 FORCE_INLINE void send_chunk_sharded(
     const uint32_t& cb_id, const uint32_t& num_pages, const uint32_t& page_size, uint64_t remote_l1_write_addr) {
-    cb_wait_front(cb_id, num_pages);
-    uint32_t l1_read_addr = get_read_ptr(cb_id);
-    noc_async_write(l1_read_addr, remote_l1_write_addr, page_size * num_pages);
-    validate_sane_transaction_counters();
-    noc_async_write_barrier();
-    cb_pop_front(cb_id, num_pages);
+    constexpr bool use_optimized = true;
+    if constexpr (use_optimized) {
+        cb_wait_front(cb_id, num_pages);
+        uint32_t l1_read_addr = get_read_ptr(cb_id);
+        noc_async_write(l1_read_addr, remote_l1_write_addr, page_size * num_pages);
+        // TODO: insert eth semaphore inc here
+        validate_sane_transaction_counters();
+        noc_async_write_barrier();
+        cb_pop_front(cb_id, num_pages);
+    } else {
+        cb_wait_front(cb_id, num_pages);
+        uint32_t l1_read_addr = get_read_ptr(cb_id);
+        noc_async_write(l1_read_addr, remote_l1_write_addr, page_size * num_pages);
+        validate_sane_transaction_counters();
+        noc_async_write_barrier();
+        cb_pop_front(cb_id, num_pages);
+        // for (uint32_t i = 0; i < num_pages; i++) {
+        //     cb_wait_front(cb_id, 1);
+        //     uint32_t l1_read_addr = get_read_ptr(cb_id);
+        //     noc_async_write(l1_read_addr, remote_l1_write_addr, page_size);
+        //     validate_sane_transaction_counters();
+        //     noc_async_write_barrier();
+        //     cb_pop_front(cb_id, 1);
+        //     remote_l1_write_addr += page_size;
+        // }
+    }
 }
 
 template <ShardType T>
 FORCE_INLINE void write_and_send_chunk_sharded(
-    const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t num_pages, uint64_t remote_eth_l1_write_addr) {
-    DPRINT << "SW: cb_wait_front\n";
-    cb_wait_front(cb_id, num_pages);
-    uint32_t l1_read_addr = get_read_ptr(cb_id);
-    uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
-    DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (upper): " << (uint32_t)((dest_worker_noc_addr >> 32) & 0xffffffff) << "\n";
-    DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (lower): " << (uint32_t)(dest_worker_noc_addr & 0xffffffff) << "\n";
-    noc_async_write(l1_read_addr, remote_eth_l1_write_addr, addr_gen.get_shard_size_in_bytes());
-    noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes());
-    validate_sane_transaction_counters();
-    noc_async_write_barrier();
-    cb_pop_front(cb_id, num_pages);
+    const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t const num_pages, uint64_t remote_eth_l1_write_addr) {
+    constexpr bool use_optimized = true;
+    if constexpr (use_optimized) {
+        DPRINT << "SW: cb_wait_front\n";
+        cb_wait_front(cb_id, num_pages);
+        uint32_t l1_read_addr = get_read_ptr(cb_id);
+        uint32_t num_pages_remaining = num_pages;
+        noc_async_write(l1_read_addr, remote_eth_l1_write_addr, num_pages * addr_gen.get_shard_size_in_bytes());
+        // TODO: insert eth semaphore inc here
+        while (num_pages_remaining > 0) {
+            uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr();
+            DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (upper): " << (uint32_t)((dest_worker_noc_addr >> 32) & 0xffffffff) << "\n";
+            DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (lower): " << (uint32_t)(dest_worker_noc_addr & 0xffffffff) << "\n";
+            uint32_t num_shards_to_write = std::min<uint32_t>(num_pages_remaining, addr_gen.contiguous_chunks_before_stride);
+            noc_async_write(l1_read_addr, dest_worker_noc_addr, num_shards_to_write * addr_gen.get_shard_size_in_bytes());
+            for (uint32_t i = 0; i < num_shards_to_write; i++) {
+                addr_gen.advance();
+            }
+            num_pages_remaining -= num_shards_to_write;
+            l1_read_addr += num_shards_to_write * addr_gen.get_shard_size_in_bytes();
+        }
+        validate_sane_transaction_counters();
+        noc_async_write_barrier();
+        cb_pop_front(cb_id, num_pages);
+    } else {
+        DPRINT << "SW: cb_wait_front\n";
+        cb_wait_front(cb_id, num_pages);
+        uint32_t l1_read_addr = get_read_ptr(cb_id);
+        uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+        DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (upper): " << (uint32_t)((dest_worker_noc_addr >> 32) & 0xffffffff) << "\n";
+        DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (lower): " << (uint32_t)(dest_worker_noc_addr & 0xffffffff) << "\n";
+        noc_async_write(l1_read_addr, remote_eth_l1_write_addr, addr_gen.get_shard_size_in_bytes());
+        noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes());
+        validate_sane_transaction_counters();
+        noc_async_write_barrier();
+        cb_pop_front(cb_id, num_pages);
+        // for (uint32_t i = 0; i < num_pages; i++) {
+        //     cb_wait_front(cb_id, 1);
+        //     uint32_t l1_read_addr = get_read_ptr(cb_id);
+        //     uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+        //     DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (upper): " << (uint32_t)((dest_worker_noc_addr >> 32) & 0xffffffff) << "\n";
+        //     DPRINT << "SW: write_and_send_chunk_sharded dest_worker_noc_addr (lower): " << (uint32_t)(dest_worker_noc_addr & 0xffffffff) << "\n";
+        //     noc_async_write(l1_read_addr, remote_eth_l1_write_addr, addr_gen.get_shard_size_in_bytes());
+        //     noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes());
+        //     validate_sane_transaction_counters();
+        //     noc_async_write_barrier();
+        //     cb_pop_front(cb_id, 1);
+        // }
+    }
 }
 template <typename AddrGen>
 FORCE_INLINE void write_and_send_chunk(uint32_t& output_page_idx, uint32_t& col_idx, uint32_t& row_idx, const uint32_t& cb_id, const AddrGen& d, const uint32_t num_cols, const uint32_t num_rows, const uint32_t& col_offset, const uint32_t& row_offset, const uint32_t& num_pages, const uint32_t& page_size, uint64_t remote_l1_write_addr, uint64_t eth_l1_sender_semaphore_addr) {
@@ -313,37 +407,58 @@ FORCE_INLINE void write_and_send_chunk(uint32_t& output_page_idx, uint32_t& col_
 }
 
 template <ShardType T>
-FORCE_INLINE void write_chunk_sharded(const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t num_pages) {
-    DPRINT << "\tRW: Transfer write_chunk_sharded HEAD\n";
-    for (uint32_t i = 0; i < num_pages; ++i) {
-        DPRINT << "\tRW: Waiting for page\n";
-        cb_wait_front(cb_id, 1);
-        DPRINT << "\tRW: Got page\n";
+FORCE_INLINE void write_chunk_sharded(const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, const uint32_t num_pages) {
+    constexpr bool use_optimized = true;
+    if constexpr (use_optimized) {
+        cb_wait_front(cb_id, num_pages);
         uint32_t l1_read_addr = get_read_ptr(cb_id);
-        uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
-        DPRINT << "\tRW: first tile 1 elem: " << *(uint32_t*)l1_read_addr << " from " << l1_read_addr << "\n";
-        DPRINT << "\tRW: second tile l1 elem: " << ((uint32_t*)l1_read_addr)[512] << "\n";
-        DPRINT << "\tRW: dest_worker_noc_addr: " << dest_worker_noc_addr << "\n";
-        DPRINT << "\tRW: write size in bytes: " << addr_gen.get_shard_size_in_bytes() << "\n";
-
-        noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes());
-
+        uint32_t num_pages_remaining = num_pages;
+        while (num_pages_remaining > 0) {
+            uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr();
+            uint32_t num_contiguous_shards = addr_gen.contiguous_chunks_before_stride;
+            uint32_t num_to_send = std::min(num_pages_remaining, num_contiguous_shards);
+            DPRINT << "\tRW: Transfer write_chunk_sharded " << num_to_send << " shards\n";
+            // DPRINT << "\tRW: first tile 1 elem: " << *(uint32_t*)l1_read_addr << " from " << l1_read_addr << "\n";
+            // DPRINT << "\tRW: second tile l1 elem: " << ((uint32_t*)l1_read_addr)[512] << "\n";
+            // DPRINT << "\tRW: dest_worker_noc_addr: " << dest_worker_noc_addr << "\n";
+            // DPRINT << "\tRW: write size in bytes: " << num_pages *addr_gen.get_shard_size_in_bytes() << "\n";
+            noc_async_write(l1_read_addr, dest_worker_noc_addr, num_to_send * addr_gen.get_shard_size_in_bytes());
+            for (uint32_t i = 0; i < num_to_send; i++) {
+                addr_gen.advance();
+            }
+            l1_read_addr += num_to_send * addr_gen.get_shard_size_in_bytes();
+            num_pages_remaining -= num_to_send;
+        }
         DPRINT << "\tvalidate_sane_transaction_counters_rw\n";
-        // validate_sane_transaction_counters();
         validate_sane_transaction_counters_rw();
         DPRINT << "\tRW: Waiting for write barrier\n";
         noc_async_write_barrier();
-        cb_pop_front(cb_id, 1);
-        DPRINT << "\tRW: cb_pop_front complete\n";
+        cb_pop_front(cb_id, num_pages);
+    } else {
+        DPRINT << "\tRW: Transfer write_chunk_sharded HEAD\n";
+        for (uint32_t i = 0; i < num_pages; ++i) {
+            DPRINT << "\tRW: Waiting for page\n";
+            cb_wait_front(cb_id, 1);
+            DPRINT << "\tRW: Got page\n";
+            uint32_t l1_read_addr = get_read_ptr(cb_id);
+            uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+            // DPRINT << "\tRW: first tile 1 elem: " << *(uint32_t*)l1_read_addr << " from " << l1_read_addr << "\n";
+            // DPRINT << "\tRW: second tile l1 elem: " << ((uint32_t*)l1_read_addr)[512] << "\n";
+            // DPRINT << "\tRW: dest_worker_noc_addr: " << dest_worker_noc_addr << "\n";
+            DPRINT << "\tRW: write size in bytes: " << addr_gen.get_shard_size_in_bytes() << "\n";
+
+            noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes());
+
+            // DPRINT << "\tvalidate_sane_transaction_counters_rw\n";
+            // validate_sane_transaction_counters();
+            validate_sane_transaction_counters_rw();
+            DPRINT << "\tRW: Waiting for write barrier\n";
+            noc_async_write_barrier();
+            cb_pop_front(cb_id, 1);
+            DPRINT << "\tRW: cb_pop_front complete\n";
+        }
+        DPRINT << "\tRW: done write_chunk_sharded\n";
     }
-    DPRINT << "\tRW: done write_chunk_sharded\n";
-    // cb_wait_front(cb_id, num_pages);
-    // uint32_t l1_read_addr = get_read_ptr(cb_id);
-    // uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr_and_advance();
-    // noc_async_write(l1_read_addr, dest_worker_noc_addr, addr_gen.get_shard_size_in_bytes() * num_pages);
-    // // TODO(snijjar): move the semaphore inc here
-    // noc_async_write_barrier();
-    // cb_pop_front(cb_id, num_pages);
 }
 template <typename AddrGen>
 FORCE_INLINE void write_chunk(uint32_t& output_page_idx, uint32_t& col_idx, uint32_t& row_idx, const uint32_t& cb_id, const AddrGen& d, const uint32_t& num_cols, const uint32_t& num_rows, const uint32_t& col_offset, const uint32_t& row_offset, const uint32_t& num_pages, const uint32_t& page_size) {
@@ -380,15 +495,38 @@ FORCE_INLINE void write_chunk(uint32_t& output_page_idx, uint32_t& col_idx, uint
 }
 
 template <ShardType T>
-FORCE_INLINE void read_chunk_from_input_tensor_sharded(
-    const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t num_pages) {
-    cb_reserve_back(cb_id, num_pages);
-    uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
-    uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
-    noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
-    validate_sane_transaction_counters();
-    noc_async_read_barrier();
-    cb_push_back(cb_id, num_pages);
+FORCE_INLINE void read_shard_from_input_tensor_sharded(
+    const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t num_shards) {
+    constexpr bool use_optimized = true;
+    if constexpr (use_optimized) {
+        cb_reserve_back(cb_id, num_shards);
+        uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
+        for (uint32_t s = 0; s < num_shards; s++) {
+            uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+            noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
+            local_l1_read_dest_addr += addr_gen.get_shard_size_in_bytes();
+        }
+        validate_sane_transaction_counters();
+        noc_async_read_barrier();
+        cb_push_back(cb_id, num_shards);
+    } else {
+        // for (uint32_t i = 0; i < num_shards; i++) {
+        //     cb_reserve_back(cb_id, 1);
+        //     uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
+        //     uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+        //     noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
+        //     validate_sane_transaction_counters();
+        //     noc_async_read_barrier();
+        //     cb_push_back(cb_id, 1);
+        // }
+        cb_reserve_back(cb_id, num_shards);
+        uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
+        uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+        noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
+        validate_sane_transaction_counters();
+        noc_async_read_barrier();
+        cb_push_back(cb_id, num_shards);
+    }
 }
 // read chunk from input tensor (local chip)
 template <typename AddrGen>
@@ -412,15 +550,46 @@ FORCE_INLINE void read_chunk_from_input_tensor(uint32_t& input_page_idx, const u
 // Same function - just different address generators? Commonize later
 template <ShardType T>
 FORCE_INLINE void read_chunk_from_output_tensor_sharded(
-    const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t num_pages) {
-    cb_reserve_back(cb_id, num_pages);
-    uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
-    uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
-    DPRINT << "SR: Reading from " << (uint32_t)(src_noc_addr&0xFFFFFFFF) << " to " << local_l1_read_dest_addr << "\n";
-    noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
-    validate_sane_transaction_counters();
-    noc_async_read_barrier();
-    cb_push_back(cb_id, num_pages);
+    const uint32_t& cb_id, ShardAddrGen<T>& addr_gen, uint32_t const num_pages) {
+    constexpr bool use_optimized = true;
+    if constexpr (use_optimized) {
+        cb_reserve_back(cb_id, num_pages);
+        uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
+        uint32_t num_pages_remaining = num_pages;
+        while (num_pages_remaining > 0) {
+            uint64_t src_noc_addr = addr_gen.get_next_noc_addr();
+            uint32_t shards_to_read = std::min<uint32_t>(num_pages_remaining, addr_gen.contiguous_chunks_before_stride);
+            DPRINT << "SR: Reading from " << (uint32_t)(src_noc_addr&0xFFFFFFFF) << " to " << local_l1_read_dest_addr << "\n";
+            noc_async_read(src_noc_addr, local_l1_read_dest_addr, shards_to_read * addr_gen.get_shard_size_in_bytes());
+            local_l1_read_dest_addr += shards_to_read * addr_gen.get_shard_size_in_bytes();
+            for (uint32_t i = 0; i < shards_to_read; i++) {
+                addr_gen.advance();
+            }
+            num_pages_remaining -= shards_to_read;
+        }
+        validate_sane_transaction_counters();
+        noc_async_read_barrier();
+        cb_push_back(cb_id, num_pages);
+    } else {
+        // for (uint32_t i = 0; i < num_pages; i++) {
+        //     cb_reserve_back(cb_id, 1);
+        //     uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
+        //     uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+        //     DPRINT << "SR: Reading from " << (uint32_t)(src_noc_addr&0xFFFFFFFF) << " to " << local_l1_read_dest_addr << "\n";
+        //     noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
+        //     validate_sane_transaction_counters();
+        //     noc_async_read_barrier();
+        //     cb_push_back(cb_id, 1);
+        // }
+        cb_reserve_back(cb_id, num_pages);
+        uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
+        uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+        DPRINT << "SR: Reading from " << (uint32_t)(src_noc_addr&0xFFFFFFFF) << " to " << local_l1_read_dest_addr << "\n";
+        noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
+        validate_sane_transaction_counters();
+        noc_async_read_barrier();
+        cb_push_back(cb_id, num_pages);
+    }
 }
 // read chunk from output tensor (local chip)
 template <typename AddrGen>

@@ -28,6 +28,7 @@ void kernel_main() {
     const uint32_t receiver_read_sem_addr = get_arg_val<uint32_t>(arg_index++);
     const uint32_t input_shards_per_eth_buffer = get_arg_val<uint32_t>(arg_index++);
     const uint32_t num_transfers = get_arg_val<uint32_t>(arg_index++);
+    const uint32_t half_cb_n_pages = get_arg_val<uint32_t>(arg_index++);
 
     ShardAddrGen<shard_type>::build_with_placement_new(&input_tensor_shard_writer, arg_index);
     arg_index += input_tensor_shard_writer.get_num_args_consumed();
@@ -64,23 +65,35 @@ void kernel_main() {
             noc_semaphore_wait(receiver_read_semaphore_addr_ptr, 1);
             noc_semaphore_set(receiver_read_semaphore_addr_ptr, 0);
             DPRINT << "RR: \tgot semaphore inc from EDM\n";
-            for (uint32_t s = 0; s < shards_to_send; ++s) {
-                DPRINT << "RR: Shard " << i + s << "\n";
-                // DPRINT << "\tRR: got signal from EDM \n";
-                // Read page by page so that writer can be kicked off instead of being blocked waiting for full
-                // chunk to be read Look into perf/optimizations for this
-                uint64_t source_eth_buffer_noc_addr = eth_receiver_l1_base_noc_addr + s * shard_size;
-                DPRINT << "RR: \tfetching chunk from source_eth_buffer_noc_addr: " << (uint64_t)(source_eth_buffer_noc_addr & 0xFFFFFFFF) << "\n";
+            DPRINT << "RR: sending " << shards_to_send << " shards through cb\n";
+            constexpr bool use_optimized = true;
+            if constexpr (use_optimized) {
                 fetch_chunk_sharded(
                     cb_id_in0,
-                    1,
+                    shards_to_send,
                     shard_size,
-                    source_eth_buffer_noc_addr);
-                // eth_receiver_l1_base_noc_addr += input_tensor_shard_writer.get_shard_size_in_bytes();
-                // DPRINT << "\tRR: fetched chunk EDM \n";
+                    eth_receiver_l1_base_noc_addr);
+                noc_semaphore_inc(eth_receiver_l1_semaphore_noc_addr, 1);
+            } else {
+                for (uint32_t s = 0; s < shards_to_send; ++s) {
+                    DPRINT << "RR: Shard " << i + s << "\n";
+                    // Read page by page so that writer can be kicked off instead of being blocked waiting for full
+                    // chunk to be read Look into perf/optimizations for this
+                    uint64_t source_eth_buffer_noc_addr = eth_receiver_l1_base_noc_addr + s * shard_size;
+                    DPRINT << "RR: \tfetching chunk from source_eth_buffer_noc_addr: " << (uint64_t)(source_eth_buffer_noc_addr & 0xFFFFFFFF) << "\n";
+                    fetch_chunk_sharded(
+                        cb_id_in0,
+                        1,
+                        shard_size,
+                        source_eth_buffer_noc_addr);
+                }
+                noc_semaphore_inc(eth_receiver_l1_semaphore_noc_addr, 1);
             }
-            noc_semaphore_inc(eth_receiver_l1_semaphore_noc_addr, 1);
-
+            // Might need to move inside the loop above
+            if (half_cb_n_pages > shards_to_send) {
+                DPRINT << "RR: push_filler_pages_to_cb " << half_cb_n_pages - shards_to_send << "\n";
+                push_filler_pages_to_cb(cb_id_in0, half_cb_n_pages - shards_to_send);
+            }
         }
     }
 

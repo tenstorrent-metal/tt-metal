@@ -673,6 +673,8 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                     worker_send_reader_rt_args.reserve(2 + input_shard_addr_generator_args.size() + output_shard_addr_generator_args.size());
                     worker_send_reader_rt_args.push_back(sender_worker_reader_semaphore_addr);
                     worker_send_reader_rt_args.push_back(pages_per_buffer.at(b));
+                    worker_send_reader_rt_args.push_back(pages_per_eth_l1_buffer.at(b));
+                    worker_send_reader_rt_args.push_back(cb_num_pages / 2);
                     std::copy(input_shard_addr_generator_args.begin(), input_shard_addr_generator_args.end(), std::back_inserter(worker_send_reader_rt_args));
                     std::copy(output_shard_addr_generator_args.begin(), output_shard_addr_generator_args.end(), std::back_inserter(worker_send_reader_rt_args));
 
@@ -820,7 +822,8 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                         static_cast<uint32_t>(pages_per_eth_l1_buffer.at(b)), //output_tensor_shard_arg_generator.args_struct.num_dest_cores),//pages_per_eth_l1_buffer.at(b)),
                         static_cast<uint32_t>(sender_worker_writer_semaphore_addr), // writer_send_sem_addr
                         static_cast<uint32_t>(num_transfers), // num_transfers
-                        static_cast<uint32_t>(input_tensor_shard_arg_generator.args_struct.num_dest_cores)
+                        static_cast<uint32_t>(input_tensor_shard_arg_generator.args_struct.num_dest_cores),
+                        static_cast<uint32_t>(cb_num_pages / 2),
                     };
                     std::copy(output_tensor_shard_addr_gen_args.begin(), output_tensor_shard_addr_gen_args.end(), std::back_inserter(worker_writer_sender_rt_args));
 
@@ -945,6 +948,7 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                     worker_reader_receiver_rt_args.push_back(receiver_worker_semaphore_addr); // local_receiver_read_sem_addr
                     worker_reader_receiver_rt_args.push_back(pages_per_eth_l1_buffer.at(b)), //output_tensor_shard_arg_generator.args_struct.num_dest_cores), //pages_per_eth_l1_buffer.at(b)); // num_shards_per_eth_buf
                     worker_reader_receiver_rt_args.push_back(num_transfers); // local_receiver_read_sem_addr
+                    worker_reader_receiver_rt_args.push_back(static_cast<uint32_t>(cb_num_pages / 2)); // local_receiver_read_sem_addr
                     std::copy(output_tensor_shard_addr_gen_args.begin(), output_tensor_shard_addr_gen_args.end(), std::back_inserter(worker_reader_receiver_rt_args));
 
                     log_trace(tt::LogOp, "----worker_receiver_reader_ct_args size={}", worker_receiver_reader_ct_args.size());
@@ -1077,6 +1081,7 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                     worker_receive_writer_rt_args.push_back(output_tensor_shard_arg_generator.args_struct.num_dest_cores), //pages_per_eth_l1_buffer.at(b));
                     worker_receive_writer_rt_args.push_back(num_transfers);
                     worker_receive_writer_rt_args.push_back(pages_per_buffer.at(b));
+                    worker_receive_writer_rt_args.push_back(static_cast<uint32_t>(cb_num_pages / 2));
 
 
                     std::copy(output_shard_addr_generator_args.begin(), output_shard_addr_generator_args.end(), std::back_inserter(worker_receive_writer_rt_args));
@@ -1178,22 +1183,20 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
 
         log_trace(tt::LogOp, "RingIndex: {}. Link {}. Clockwise EDM Core (x={},y={}), Counter-clockwise EDM Core (x={},y={})", ring_index, i, eth_sender_cores.at(i).x, eth_sender_cores.at(i).y, eth_receiver_cores.at(i).x, eth_receiver_cores.at(i).y);
 
-        if (enable_print) {
-            std::stringstream ss;
-            ss << "HOST SENDER EDM ARGS:\n";
-            for (auto const& s : edm_clockwise_kernel_rt_args) {
-                ss << "\t" << s << "\n";
-            }
-            std::cout << ss.str() << std::endl;
+
+        std::stringstream ss;
+        ss << "HOST SENDER EDM ARGS:\n";
+        for (auto const& s : edm_clockwise_kernel_rt_args) {
+            ss << "\t" << s << "\n";
         }
-        if (enable_print) {
-            std::stringstream ss;
-            ss << "HOST RECEIVER EDM ARGS:\n";
-            for (auto const& s : edm_counter_clockwise_kernel_rt_args) {
-                ss << "\t" << s << "\n";
-            }
-            std::cout << ss.str() << std::endl;
+        log_trace(tt::LogOp, "{}", ss.str());
+
+        std::stringstream ss2;
+        ss2 << "HOST RECEIVER EDM ARGS:\n";
+        for (auto const& s : edm_counter_clockwise_kernel_rt_args) {
+            ss2 << "\t" << s << "\n";
         }
+        log_trace(tt::LogOp, "{}", ss2.str());
 
 
         tt_metal::SetRuntimeArgs(
