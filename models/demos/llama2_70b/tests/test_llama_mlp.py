@@ -73,7 +73,12 @@ def run_test_LlamaMLP_inference(
     pt_inp_ids = torch.randint(0, configuration.vocab_size, (batch, seq_len))
     pt_inp = hugging_face_reference_model.tok_embeddings(pt_inp_ids)
     pt_inp_normed = hugging_face_reference_model.layers[UNIT_TEST_LAYER_NUM].ffn_norm(pt_inp)
-    pt_inp_normed = pt_inp_normed.unsqueeze(1).permute(2, 1, 0, 3)
+    if seq_len > 1:
+        # shape should be (1, batch, seq_len, dim)
+        pt_inp_normed = pt_inp_normed.unsqueeze(0)
+    else:
+        # shape should be (seq_len=1, 1, batch, dim)
+        pt_inp_normed = pt_inp_normed.unsqueeze(1).permute(2, 1, 0, 3)
     tt_inp = pt_inp_normed.clone()
 
     # PyTorch output --------------------------------------------------------------------
@@ -150,12 +155,9 @@ def run_test_LlamaMLP_inference(
     "batch, seq_len",
     (
         (32, 1),
-        # (1, 128),
+        (32, 128),
     ),
-    ids=(
-        "decode",
-        # "prefill"
-    ),
+    ids=("decode", "prefill"),
 )
 @pytest.mark.parametrize("model_config_str, pcc", (("BFLOAT16-DRAM", 0.9999),))
 def test_LlamaMLP_inference(
@@ -167,8 +169,9 @@ def test_LlamaMLP_inference(
     all_devices,
     emulated,
 ):
+    mode = "prefill" if seq_len > 1 else "decode"
     devices = get_devices_for_t3000(all_devices, num_devices=n_devices if not emulated else 1)
-    model_config = get_model_config(model_config_str, num_devices=n_devices)
+    model_config = get_model_config(model_config_str, num_devices=n_devices, mode=mode)
     compute_grid_size = devices[0].compute_with_storage_grid_size()
     if len(all_devices) < n_devices and not emulated:
         pytest.skip(f"Requires at {n_devices} devices to run")
