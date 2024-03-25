@@ -142,7 +142,7 @@ def run_falcon_matmul_test(
 
 
 # TODO: We could parametrize these separately for comprehensive testing
-@skip_for_wormhole_b0("non-determinstic hang, see issue #5882")
+# @skip_for_wormhole_b0("non-determinstic hang, see issue #5882")
 @pytest.mark.parametrize(
     "in0_mem_config, in1_mem_config, out_mem_config",
     (
@@ -216,8 +216,75 @@ def test_falcon_matmul(
     )
 
 
+@pytest.mark.parametrize(
+    "seq_len",
+    (2048, 128),
+    ids=["seq_len_2048", "seq_len_128"],
+)
+@pytest.mark.parametrize("num_cores", [64])
+def test_fused_qkv_matmul(device, num_cores, seq_len):
+    pcc = 0.99
+    compute_grid_size = device.compute_with_storage_grid_size()
+    if num_cores > (compute_grid_size.x * compute_grid_size.y):
+        pytest.skip(f"Need {num_cores} cores to run this test but core grid is {compute_grid_size}")
+    a_shape = [1, 1, seq_len, 4544]  # [64, 142]
+    b_shape = [1, 1, 4544, 4672]  # [142, 146]
+    expected_output_shape = [1, 1, seq_len, 4672]
+
+    dram_interleaved_mem_config = ttl.tensor.MemoryConfig(
+        ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM
+    )
+
+    in0_df = ttl.tensor.DataType.BFLOAT16
+    in1_df = ttl.tensor.DataType.BFLOAT8_B
+
+    A = torch.randn(a_shape)
+    B = torch.randn(b_shape) - 0.95
+
+    a_t = ttl.tensor.Tensor(A, in0_df).to(ttl.tensor.Layout.TILE).to(device, dram_interleaved_mem_config)
+    b_t = ttl.tensor.Tensor(B, in1_df).to(ttl.tensor.Layout.TILE).to(device, dram_interleaved_mem_config)
+
+    compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
+        math_fidelity=ttl.tensor.MathFidelity.LoFi,
+        math_approx_mode=True,
+        fp32_dest_acc_en=False,
+        packer_l1_acc=True,
+    )
+
+    program_config = ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
+        compute_with_storage_grid_size=compute_grid_size,
+        in0_block_w=2,
+        per_core_M=8,
+        per_core_N=21,
+        out_subblock_h=1,
+        out_subblock_w=7,
+        transpose_mcast=False,
+        fused_activation=None,
+    )
+
+    out = ttl.operations.primary.matmul(
+        a_t,
+        b_t,
+        program_config=program_config,
+        output_mem_config=dram_interleaved_mem_config,
+        output_dtype=ttl.tensor.DataType.BFLOAT16,
+        compute_kernel_config=compute_kernel_config,
+    )
+
+    assert out.get_legacy_shape() == expected_output_shape
+    pyt_got_back_rm = tt2torch_tensor(out)
+
+    ref_bmm = torch.matmul(A, B)
+
+    passing_pcc, output_pcc = comp_pcc(ref_bmm, pyt_got_back_rm, pcc)
+    logger.debug(f"Passing={passing_pcc}")
+    logger.debug(f"Output pcc={output_pcc}")
+
+    assert passing_pcc
+
+
 # Test matmul attention sequence with InterleavedToShardedPartialOp
-@skip_for_wormhole_b0("non-determinstic hang, see issue #5882")
+# @skip_for_wormhole_b0("non-determinstic hang, see issue #5882")
 @pytest.mark.parametrize("seq_len", [1024, 2048, 128], ids=["seq_len_1024", "seq_len_2048", "seq_len_128"])
 @pytest.mark.parametrize("num_cores", [64])
 def test_falcon7b_attnention_sliced(
@@ -380,9 +447,12 @@ def test_falcon7b_attnention_sliced(
 
         attn_mask_slice.deallocate()
 
+        subblock_w = 1
+        if seq_len == 2048:
+            subblock_w = 8
         softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
             compute_with_storage_grid_size=grid_size,
-            subblock_w=1,
+            subblock_w=subblock_w,
             block_h=mm_output_height_shard_spec[0] // 32,
             block_w=mm_output_height_shard_spec[1] // 32,
             math_fidelity=ttl.tensor.MathFidelity.HiFi4,
@@ -463,6 +533,156 @@ def test_falcon7b_attnention_sliced(
     # Compare entire tensors as well
     entire_tensor_passing, output = comp_pcc(attn_output_torch, attention_output_concatenated_torch)
     passing = entire_tensor_passing and passing
+
+    print(output)
+    assert passing
+
+
+@pytest.mark.parametrize("seq_len", (2048, 128), ids=["seq_len_2048", "seq_len_128"])
+@pytest.mark.parametrize("num_cores", [64])
+def test_softmax(device, num_cores, seq_len):
+    compute_grid_size = device.compute_with_storage_grid_size()
+    if num_cores > (compute_grid_size.x * compute_grid_size.y):
+        pytest.skip(f"Need {num_cores} cores to run this test but core grid is {compute_grid_size}")
+    grid_size = (8, 8)
+
+    head_dim = 71
+    input_shape = [1, head_dim, seq_len, seq_len]
+    attention_mask_1_head_dim_shape = [1, 1, seq_len, seq_len]
+    attention_mask_shape = [1, head_dim, seq_len, seq_len]
+    scalar_shape = [1, 1, 32, 32]
+
+    torch_input = torch.randn(input_shape).bfloat16().float()
+    torch_attention_mask_1_head_dim = torch.randn(attention_mask_1_head_dim_shape).bfloat16().float()
+    torch_attention_mask = torch_attention_mask_1_head_dim.repeat(1, attention_mask_shape[1], 1, 1)
+    # torch_attention_mask = torch.randn(attention_mask_shape).bfloat16().float()
+    print("Shape is", torch_attention_mask.shape)
+    torch_scalar = (torch.ones(scalar_shape) * (1 / math.sqrt(head_dim))).bfloat16().float()
+    torch_outputs = torch.zeros(input_shape).bfloat16().float()
+
+    dram_interleaved_memory_config = ttl.tensor.MemoryConfig(
+        memory_layout=ttl.tensor.TensorMemoryLayout.INTERLEAVED,
+        buffer_type=ttl.tensor.BufferType.DRAM,
+    )
+
+    tt_input = torch2tt_tensor(
+        torch_input,
+        device,
+        tt_memory_config=dram_interleaved_memory_config,
+        tt_dtype=ttl.tensor.DataType.BFLOAT16,
+    )
+
+    tt_attention_mask_1_head_dim = torch2tt_tensor(
+        torch_attention_mask_1_head_dim,
+        device,
+        tt_memory_config=dram_interleaved_memory_config,
+        tt_dtype=ttl.tensor.DataType.BFLOAT16,
+    )
+
+    tt_attention_mask = torch2tt_tensor(
+        torch_attention_mask,
+        device,
+        tt_memory_config=dram_interleaved_memory_config,
+        tt_dtype=ttl.tensor.DataType.BFLOAT16,
+    )
+
+    tt_scalar = torch2tt_tensor(
+        torch_scalar,
+        device,
+        tt_memory_config=dram_interleaved_memory_config,
+        tt_dtype=ttl.tensor.DataType.BFLOAT16,
+    )
+
+    tt_output_sharded_softmax = torch2tt_tensor(
+        torch_outputs, device, tt_memory_config=dram_interleaved_memory_config, tt_dtype=ttl.tensor.DataType.BFLOAT16
+    )
+
+    num_slices = 1
+    if seq_len == 2048:
+        num_slices = 16
+
+    # Sharded softmax
+    tiles_per_shard = math.ceil((((71 * seq_len) / num_cores) / num_slices) / 32)
+    height_shard_spec = [tiles_per_shard * 32, seq_len]
+
+    for i in range(num_slices):
+        input_slice = ttl.tensor.interleaved_to_sharded_partial(
+            tt_input,
+            grid_size,
+            height_shard_spec,
+            num_slices,
+            i,
+            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+            ttl.tensor.ShardOrientation.ROW_MAJOR,
+        )
+
+        tt_attn_mask_slice = ttl.tensor.interleaved_to_sharded_partial(
+            tt_attention_mask,
+            grid_size,
+            height_shard_spec,
+            num_slices,
+            i,
+            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+            ttl.tensor.ShardOrientation.ROW_MAJOR,
+        )
+
+        softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
+            compute_with_storage_grid_size=grid_size,
+            subblock_w=1,
+            block_h=height_shard_spec[0] // 32,
+            block_w=height_shard_spec[1] // 32,
+            math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+            im_data_format=ttl.tensor.DataType.BFLOAT16,
+        )
+
+        # print("Running softmax in place")
+        # when in_1 (attention_mask) is sharded, we need it to be this shape: [1, 71, seq_len, seq_len]
+        # when in_1 (attention_mask) is interleaved, we need it to be this shape [1, 1, seq_len, seq_len] and it hangs!
+        # make it unhang
+        slice_out = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+            input_slice,
+            1 / math.sqrt(head_dim),
+            tt_attn_mask_slice,
+            program_config=softmax_program_config,
+            is_causal_mask=True,
+        )
+        # print("Done softmax in place")
+
+        # print("Running S->I partial")
+        ttl.tensor.sharded_to_interleaved_partial(
+            slice_out,
+            tt_output_sharded_softmax,
+            num_slices,
+            i,
+            dram_interleaved_memory_config,
+        )
+        # print("Done S->I partial")
+
+        # print("Dealloc begin")
+        slice_out.deallocate()
+        # print("Dealloc end")
+
+    # Interleaved softmax
+    # print("Running softmax 2")
+    out = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+        tt_input,
+        1 / math.sqrt(head_dim),
+        tt_attention_mask_1_head_dim,
+        program_config=ttl.operations.primary.transformers.SoftmaxDefaultProgramConfig(),
+        is_causal_mask=True,
+    )
+    # print("Done Running softmax 2")
+
+    # print("Converting 1")
+    out_torch = tt2torch_tensor(out)
+    # print("Done Converting 1")
+
+    # print("Converting 2")
+    out_torch_sharded_softmax = tt2torch_tensor(tt_output_sharded_softmax)
+    # print("Done Converting 2")
+
+    passing = True
+    passing, output = comp_pcc(out_torch, out_torch_sharded_softmax)
 
     print(output)
     assert passing

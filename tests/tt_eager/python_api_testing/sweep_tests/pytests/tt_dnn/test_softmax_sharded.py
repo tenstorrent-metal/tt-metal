@@ -25,11 +25,10 @@ grid_sizes = [[1, 1], [1, 8], [12, 1], [12, 8]]
 seq_lens = [32, 64, 256, 384, 512]
 
 
-@skip_for_wormhole_b0()
 @pytest.mark.parametrize(
     "scale_mask",
     [True, False],
-    ids=["mask", "no-mask"],
+    ids=["yes_mask", "no-mask"],
 )
 @pytest.mark.parametrize(
     "seq_len",
@@ -44,7 +43,7 @@ seq_lens = [32, 64, 256, 384, 512]
 @pytest.mark.parametrize(
     "casual_mask",
     [True, False],
-    ids=["causal", "no-causal"],
+    ids=["yes_causal", "no-causal"],
 )
 @pytest.mark.parametrize(
     "in_dtype",

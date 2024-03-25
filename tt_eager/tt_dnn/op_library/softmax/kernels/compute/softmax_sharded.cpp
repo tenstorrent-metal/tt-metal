@@ -12,6 +12,7 @@
 #include "compute_kernel_api/bcast.h"
 #include "compute_kernel_api/softmax.h"
 #include "compute_kernel_api/reduce.h"
+#include "debug/dprint.h"
 
 ALWI void ACQ() { acquire_dst(tt::DstMode::Half); }
 ALWI void REL() { release_dst(tt::DstMode::Half); }
@@ -39,7 +40,14 @@ void MAIN {
     int index_subblock_w_offset = 0;
     int index = 0;
 
+    #ifdef SHARDED_CAUSAL_MASK
+    DPRINT << "SHARDED_CAUSAL_MASK" << ENDL();
+    #else
+    // DPRINT << "NOT SHARDED_CASUAL_MASK" << ENDL();
+    #endif
+
     for (uint32_t i = 0; i < block_h; i++) {
+        DPRINT << "Running iteration: " << i << "out of " << block_h - 1 << " iterations." << ENDL();
         #if FUSED_SCALE_MASK
         // fused scale
         unpack_reconfig_data_format(cb_in0, cb_fused_scale);
@@ -48,6 +56,10 @@ void MAIN {
         // UNPACK(( DPRINT  << TSLICE(cb_fused_scale, 0, SliceRange::h0_w0_32()) << ENDL() ));
         mul_tiles_bcast_scalar_init_short();
         index_subblock_w_offset = 0;
+
+        if (i == 4) {
+            DPRINT << "Starting loop 1..." << ENDL();
+        }
         for (uint32_t j = 0; j < num_subblocks_w; j++) {
             ACQ();
             cb_reserve_back(cb_scale_mask, subblock_w);
@@ -60,6 +72,10 @@ void MAIN {
             REL();
             index_subblock_w_offset += subblock_w;
         }
+
+        if (i == 4) {
+            DPRINT << "Ending loop 1..." << ENDL();
+        }
         cb_pop_front(cb_in0, block_w);
         unpack_reconfig_data_format(cb_scale_mask, cb_fused_attn);
 
@@ -67,7 +83,9 @@ void MAIN {
         cb_wait_front(cb_scale_mask, block_w);
 
         #ifndef SHARDED_CAUSAL_MASK
+            if (i == 4) DPRINT << "Wait fused attn " << ENDL();
             cb_wait_front(cb_fused_attn, block_w);
+            if (i == 4) DPRINT << "Wait fused attn done" << ENDL();
         #endif
 
         index_subblock_w_offset = 0;
@@ -79,6 +97,9 @@ void MAIN {
         #endif
 
         exp_tile_init(EXP_APPROX);
+        // if (i == 4) {
+        //     DPRINT << "Starting loop 2..." << ENDL();
+        // }
         for (uint32_t j = 0; j < num_subblocks_w; j++) {
             ACQ();
             #ifdef CAUSAL_MASK
@@ -101,6 +122,10 @@ void MAIN {
             REL();
             index_subblock_w_offset += subblock_w;
         }
+
+        // if (i == 4) {
+        //     DPRINT << "Ending loop 2..." << ENDL();
+        // }
         cb_pop_front(cb_scale_mask, block_w);
 
         #ifdef CAUSAL_MASK
@@ -172,5 +197,6 @@ void MAIN {
         cb_pop_front(cb_exps, block_w);
     }
 
+    DPRINT << "DONE" << ENDL();
 }
 }
