@@ -77,36 +77,36 @@ class TtFalconLayernorm:
                     ),
                 }
             )
-            # # Option1 : width sharded; produces bad PCC
-            # out = tt_lib.operations.primary.layernorm(
-            #     x,
-            #     self.layernorm_eps,
-            #     self.ln_attn_gamma[0],
-            #     self.ln_attn_beta[0],
-            #     tt_lib.tensor.MemoryConfig(
-            #         tt_lib.tensor.TensorMemoryLayout.WIDTH_SHARDED,
-            #         tt_lib.tensor.BufferType.L1,
-            #         tt_lib.tensor.ShardSpec(
-            #             shard_spec_32_cores_grid,
-            #             [
-            #                 row_height,
-            #                 shard_width_hidden_dim_across_32_cores,
-            #             ],
-            #             tt_lib.tensor.ShardOrientation.ROW_MAJOR,
-            #             False,
-            #         ),
-            #     ),
-            #     tt_lib.operations.primary.LayerNormShardedMultiCoreProgramConfig(
-            #         compute_with_storage_grid_size=[8, 4],
-            #         subblock_w=8,
-            #         block_h=row_height // 32,
-            #         block_w=8,
-            #         math_fidelity=tt_lib.tensor.MathFidelity.HiFi4,
-            #         im_data_format=tt_lib.tensor.DataType.BFLOAT16,
-            #         out_data_format=self.model_config["LN_ATTN_OUTPUT_DTYPE"],
-            #         inplace=False,
-            #     ),
-            # )
+            # Option1 : width sharded; produces bad PCC
+            out = tt_lib.operations.primary.layernorm(
+                x,
+                self.layernorm_eps,
+                self.ln_attn_gamma[0],
+                self.ln_attn_beta[0],
+                tt_lib.tensor.MemoryConfig(
+                    tt_lib.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+                    tt_lib.tensor.BufferType.L1,
+                    tt_lib.tensor.ShardSpec(
+                        shard_spec_32_cores_grid,
+                        [
+                            row_height,
+                            shard_width_hidden_dim_across_32_cores,
+                        ],
+                        tt_lib.tensor.ShardOrientation.ROW_MAJOR,
+                        False,
+                    ),
+                ),
+                tt_lib.operations.primary.LayerNormShardedMultiCoreProgramConfig(
+                    compute_with_storage_grid_size=[8, 4],
+                    subblock_w=8,
+                    block_h=row_height // 32,
+                    block_w=8,
+                    math_fidelity=tt_lib.tensor.MathFidelity.HiFi4,
+                    im_data_format=tt_lib.tensor.DataType.BFLOAT16,
+                    out_data_format=self.model_config["LN_ATTN_OUTPUT_DTYPE"],
+                    inplace=False,
+                ),
+            )
 
             # # option 2: block sharded hardcoded for S=128 and 8x4 grid of cores; produces good PCC!
             # out = tt_lib.operations.primary.layernorm(
@@ -138,15 +138,16 @@ class TtFalconLayernorm:
             #         inplace=False,
             #     ),
             # )
+
             # version according to model_config for debug
-            out = tt_lib.operations.primary.layernorm(
-                x,
-                self.layernorm_eps,
-                self.ln_attn_gamma[0],
-                self.ln_attn_beta[0],
-                self.model_config["LN_ATTN_OUTPUT_MEMCFG"],
-                self.model_config["LN_ATTN_PROGCFG"],
-            )
+            # out = tt_lib.operations.primary.layernorm(
+            #     x,
+            #     self.layernorm_eps,
+            #     self.ln_attn_gamma[0],
+            #     self.ln_attn_beta[0],
+            #     self.model_config["LN_ATTN_OUTPUT_MEMCFG"],
+            #     self.model_config["LN_ATTN_PROGCFG"],
+            # )
         else:  # Interleaved does not work for falcon40b dims [32, 8192] since once one core per tile-height is used to process the whole row
             # Option 1: uses only one core; runs out of L1
             # E           Statically allocated circular buffers on core range {} grow to {} B which is beyond max L1 size of {} B
