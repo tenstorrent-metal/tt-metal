@@ -184,7 +184,7 @@ def print_output_prompts(generated_ids, tokenizer, num_users_to_display=None):
 def run_falcon_demo_kv(
     user_input,
     model_version,
-    model_config_str,
+    model_config_str_for_decode,
     model_config,
     batch_size,
     num_layers,
@@ -345,7 +345,7 @@ def run_falcon_demo_kv(
 
     ### First run decode stage with compile ###
     # Update model_config for decode
-    model_config = get_model_config(model_config_str, "decode", [batch_size, 1], len(devices))
+    model_config = get_model_config(model_config_str_for_decode, "decode", [batch_size, 1], len(devices))
     tt_FalconCausalLM.model_config = model_config
 
     attention_mask_memconfig = model_config["ATTN_MASK_MEMCFG"]
@@ -591,9 +591,9 @@ def test_demo(
     model_location_generator,
     get_tt_cache_path,
     all_devices,
-    use_program_cache,
+    # use_program_cache,
 ):
-    num_devices = 4
+    num_devices = 8
     devices = get_devices_for_t3000(all_devices, num_devices)
 
     # disable_persistent_kernel_cache()
@@ -601,8 +601,8 @@ def test_demo(
     tt_lib.profiler.set_profiler_location(f"tt_metal/tools/profiler/logs/falcon40b")
 
     # Set it up for prefill initially and change the model_config to decode
-    model_config_str = "BFLOAT8_B-SHARDED"
-    model_config = get_model_config("BFLOAT8_B-SHARDED", "prefill", [1, 32], num_devices)
+    model_config_str_for_decode = "BFLOAT8_B-SHARDED"  # Decode model config
+    model_config = get_model_config("BFLOAT8_B-DRAM", "prefill", [1, 32], num_devices)  # Prefill model config
     model_version = model_config_entries["_name_or_path"]
     tt_cache_path = get_tt_cache_path(
         model_version, model_subdir="Falcon", default_dir=model_config["DEFAULT_CACHE_PATH"]
@@ -611,7 +611,7 @@ def test_demo(
     return run_falcon_demo_kv(
         user_input=user_input,
         model_version=model_version,
-        model_config_str=model_config_str,
+        model_config_str_for_decode=model_config_str_for_decode,
         model_config=model_config,
         batch_size=32,
         num_layers=model_config_entries["num_hidden_layers"],
@@ -619,5 +619,5 @@ def test_demo(
         model_location_generator=model_location_generator,
         tt_cache_path=tt_cache_path,
         devices=devices,
-        prefill_on_host=True,
+        prefill_on_host=False,
     )
