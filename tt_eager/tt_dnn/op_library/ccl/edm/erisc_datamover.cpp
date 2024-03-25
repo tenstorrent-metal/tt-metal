@@ -126,24 +126,17 @@ void kernel_main() {
     uint8_t const sender_channels_start = get_arg_val<uint32_t>(args_offset++);
     uint32_t const sender_num_channels = num_senders;//get_arg_val<uint32_t>(args_offset++);
     uint8_t num_senders_with_no_work = 0;
-    DPRINT << "EDM sender_num_channels " << sender_num_channels << "\n";
     for (uint32_t channel = 0; channel < sender_num_channels; channel++) {
         uint32_t const sender_buffer_address = get_arg_val<uint32_t>(args_offset++);
         uint32_t const sender_num_messages_to_send = get_arg_val<uint32_t>(args_offset++);
-        DPRINT << "EDM sender sender_buffer_address " << sender_buffer_address << "\n";
-        DPRINT << "EDM sender sender_num_messages_to_send " << sender_num_messages_to_send << "\n";
         // Each channel buffer is at buffer_base + (channel_id * sender_channel_size)
         // Each channel currently constrained to the same buffer size
         uint32_t const sender_channel_size = get_arg_val<uint32_t>(args_offset++);
-        DPRINT << "EDM sender sender_channel_size " << sender_channel_size << "\n";
         // The erisc's local l1 copy of the semaphore workers remotely increment
         uint32_t const sender_semaphores_base_address = get_arg_val<uint32_t>(args_offset++);
-        DPRINT << "EDM sender sender_semaphores_base_address " << sender_semaphores_base_address << "\n";
         // worker's semaphore L1 address
         const uint32_t worker_semaphore_address = get_arg_val<uint32_t>(args_offset++);
         const uint32_t sender_num_workers = get_arg_val<uint32_t>(args_offset++);
-        DPRINT << "EDM sender worker_semaphore_address " << worker_semaphore_address << "\n";
-        DPRINT << "EDM sender sender_num_workers " << sender_num_workers << "\n";
         const uint32_t workers_xy_list_addr = get_arg_addr(args_offset);
         args_offset += sender_num_workers;
         new (&buffer_channels[sender_channels_start + channel]) erisc::datamover::ChannelBuffer(

@@ -6,13 +6,9 @@
 
 #include "dataflow_api.h"
 #include "debug/assert.h"
-#include "debug/dprint.h"
 #include "tt_eager/tt_dnn/op_library/all_gather/kernels/dataflow/worker_ring_gather_utils.hpp"
 
 void kernel_main() {
-    DPRINT << "RR: START\n";
-    DPRINT << "RR: \tmy_y:" << (uint32_t)(my_y[0]) << "\n";
-    DPRINT << "RR: \tmy_x:" << (uint32_t)(my_x[0]) << "\n";
     // TODO: Update the interleaver receive reader kernel invocation to just be able to use this
     constexpr ShardType shard_type = static_cast<ShardType>(get_compile_time_arg_val(0));
     ShardAddrGen<shard_type> input_tensor_shard_writer;
@@ -34,7 +30,6 @@ void kernel_main() {
     arg_index += input_tensor_shard_writer.get_num_args_consumed();
     ASSERT(eth_receiver_noc_x >= 1 && eth_receiver_noc_x < 12  && (eth_receiver_noc_y == 0 || eth_receiver_noc_y == 6));
 
-
     // Eth receiver will set this semaphore when data is available
     volatile tt_l1_ptr uint32_t* receiver_read_semaphore_addr_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(receiver_read_sem_addr);
 
@@ -46,57 +41,22 @@ void kernel_main() {
 
     constexpr uint32_t cb_id_in0 = tt::CB::c_in0;
 
-    // -1 because we are not receiving from our local chip (local chip has num_dest_cores_worth of tiles already handled)
     uint32_t shards_per_ring_index = input_tensor_shard_writer.get_num_dest_cores();
-    DPRINT << "RR: shards_per_ring_index: " << shards_per_ring_index << "\n";
-    // DPRINT << "RR: total_num_shards: " << total_num_shards << "\n";
-    DPRINT << "RR: input_shards_per_eth_buffer: " << input_shards_per_eth_buffer << "\n";
-    DPRINT << "RR: num_transfers: " << num_transfers << "\n";
-
     uint32_t const shard_size = input_tensor_shard_writer.get_shard_size_in_bytes();
-
     for (uint32_t t = 0; t < num_transfers; t++) {
-        DPRINT << "RR: transfer " << t << "\n";
-        // DPRINT << "RR: Eth buffer flush " << i << "\n";
         for (uint32_t i = 0; i < shards_per_ring_index; i += input_shards_per_eth_buffer) {
             uint32_t shards_to_send = std::min(input_shards_per_eth_buffer, shards_per_ring_index - i);
-            // `shards_to_send` to CB ... need to make sure we are aware of CB wraparound
-            DPRINT << "RR: Waiting for semaphore inc at " << (uint32_t)receiver_read_semaphore_addr_ptr << "\n";
             noc_semaphore_wait(receiver_read_semaphore_addr_ptr, 1);
             noc_semaphore_set(receiver_read_semaphore_addr_ptr, 0);
-            DPRINT << "RR: \tgot semaphore inc from EDM\n";
-            DPRINT << "RR: sending " << shards_to_send << " shards through cb\n";
-            constexpr bool use_optimized = true;
-            if constexpr (use_optimized) {
-                fetch_chunk_sharded(
-                    cb_id_in0,
-                    shards_to_send,
-                    shard_size,
-                    eth_receiver_l1_base_noc_addr);
-                noc_semaphore_inc(eth_receiver_l1_semaphore_noc_addr, 1);
-            } else {
-                for (uint32_t s = 0; s < shards_to_send; ++s) {
-                    DPRINT << "RR: Shard " << i + s << "\n";
-                    // Read page by page so that writer can be kicked off instead of being blocked waiting for full
-                    // chunk to be read Look into perf/optimizations for this
-                    uint64_t source_eth_buffer_noc_addr = eth_receiver_l1_base_noc_addr + s * shard_size;
-                    DPRINT << "RR: \tfetching chunk from source_eth_buffer_noc_addr: " << (uint64_t)(source_eth_buffer_noc_addr & 0xFFFFFFFF) << "\n";
-                    fetch_chunk_sharded(
-                        cb_id_in0,
-                        1,
-                        shard_size,
-                        source_eth_buffer_noc_addr);
-                }
-                noc_semaphore_inc(eth_receiver_l1_semaphore_noc_addr, 1);
-            }
-            // Might need to move inside the loop above
+            fetch_chunk_sharded(
+                cb_id_in0,
+                shards_to_send,
+                shard_size,
+                eth_receiver_l1_base_noc_addr);
+            noc_semaphore_inc(eth_receiver_l1_semaphore_noc_addr, 1);
             if (half_cb_n_pages > shards_to_send) {
-                DPRINT << "RR: push_filler_pages_to_cb " << half_cb_n_pages - shards_to_send << "\n";
                 push_filler_pages_to_cb(cb_id_in0, half_cb_n_pages - shards_to_send);
             }
         }
     }
-
-
-    DPRINT << "RR: END\n";
 }
