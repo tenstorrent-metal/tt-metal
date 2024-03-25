@@ -76,27 +76,39 @@ class TtMambaBlock(torch.nn.Module):
         self.tt_ssm = TtMambaSSM(self.args,self.device, configs, load_fn)
 
     def forward(self, x):
-        x_input = x # b, e=d_model
+
+        residual_connection = x # b, e=d_model
+
         x = ttnn.linear(x, self.ssm_in_proj_weights, memory_config=ttnn.L1_MEMORY_CONFIG)
-        # left shift conv states
+
         ttnn.deallocate(self.conv_states[0])
         for i in range(3):
             self.conv_states[i] = self.conv_states[i + 1]
-        self.conv_states[3] = x
 
-        # do the convolution
+        self.conv_states[3] = ttnn.to_memory_config(x, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+
         x = ttnn.mul(self.conv1d_weights[0], self.conv_states[0], memory_config=ttnn.L1_MEMORY_CONFIG)
+
         for i in range(1,4):
             prod = ttnn.mul(self.conv1d_weights[i], self.conv_states[i], memory_config=ttnn.L1_MEMORY_CONFIG)
             x = ttnn.add(x, prod, memory_config=ttnn.L1_MEMORY_CONFIG)
+            ttnn.deallocate(prod)
+
         x = ttnn.add(x, self.conv1d_bias, memory_config=ttnn.L1_MEMORY_CONFIG)
         x = ttnn.silu(x, memory_config=ttnn.L1_MEMORY_CONFIG)
-        x = self.tt_ssm(x)
-        res = ttnn.linear(x_input, self.mlp_proj_weights, memory_config=ttnn.L1_MEMORY_CONFIG)
-        res_after_silu = ttnn.silu(res, memory_config=ttnn.L1_MEMORY_CONFIG)
-        ttnn.deallocate(res)
-        x = ttnn.mul(x, res_after_silu, memory_config=ttnn.L1_MEMORY_CONFIG)
-        ttnn.deallocate(res_after_silu)
-        x = ttnn.linear(x, self.out_proj_weights, memory_config=ttnn.L1_MEMORY_CONFIG)
 
-        return x
+        x = self.tt_ssm(x)
+
+        residual = ttnn.linear(residual_connection, self.mlp_proj_weights, memory_config=ttnn.L1_MEMORY_CONFIG)
+        ttnn.deallocate(residual_connection)
+
+        residual_with_silu = ttnn.silu(residual, memory_config=ttnn.L1_MEMORY_CONFIG)
+        ttnn.deallocate(residual)
+
+        out = ttnn.mul(x, residual_with_silu, memory_config=ttnn.L1_MEMORY_CONFIG)
+        ttnn.deallocate(residual_with_silu)
+        ttnn.deallocate(x)
+
+        out = ttnn.linear(out, self.out_proj_weights, memory_config=ttnn.L1_MEMORY_CONFIG)
+
+        return out
