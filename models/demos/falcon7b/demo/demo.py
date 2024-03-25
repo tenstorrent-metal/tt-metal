@@ -231,7 +231,7 @@ def run_falcon_demo_kv(
         )
         assert tt_decode_attention_mask is not None
 
-        logger.info("starting forward pass")
+        # logger.info("starting forward pass")
         tt_logits, kv_cache_singlelayer = tt_FalconCausalLM_singlelayer(
             input_embeddings=tt_decode_embeddings,
             llm_mode="decode",
@@ -241,7 +241,7 @@ def run_falcon_demo_kv(
             use_cache=use_cache,
         )
         tt_lib.device.Synchronize(device)
-        logger.info("finished forward pass")
+        # logger.info("finished forward pass")
         time_decode_compile_end = time.time()
         time_decode_compile += time_decode_compile_end - time_decode_compile_start
 
