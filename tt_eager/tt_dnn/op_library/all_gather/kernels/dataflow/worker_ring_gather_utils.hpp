@@ -149,58 +149,6 @@ struct ShardAddrGen final {
     // uint16_t contiguous_chunks_before_stride;
     FORCE_INLINE void advance() {
         if constexpr (TYPE == ShardType::Width or TYPE == ShardType::Height) {
-            // if (this->is_clockwise) {
-            //     // Read inputs in reverse order too
-            //     // f
-            //     bool do_chunk_wrap = this->curr_core_chunk_index == 0 ||
-            //         (contiguous_chunk_count == contiguous_chunks_before_stride  &&
-            //         this->curr_core_chunk_index < this->intra_core_stride_in_shards);
-
-
-
-            //     if (do_chunk_wrap) {
-            //         bool do_core_wrap = this->curr_worker_index == 0;
-            //         this->curr_core_chunk_index = this->chunks_per_core_before_advance - 1;
-            //         this->contiguous_chunk_count = 1;
-            //         if (do_core_wrap) {
-            //             this->curr_worker_index = this->num_dest_cores - 1;
-            //         } else {
-            //             this->curr_worker_index--;
-            //         }
-            //     } else {
-            //         if (this->contiguous_chunk_count == this->contiguous_chunks_before_stride) {
-            //             this->contiguous_chunk_count = 1;
-            //             ASSERT(this->curr_core_chunk_index >= this->intra_core_stride_in_shards);
-            //             this->curr_core_chunk_index -= this->intra_core_stride_in_shards;
-            //         } else {
-            //             this->contiguous_chunk_count++;
-            //             this->curr_core_chunk_index--;
-            //         }
-            //     }
-
-            // } else {
-            //     // If I analyzed it properly, then we should never be wrapping back to the first dest core *and* still have
-            //     // tiles/input shards to move
-            //     if (this->contiguous_chunk_count == this->contiguous_chunks_before_stride) {
-            //         this->contiguous_chunk_count = 1;
-            //         ASSERT(this->curr_core_chunk_index >= this->intra_core_stride_in_shards);
-            //         this->curr_core_chunk_index -= this->intra_core_stride_in_shards;
-            //     } else {
-            //         this->contiguous_chunk_count++;
-            //         this->curr_core_chunk_index--;
-            //     }
-            //     this->curr_core_chunk_index++;
-            //     bool do_chunk_wrap = this->curr_core_chunk_index == this->chunks_per_core_before_advance;
-            //     if (do_chunk_wrap) {
-            //         this->curr_core_chunk_index = 0;
-            //         this->curr_worker_index++;
-            //         bool do_core_wrap = this->curr_worker_index == this->num_dest_cores;
-            //         if (do_core_wrap) {
-            //             this->curr_worker_index = 0;
-            //         }
-            //     }
-            // }
-
             ccl::all_gather::addr_gen_advance_width_sharded(
                 this->curr_core_chunk_index,
                 this->curr_worker_index,

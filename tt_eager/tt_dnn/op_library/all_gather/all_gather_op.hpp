@@ -37,7 +37,8 @@ class AllGatherConfig {
         this->num_buffers = (this->enable_bidirectional ? 8 : (this->is_sharded ? 8 : 4));
         if (this->is_sharded) {
             this->num_buffers = std::min(this->num_buffers, input_tensor.shard_spec()->num_cores());
-            if ((input_tensor.shard_spec()->num_cores() * this->num_buffers) % (input_tensor.shard_spec()->num_cores() * ring_size / this->num_buffers)) {
+            if ((input_tensor.shard_spec()->num_cores() / this->num_buffers) % (ring_size) != 0 &&
+                (ring_size % (input_tensor.shard_spec()->num_cores() / this->num_buffers) != 0)) {
                 // Currently don't support misalignment here
                 this->num_buffers = 1;
             }
