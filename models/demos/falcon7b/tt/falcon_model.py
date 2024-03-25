@@ -55,7 +55,7 @@ class TtFalconModelShared(torch.nn.Module):
         for layer_num in tqdm(range(num_layers)):
             layers.append(
                 TtFalconDecoderLayer(
-                    device=device,
+                    devices=devices,
                     state_dict=state_dict,
                     base_url=f"{base_url}.h",
                     layer_num=layer_num,
