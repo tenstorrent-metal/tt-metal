@@ -386,6 +386,7 @@ class TtFalconAttention:
         for i in range(len(hidden_states)):
             fused_query_key_value.append(
                 tt_lib.operations.primary.matmul_1d(
+                    # tt_lib.operations.primary.matmul( # TODO: change to 2d matmul; based on S?
                     hidden_states[i],
                     self.query_key_value_weights[i],
                     program_config=self.model_config["QKV_MM_PROGCFG"],

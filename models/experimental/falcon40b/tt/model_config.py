@@ -304,6 +304,17 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 fused_activation=None,
                 mcast_in0=True,
             )
+            # model_config["QKV_MM_PROGCFG"] = ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
+            #     compute_with_storage_grid_size=(4, 4),
+            #     in0_block_w=16,  # TODO: Can this be larger # 256 tiles in K
+            #     out_subblock_h=4,  # TODO: Can this be larger
+            #     out_subblock_w=1,
+            #     per_core_M=row_height // 32 // 4, # S=512 -> 4
+            #     per_core_N=1152 // 32 // 4, # 9
+            #     # fuse_batch=True,
+            #     fused_activation=None,
+            #     transpose_mcast=False
+            # )
 
         # Softmax
         if num_devices == 4:
