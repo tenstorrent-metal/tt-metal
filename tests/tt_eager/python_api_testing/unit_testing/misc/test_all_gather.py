@@ -555,7 +555,7 @@ def test_all_gather_post_commit_sharded(
     if len(all_devices) != 8:
         pytest.skip("Not T3000!")
 
-    if input_dtype != ttl.tensor.DataType.BFLOAT8_B:
+    if input_dtype == ttl.tensor.DataType.BFLOAT8_B:
         pytest.skip("Only BFLOAT8_B not supported yet")
 
     numel = input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3] * num_devices
