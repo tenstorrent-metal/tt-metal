@@ -71,7 +71,7 @@ void Softmax::validate(const std::vector<Tensor> &input_tensors, const std::vect
                         TT_FATAL(program_config.block_w % program_config.subblock_w == 0, "block_w must be divisible by subblock_w.");
                         TT_FATAL(M % TILE_HEIGHT == 0, "M must be divisible by tile height.");
                         TT_FATAL(K % TILE_WIDTH == 0, "K must be divisible by tile width.");
-                        //TT_FATAL(M * K / (block_w * block_h) == num_cores_r * num_cores_c, "number of shards must equal to number of cores. M = {}, K = {}, block_w = {}, block_h = {}, num_cores = {}", M, K, block_w, block_h, num_cores_r * num_cores_c);
+                        TT_FATAL(M * K / (block_w * block_h) == num_cores_r * num_cores_c, "number of shards must equal to number of cores. M = {}, K = {}, block_w = {}, block_h = {}, num_cores = {}", M, K, block_w, block_h, num_cores_r * num_cores_c);
                         TT_FATAL(this->inplace);
                         // check sharding dim
                         TT_FATAL(block_w == shape[3], "shard width must equal to input tensor shape[3]!");

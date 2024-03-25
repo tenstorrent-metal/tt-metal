@@ -546,15 +546,24 @@ def test_softmax(device, num_cores, seq_len):
         pytest.skip(f"Need {num_cores} cores to run this test but core grid is {compute_grid_size}")
     grid_size = (8, 8)
 
+    sharded_version = False
     head_dim = 71
     input_shape = [1, head_dim, seq_len, seq_len]
     attention_mask_1_head_dim_shape = [1, 1, seq_len, seq_len]
-    attention_mask_shape = [1, head_dim, seq_len, seq_len]
+    if sharded_version:
+        attention_mask_shape = [1, head_dim, seq_len, seq_len]
+    else:
+        attention_mask_shape = [1, 1, seq_len, seq_len]
+    # attention_mask_shape = [1, head_dim, seq_len, seq_len]
     scalar_shape = [1, 1, 32, 32]
 
     torch_input = torch.randn(input_shape).bfloat16().float()
     torch_attention_mask_1_head_dim = torch.randn(attention_mask_1_head_dim_shape).bfloat16().float()
-    torch_attention_mask = torch_attention_mask_1_head_dim.repeat(1, attention_mask_shape[1], 1, 1)
+
+    if sharded_version:
+        torch_attention_mask = torch_attention_mask_1_head_dim.repeat(1, attention_mask_shape[1], 1, 1)
+    else:
+        torch_attention_mask = torch_attention_mask_1_head_dim
     # torch_attention_mask = torch.randn(attention_mask_shape).bfloat16().float()
     print("Shape is", torch_attention_mask.shape)
     torch_scalar = (torch.ones(scalar_shape) * (1 / math.sqrt(head_dim))).bfloat16().float()
@@ -606,61 +615,91 @@ def test_softmax(device, num_cores, seq_len):
     height_shard_spec = [tiles_per_shard * 32, seq_len]
 
     for i in range(num_slices):
-        input_slice = ttl.tensor.interleaved_to_sharded_partial(
-            tt_input,
-            grid_size,
-            height_shard_spec,
-            num_slices,
-            i,
-            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
-            ttl.tensor.ShardOrientation.ROW_MAJOR,
-        )
+        if sharded_version:
+            input_slice = ttl.tensor.interleaved_to_sharded_partial(
+                tt_input,
+                grid_size,
+                height_shard_spec,
+                num_slices,
+                i,
+                ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+            )
 
-        tt_attn_mask_slice = ttl.tensor.interleaved_to_sharded_partial(
-            tt_attention_mask,
-            grid_size,
-            height_shard_spec,
-            num_slices,
-            i,
-            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
-            ttl.tensor.ShardOrientation.ROW_MAJOR,
-        )
+            tt_attn_mask_slice = ttl.tensor.interleaved_to_sharded_partial(
+                tt_attention_mask,
+                grid_size,
+                height_shard_spec,
+                num_slices,
+                i,
+                ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+            )
 
-        softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
-            compute_with_storage_grid_size=grid_size,
-            subblock_w=1,
-            block_h=height_shard_spec[0] // 32,
-            block_w=height_shard_spec[1] // 32,
-            math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-            im_data_format=ttl.tensor.DataType.BFLOAT16,
-        )
+            softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
+                compute_with_storage_grid_size=grid_size,
+                subblock_w=1,
+                block_h=height_shard_spec[0] // 32,
+                block_w=height_shard_spec[1] // 32,
+                math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+                im_data_format=ttl.tensor.DataType.BFLOAT16,
+            )
 
-        # print("Running softmax in place")
-        # when in_1 (attention_mask) is sharded, we need it to be this shape: [1, 71, seq_len, seq_len]
-        # when in_1 (attention_mask) is interleaved, we need it to be this shape [1, 1, seq_len, seq_len] and it hangs!
-        # make it unhang
-        slice_out = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
-            input_slice,
-            1 / math.sqrt(head_dim),
-            tt_attn_mask_slice,
-            program_config=softmax_program_config,
-            is_causal_mask=True,
-        )
-        # print("Done softmax in place")
+            # print("Running softmax in place")
+            # when in_1 (attention_mask) is sharded, we need it to be this shape: [1, 71, seq_len, seq_len]
+            # when in_1 (attention_mask) is interleaved, we need it to be this shape [1, 1, seq_len, seq_len] and it hangs!
+            # make it unhang
+            slice_out = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+                input_slice,
+                1 / math.sqrt(head_dim),
+                tt_attn_mask_slice,
+                program_config=softmax_program_config,
+                is_causal_mask=True,
+            )
+            # print("Done softmax in place")
 
-        # print("Running S->I partial")
-        ttl.tensor.sharded_to_interleaved_partial(
-            slice_out,
-            tt_output_sharded_softmax,
-            num_slices,
-            i,
-            dram_interleaved_memory_config,
-        )
-        # print("Done S->I partial")
+            # print("Running S->I partial")
+            ttl.tensor.sharded_to_interleaved_partial(
+                slice_out,
+                tt_output_sharded_softmax,
+                num_slices,
+                i,
+                dram_interleaved_memory_config,
+            )
+            # print("Done S->I partial")
 
-        # print("Dealloc begin")
-        slice_out.deallocate()
-        # print("Dealloc end")
+            # print("Dealloc begin")
+            slice_out.deallocate()
+            # print("Dealloc end")
+        else:
+            # Interleaved version
+            # In0 sharded
+            input_slice = ttl.tensor.interleaved_to_sharded_partial(
+                tt_input,
+                grid_size,
+                height_shard_spec,
+                num_slices,
+                i,
+                ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+                ttl.tensor.ShardOrientation.ROW_MAJOR,
+            )
+
+            softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
+                compute_with_storage_grid_size=grid_size,
+                subblock_w=1,
+                block_h=height_shard_spec[0] // 32,
+                block_w=height_shard_spec[1] // 32,
+                math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+                im_data_format=ttl.tensor.DataType.BFLOAT16,
+            )
+
+            tt_output_softmax = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+                input_slice,
+                1 / math.sqrt(head_dim),
+                tt_attention_mask,
+                program_config=softmax_program_config,
+                is_causal_mask=True,
+            )
 
     # Interleaved softmax
     # print("Running softmax 2")
@@ -678,11 +717,15 @@ def test_softmax(device, num_cores, seq_len):
     # print("Done Converting 1")
 
     # print("Converting 2")
-    out_torch_sharded_softmax = tt2torch_tensor(tt_output_sharded_softmax)
+    if sharded_version:
+        out_torch_softmax = tt2torch_tensor(tt_output_sharded_softmax)
+    else:
+        out_torch_softmax = tt2torch_tensor(tt_output_softmax)
+        pass
     # print("Done Converting 2")
 
     passing = True
-    passing, output = comp_pcc(out_torch, out_torch_sharded_softmax)
+    passing, output = comp_pcc(out_torch, out_torch_softmax)
 
     print(output)
     assert passing
