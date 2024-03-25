@@ -101,7 +101,7 @@ inline void addr_gen_advance_width_sharded(
         // current_core_chunks_visited++;
         if (do_chunk_wrap) {
             bool do_core_wrap = curr_worker_index == 0;
-            curr_core_chunk_index = total_chunks_per_core - (intra_core_stride_in_shards - curr_core_chunk_index);
+            curr_core_chunk_index = (total_chunks_per_core - curr_core_chunk_index) - ((intra_core_stride_in_shards - 1)  + contiguous_chunks_before_stride);
             contiguous_chunk_count = 1;
             if (do_core_wrap) {
                 curr_worker_index = num_dest_cores - 1;
@@ -114,7 +114,7 @@ inline void addr_gen_advance_width_sharded(
             if (do_stride) {
                 contiguous_chunk_count = 1;
                 // TT_ASSERT(curr_core_chunk_index >= intra_core_stride_in_shards);
-                curr_core_chunk_index -= intra_core_stride_in_shards;
+                curr_core_chunk_index -= (intra_core_stride_in_shards - 1);
             } else {
                 contiguous_chunk_count++;
                 curr_core_chunk_index--;

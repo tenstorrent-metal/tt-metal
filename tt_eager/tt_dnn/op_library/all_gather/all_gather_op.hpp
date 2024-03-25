@@ -26,7 +26,7 @@ class AllGatherConfig {
 
         // enable_bidirectional - currently doesn't support batch dim and multi-link (some tests are flaky with those configs)
         erisc_handshake_address(eth_l1_mem::address_map::ERISC_L1_UNRESERVED_BASE),
-        enable_bidirectional(!input_tensor.is_sharded() && dim != 0 && dim != 1),
+        enable_bidirectional(dim != 0 && dim != 1),
 
         input_is_dram(input_tensor.buffer()->buffer_type() == BufferType::DRAM),
         output_is_dram(output_tensor.buffer()->buffer_type() == BufferType::DRAM)
@@ -37,6 +37,10 @@ class AllGatherConfig {
         this->num_buffers = (this->enable_bidirectional ? 8 : (this->is_sharded ? 8 : 4));
         if (this->is_sharded) {
             this->num_buffers = std::min(this->num_buffers, input_tensor.shard_spec()->num_cores());
+            if ((input_tensor.shard_spec()->num_cores() * this->num_buffers) % (input_tensor.shard_spec()->num_cores() * ring_size / this->num_buffers)) {
+                // Currently don't support misalignment here
+                this->num_buffers = 1;
+            }
             log_trace(tt::LogOp, "this->num_buffers: {}", this->num_buffers);
         }
         this->eth_sems_l1_base_byte_address = this->erisc_handshake_address + 16;
@@ -75,6 +79,9 @@ class AllGatherConfig {
     uint32_t get_semaphore_size() const { return this->semaphore_size; }
 
     uint32_t get_num_buffers_in_clockwise_direction() const {
+        if (this->is_sharded) {
+            return 0;
+        }
         return this->enable_bidirectional ?
             this->num_buffers / 2 :
             this->num_buffers;
@@ -99,6 +106,7 @@ class AllGatherConfig {
 
     void print() const {
         log_trace(tt::LogOp, "AllGatherConfig: (");
+        log_trace(tt::LogOp, "\tis_sharded: {}", is_sharded);
         log_trace(tt::LogOp, "\terisc_handshake_address: {}", erisc_handshake_address);
         log_trace(tt::LogOp, "\tnum_buffers: {}", num_buffers);
         log_trace(tt::LogOp, "\teth_buffer_size: {}", eth_buffer_size);
@@ -486,13 +494,13 @@ struct OutputTensorShardAddrGenArgGenerator final : ShardAddrGenArgGenerator {
 
     static uint16_t get_intra_core_stride_in_shards(uint32_t input_shard_grid_size, uint32_t num_workers, uint32_t ring_size) {
 
-        auto stride = (input_shard_grid_size == num_workers && num_workers == 1) ? 1 : (input_shard_grid_size / num_workers) + 1;
+        auto stride = (num_workers == 1) ? 1 : (input_shard_grid_size / num_workers) + 1;
         TT_ASSERT(stride > 0, "Stride must be greater than 0");
         return stride;
 
     }
     static uint16_t get_contiguous_chunks_before_stride(uint32_t input_shard_grid_size, uint32_t num_workers, uint32_t ring_size) {
-        auto n_contiguous = input_shard_grid_size / num_workers;
+        auto n_contiguous = (num_workers == 1) ? 1 : input_shard_grid_size / num_workers;
         TT_ASSERT(n_contiguous > 0, "Stride must be greater than 0");
         return n_contiguous;
     }

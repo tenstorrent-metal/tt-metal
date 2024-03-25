@@ -228,6 +228,7 @@ struct ShardAddrGen final {
             ccl::WorkerXY dest_worker = this->get_next_noc_xy_core();
             uint32_t curr_address = this->shards_start_address + this->curr_core_chunk_index * this->shard_size_in_bytes;
             ASSERT(curr_address + this->shard_size_in_bytes <= 1499136); // L1 wraparound - oops!
+            ASSERT(this->shards_start_address <= curr_address);
             this->advance();
             return get_noc_addr(dest_worker.x, dest_worker.y, curr_address);
         } else {
