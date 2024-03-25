@@ -81,6 +81,33 @@ def run_test_FalconLayernorm_inference(pcc, devices, model_location_generator, g
     input = input.to(devices[0], model_config["DEFAULT_MEMCFG"])
 
     if is_sharded:
+        # Option1 : width sharded; produces bad PCC
+        shard_spec_32_cores_grid = ttl.tensor.CoreRangeSet(
+            {
+                ttl.tensor.CoreRange(
+                    ttl.tensor.CoreCoord(0, 0),
+                    ttl.tensor.CoreCoord(7, 3),
+                ),
+            }
+        )
+        input = ttl.tensor.interleaved_to_sharded(
+            input,
+            sharded_mem_config=ttl.tensor.MemoryConfig(
+                ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+                ttl.tensor.BufferType.L1,
+                ttl.tensor.ShardSpec(
+                    shard_spec_32_cores_grid,
+                    [
+                        seqlen,
+                        config.hidden_size // 32,
+                    ],
+                    ttl.tensor.ShardOrientation.ROW_MAJOR,
+                    False,
+                ),
+            ),
+        )
+
+        # # Option 2: block sharded hardcoded for S=128 and 8x4 grid of cores; produces good PCC!
         # shard_spec_32_cores_grid = ttl.tensor.CoreRangeSet(
         #         {
         #             ttl.tensor.CoreRange(
@@ -89,24 +116,28 @@ def run_test_FalconLayernorm_inference(pcc, devices, model_location_generator, g
         #             ),
         #         }
         #     )
+        # input = ttl.tensor.interleaved_to_sharded(
+        #     input,
+        #     sharded_mem_config=ttl.tensor.MemoryConfig(
+        #     ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
+        #     ttl.tensor.BufferType.L1,
+        #     ttl.tensor.ShardSpec(
+        #         shard_spec_32_cores_grid,
+        #         [
+        #             32,
+        #             1024,
+        #         ],
+        #         ttl.tensor.ShardOrientation.ROW_MAJOR,
+        #         False,
+        #     ),
+        #     )
+        # )
 
-        input = ttl.tensor.interleaved_to_sharded(
-            input,
-            sharded_mem_config=model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"],
-            # sharded_mem_config=ttl.tensor.MemoryConfig(
-            # ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
-            # ttl.tensor.BufferType.L1,
-            # ttl.tensor.ShardSpec(
-            #     shard_spec_32_cores_grid,
-            #     [
-            #         32,
-            #         1024,
-            #     ],
-            #     ttl.tensor.ShardOrientation.ROW_MAJOR,
-            #     False,
-            # ),
-            # )
-        )
+        # # Version according to model_config for debug
+        # input = ttl.tensor.interleaved_to_sharded(
+        #     input,
+        #     sharded_mem_config=model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"],
+        # )
 
     # PyTorch output --------------------------------------------------------------------
     pytorch_FalconLayernorm_model = PytorchFalconLayernorm(hugging_face_reference_model)
