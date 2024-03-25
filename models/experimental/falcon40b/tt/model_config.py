@@ -175,6 +175,12 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
             fp32_dest_acc_en=True,
             packer_l1_acc=True,
         ),
+        "COMPUTE_KERNEL_FP16_ACC_CONFIG": ttl.tensor.WormholeComputeKernelConfig(
+            math_fidelity=ttl.tensor.MathFidelity.LoFi,
+            math_approx_mode=True,
+            fp32_dest_acc_en=False,
+            packer_l1_acc=True,
+        ),
     }
     model_config.update({f"{key}_MEMCFG": mem_config for key in OP_KEYS if key not in NO_MEMCFG})
     model_config.update({f"{key}_DTYPE": dtype for key in OP_KEYS if key not in NO_DTYPE})
@@ -378,18 +384,30 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 mcast_in0=True,
             )
         if num_devices == 8:
+            # model_config[
+            #     "DENSE_H_TO_4H_MM_PROGCFG"
+            # ] = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+            #     compute_with_storage_grid_size=(8, 4),
+            #     in0_block_w=8,  # TODO: Can this be larger
+            #     out_subblock_h=1,  # TODO: Can this be larger
+            #     out_subblock_w=4,
+            #     per_core_M=row_height // 32,
+            #     per_core_N=4,
+            #     fuse_batch=True,
+            #     fused_activation=[ttl.tensor.FusibleActivation.GELU, True],
+            #     mcast_in0=True,
+            # )
             model_config[
                 "DENSE_H_TO_4H_MM_PROGCFG"
-            ] = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+            ] = ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
                 compute_with_storage_grid_size=(8, 4),
-                in0_block_w=8,  # TODO: Can this be larger
-                out_subblock_h=1,  # TODO: Can this be larger
-                out_subblock_w=4,
-                per_core_M=row_height // 32,
-                per_core_N=4,
-                fuse_batch=True,
+                in0_block_w=8,  # how much inner dim you take each time
+                out_subblock_h=1,  # Must be divisible by per_core_M
+                out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
+                per_core_M=row_height // 32 // 4,  # M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
+                per_core_N=16,  # N / TILE_WIDTH / Grid_Size
+                transpose_mcast=False,
                 fused_activation=[ttl.tensor.FusibleActivation.GELU, True],
-                mcast_in0=True,
             )
         # MLP FF2
         if num_devices == 4:
@@ -407,18 +425,30 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 mcast_in0=True,
             )
         elif num_devices == 8:
+            # model_config[
+            #     "DENSE_4H_TO_H_MM_PROGCFG"
+            # ] = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+            #     compute_with_storage_grid_size=(8, 4),
+            #     in0_block_w=32,  # TODO: Can this be larger
+            #     out_subblock_h=1,  # TODO: Can this be larger
+            #     out_subblock_w=1,
+            #     per_core_M=row_height // 32,
+            #     per_core_N=1,
+            #     fuse_batch=True,
+            #     fused_activation=None,
+            #     mcast_in0=True,
+            # )
             model_config[
                 "DENSE_4H_TO_H_MM_PROGCFG"
-            ] = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+            ] = ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
                 compute_with_storage_grid_size=(8, 4),
-                in0_block_w=32,  # TODO: Can this be larger
-                out_subblock_h=1,  # TODO: Can this be larger
-                out_subblock_w=1,
-                per_core_M=row_height // 32,
-                per_core_N=1,
-                fuse_batch=True,
+                in0_block_w=8,  # how much inner dim you take each time
+                out_subblock_h=1,  # Must be divisible by per_core_M
+                out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
+                per_core_M=row_height // 32 // 4,  # M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
+                per_core_N=4,  # N / TILE_WIDTH / Grid_Size
+                transpose_mcast=False,
                 fused_activation=None,
-                mcast_in0=True,
             )
 
         # LM Head
