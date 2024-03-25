@@ -34,8 +34,8 @@ constexpr uint32_t DISPATCH_BUFFER_BLOCK_SIZE_PAGES = 764 * 1024 / (1 << DISPATC
 // Starting L1 address of commands
 inline uint32_t get_dispatch_buffer_base(bool use_eth_l1) {
     uint32_t dispatch_buffer_base_addr = use_eth_l1 ? ERISC_L1_UNRESERVED_BASE : L1_UNRESERVED_BASE;
-    TT_ASSERT((dispatch_buffer_base_addr & ((1 << DISPATCH_BUFFER_LOG_PAGE_SIZE) - 1)) == 0);
-    return dispatch_buffer_base_addr;
+    uint32_t dispatch_buffer_base_aligned = align(dispatch_buffer_base_addr, (1 << DISPATCH_BUFFER_LOG_PAGE_SIZE)); // Was not aligned, lately.
+    return dispatch_buffer_base_aligned;
 }
 
 inline uint32_t get_eth_command_start_l1_address(SyncCBConfigRegion cq_region) {

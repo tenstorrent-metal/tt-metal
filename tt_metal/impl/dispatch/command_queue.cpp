@@ -78,8 +78,8 @@ EnqueueReadBufferCommand::EnqueueReadBufferCommand(
         }
 
         CQDispatchCmd dev_to_host_cmd;
-        dev_to_host_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_HOST;
-        dev_to_host_cmd.write_host.length = 0;
+        dev_to_host_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_LINEAR_HOST;
+        dev_to_host_cmd.write_linear_host.length = 0;
 
         uint32_t *dev_to_host_cmd_ptr = (uint32_t *)&dev_to_host_cmd;
         for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
@@ -122,7 +122,7 @@ EnqueueReadBufferCommand::EnqueueReadBufferCommand(
  *  Payload: (Optional) CQ_PREFETCH_CMD_RELAY_INLINE to relay the dispatch command below
  *  Payload: (Optional) CQ_DISPATCH_CMD_WAIT to avoid RAW hazards
  *  Header: CQ_PREFETCH_CMD_RELAY_INLINE_NOFLUSH instructs prefetcher to relay payload to dispatcher after TRANSFER_PAGE_SIZE is read by prefetcher
- *  Paylod: CQ_DISPATCH_CMD_WRITE_HOST instructs dispatcher to write data to host completion queue
+ *  Paylod: CQ_DISPATCH_CMD_WRITE_LINEAR_HOST instructs dispatcher to write data to host completion queue
  *  Header: CQ_PREFETCH_CMD_RELAY_PAGED instructs prefetcher to relay data from some interleaved buffer to dispatcher
  *  Payload: Empty
  * @param dst_address
@@ -137,7 +137,7 @@ const void EnqueueReadBufferCommand::assemble_device_commands(uint32_t dst_addre
 
     uint32_t dev_to_host_cmd_idx = sizeof(CQPrefetchCmd) / sizeof(uint32_t);
     CQDispatchCmd *dev_to_host_cmd = (CQDispatchCmd*)(this->commands.data() + dev_to_host_cmd_idx);
-    dev_to_host_cmd->write_host.length = this->pages_to_read * padded_page_size;
+    dev_to_host_cmd->write_linear_host.length = sizeof(CQDispatchCmd) + (this->pages_to_read * padded_page_size);
 
     uint32_t relay_paged_cmd_offset = sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd);
     relay_paged_cmd_offset += relay_paged_cmd_offset % HUGEPAGE_ALIGNMENT;
@@ -343,11 +343,11 @@ EnqueueRecordEventCommand::EnqueueRecordEventCommand(
         CoreCoord dispatch_physical_core = get_physical_core_coordinate(dispatch_location, CoreType::WORKER);
 
         CQDispatchCmd write_event_l1_cmd;
-        write_event_l1_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE;
-        write_event_l1_cmd.write.num_mcast_dests = 0;
-        write_event_l1_cmd.write.noc_xy_addr = NOC_XY_ENCODING(dispatch_physical_core.x, dispatch_physical_core.y);
-        write_event_l1_cmd.write.addr = CQ_COMPLETION_LAST_EVENT;
-        write_event_l1_cmd.write.length = EVENT_PADDED_SIZE;
+        write_event_l1_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_LINEAR;
+        write_event_l1_cmd.write_linear.num_mcast_dests = 0;
+        write_event_l1_cmd.write_linear.noc_xy_addr = NOC_XY_ENCODING(dispatch_physical_core.x, dispatch_physical_core.y);
+        write_event_l1_cmd.write_linear.addr = CQ_COMPLETION_LAST_EVENT;
+        write_event_l1_cmd.write_linear.length = EVENT_PADDED_SIZE;
 
         uint32_t *write_event_l1_cmd_ptr = (uint32_t *)&write_event_l1_cmd;
         for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
@@ -377,8 +377,8 @@ EnqueueRecordEventCommand::EnqueueRecordEventCommand(
         }
 
         CQDispatchCmd write_event_host_cmd;
-        write_event_host_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_HOST;
-        write_event_host_cmd.write_host.length = EVENT_PADDED_SIZE;
+        write_event_host_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_LINEAR_HOST;
+        write_event_host_cmd.write_linear_host.length = sizeof(CQDispatchCmd) + EVENT_PADDED_SIZE;
 
         uint32_t *write_event_host_cmd_ptr = (uint32_t *)&write_event_host_cmd;
         for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
@@ -800,20 +800,8 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
         tt::Cluster::instance().read_sysmem(
             completion_q_data.data(), bytes_xfered, completion_q_read_ptr, mmio_device_id, channel);
 
-
-        std::vector<uint32_t> tester(bytes_avail_in_completion_queue / sizeof(uint32_t));
-        tt::Cluster::instance().read_sysmem(
-            tester.data(), bytes_avail_in_completion_queue, completion_q_read_ptr, mmio_device_id, channel);
-
-        // if (num_pages_xfered == 1) {
-        //     for (int i = 0; i < tester.size(); i++) {
-        //         std::cout  << i << " : " << tester.at(i) << std::endl;
-        //     }
-        // }
-
         this->manager.completion_queue_pop_front(num_pages_xfered, this->id);
 
-        // read_data_ptr += bytes_xfered;
         remaining_bytes_to_read -= bytes_xfered;
 
         if (buffer_layout == TensorMemoryLayout::INTERLEAVED or

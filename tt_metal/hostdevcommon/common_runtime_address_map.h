@@ -99,6 +99,9 @@ constexpr static uint32_t CQ_COMPLETION_READ_PTR = CQ_COMPLETION_WRITE_PTR + L1_
 constexpr static uint32_t CQ_COMPLETION_LAST_EVENT = CQ_COMPLETION_READ_PTR + L1_ALIGNMENT;
 constexpr static uint32_t CQ_COMPLETION_16B_SCRATCH = CQ_COMPLETION_LAST_EVENT + L1_ALIGNMENT;
 
+constexpr static std::uint32_t L1_UNRESERVED_BASE = ((CQ_COMPLETION_16B_SCRATCH - 1) | + (32 - 1)) + 1;
+constexpr static std::uint32_t ERISC_L1_UNRESERVED_BASE = L1_UNRESERVED_BASE; // Start of unreserved space
+
 // Host addresses in hugepage for dispatch
 static constexpr uint32_t HOST_CQ_ISSUE_READ_PTR = 0; // this seems to be unused
 static constexpr uint32_t HOST_CQ_COMPLETION_WRITE_PTR = 32;

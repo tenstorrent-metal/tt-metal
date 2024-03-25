@@ -320,7 +320,6 @@ void Device::compile_command_queue_programs() {
     unique_ptr<Program, detail::ProgramDeleter> command_queue_program_ptr(new Program);
 
     uint32_t dispatch_buffer_pages = DISPATCH_BUFFER_BLOCK_SIZE_PAGES * DISPATCH_BUFFER_SIZE_BLOCKS;
-    constexpr uint32_t dispatch_cb_sem = 0;
     uint32_t dispatch_buffer_base = get_dispatch_buffer_base(false);
     uint32_t dev_hugepage_base = CQ_START;
     uint32_t prefetch_q_base = L1_UNRESERVED_BASE;
@@ -333,6 +332,8 @@ void Device::compile_command_queue_programs() {
     TT_ASSERT(scratch_db_base < MEM_L1_SIZE); // L1 size
     uint32_t scratch_db_size_g = SCRATCH_DB_SIZE;
 
+    constexpr uint32_t dispatch_cb_sem = 0;
+    constexpr uint32_t prefetch_sync_sem = 1;
 
     if (this->is_mmio_capable()) {
         for (const chip_id_t &device_id : tt::Cluster::instance().get_devices_controlled_by_mmio_device(this->id())) {
@@ -345,9 +346,10 @@ void Device::compile_command_queue_programs() {
             uint32_t cq_size = this->sysmem_manager().get_cq_size();
 
             for (uint8_t cq_id = 0; cq_id < num_hw_cqs; cq_id++) {
+                CoreType dispatch_core_type = dispatch_core_manager::get(num_hw_cqs).get_dispatch_core_type(device_id);
+
                 tt_cxy_pair prefetcher_location = dispatch_core_manager::get(num_hw_cqs).prefetcher_core(device_id, channel, cq_id);
                 tt_cxy_pair completion_q_writer_location = dispatch_core_manager::get(num_hw_cqs).completion_queue_writer_core(device_id, channel, cq_id);
-                CoreType dispatch_core_type = dispatch_core_manager::get(num_hw_cqs).get_dispatch_core_type(device_id);
                 tt_cxy_pair dispatch_location = dispatch_core_manager::get(num_hw_cqs).dispatcher_core(device_id, channel, cq_id);
 
                 TT_ASSERT(prefetcher_location.chip == this->id() and completion_q_writer_location.chip == this->id(),
@@ -432,7 +434,8 @@ void Device::compile_command_queue_programs() {
                     cmddat_q_base,
                     cmddat_q_size_g,
                     scratch_db_base,
-                    scratch_db_size_g
+                    scratch_db_size_g,
+                    prefetch_sync_sem
                 };
 
                 tt::tt_metal::CreateKernel(
@@ -446,6 +449,7 @@ void Device::compile_command_queue_programs() {
                         .defines = defines});
 
                 tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, prefetcher_location, dispatch_buffer_pages);
+                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, prefetcher_location, 0);
 
                 if (device_id == this->id()) {
                     std::vector<uint32_t> dispatch_compile_args = {
@@ -454,6 +458,7 @@ void Device::compile_command_queue_programs() {
                         DISPATCH_BUFFER_SIZE_BLOCKS * DISPATCH_BUFFER_BLOCK_SIZE_PAGES,
                         dispatch_cb_sem,
                         DISPATCH_BUFFER_SIZE_BLOCKS,
+                        prefetch_sync_sem,
                         completion_queue_start_addr,
                         completion_queue_size
                     };
@@ -468,39 +473,8 @@ void Device::compile_command_queue_programs() {
                             .compile_args = dispatch_compile_args,
                             .defines = defines});
 
-                uint32_t num_command_slots = (device_id == this->id()) ? num_tensix_command_slots : num_eth_command_slots;
-                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, issue_q_reader_location, num_command_slots, dispatch_core_type);
-                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, issue_q_reader_location, 0, dispatch_core_type);
-                tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, issue_q_reader_location, num_tensix_command_slots, dispatch_core_type); // semaphore between push&pull kernel and dispatch kernel
-
-                if (device_id == this->id()) {
-                    uint32_t cmd_start_consumer = eth_core ? cmd_start_eth_dispatch : cmd_start_tensix;
-                    uint32_t consumer_data_buffer_size = eth_core ? consumer_data_buffer_size_eth_dispatch : consumer_data_buffer_size_tensix;
-                    std::vector<uint32_t> consumer_compile_args = {cmd_start_consumer, consumer_data_buffer_size};
-
-                    if (dispatch_core_type != CoreType::ETH) {
-                        tt::tt_metal::CreateKernel(
-                            *command_queue_program_ptr,
-                            "tt_metal/impl/dispatch/kernels/cq_dispatcher.cpp",
-                            dispatch_location,
-                            tt::tt_metal::DataMovementConfig {
-                                .processor = tt::tt_metal::DataMovementProcessor::RISCV_0,
-                                .noc = tt::tt_metal::NOC::RISCV_0_default,
-                                .compile_args = consumer_compile_args,
-                                .defines = consumer_defines});
-                    } else {
-                        tt::tt_metal::CreateKernel(
-                            *command_queue_program_ptr,
-                            "tt_metal/impl/dispatch/kernels/cq_dispatcher.cpp",
-                            dispatch_location,
-                            tt::tt_metal::EthernetConfig {
-                                .eth_mode = Eth::IDLE,
-                                .noc = tt::tt_metal::NOC::RISCV_0_default,
-                                .compile_args = consumer_compile_args,
-                                .defines = consumer_defines});
-                    }
-
-                    tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_location, 0, dispatch_core_type);
+                    tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_location, 0);
+                    tt::tt_metal::CreateSemaphore(*command_queue_program_ptr, dispatch_location, 0);
                 } else {
                     // program the completion queue writer for the remote command queue
 
