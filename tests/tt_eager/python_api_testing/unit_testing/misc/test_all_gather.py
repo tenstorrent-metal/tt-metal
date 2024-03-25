@@ -445,7 +445,7 @@ def test_all_gather_on_t3000_nightly(
     "input_dtype",
     [
         ttl.tensor.DataType.BFLOAT16,
-        # ttl.tensor.DataType.BFLOAT8_B,
+        ttl.tensor.DataType.BFLOAT8_B,
     ],
 )
 @pytest.mark.parametrize(
@@ -555,10 +555,14 @@ def test_all_gather_post_commit_sharded(
     if len(all_devices) != 8:
         pytest.skip("Not T3000!")
 
+    if input_dtype != ttl.tensor.DataType.BFLOAT8_B:
+        pytest.skip("Only BFLOAT8_B not supported yet")
+
     numel = input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3] * num_devices
     unchunked_input_shape = list(input_shape)
     unchunked_input_shape[dim] *= num_devices
-    # unchunked_input_tensor = torch.arange(numel).reshape(unchunked_input_shape).bfloat16()
+
+    # if input_dtype != ttl.tensor.DataType.BFLOAT8_B:
     unchunked_input_tensor = torch.arange(numel).reshape(unchunked_input_shape)
 
     id = 0
@@ -570,6 +574,9 @@ def test_all_gather_post_commit_sharded(
                         for jj in range(32):
                             unchunked_input_tensor[w][z][i + ii][j + jj] = id
                     id += 1
+    # else:
+    #     # unchunked_input_tensor = torch.arange(numel).reshape(unchunked_input_shape).bfloat16()
+    # unchunked_input_tensor = torch.rand(unchunked_input_shape).bfloat16()
 
     unchunked_input_tensor = unchunked_input_tensor.bfloat16()
 

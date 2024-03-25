@@ -120,15 +120,14 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
     const auto output_buffer = output_tensor.buffer();
 
     int32_t shard_size_in_bytes = is_sharded ?
-        (input_buffer->shard_spec().page_shape[0] * input_buffer->shard_spec().page_shape[1] * input_buffer->shard_spec().tensor2d_shape[0] * input_buffer->shard_spec().tensor2d_shape[1] * input_tensor.element_size()) / input_tensor.shard_spec()->num_cores() :
+        (input_buffer->page_size() * input_buffer->shard_spec().tensor2d_shape[0] * input_buffer->shard_spec().tensor2d_shape[1]) / input_tensor.shard_spec()->num_cores() :
         -1;
     uint32_t input_page_size = is_sharded ? shard_size_in_bytes : input_buffer->page_size();
+    uint32_t output_page_size = is_sharded ? shard_size_in_bytes : output_buffer->page_size();
     if (is_sharded) {
-        log_trace(tt::LogOp, "input_buffer->shard_spec().page_shape[0]: {}", input_buffer->shard_spec().page_shape[0]);
-        log_trace(tt::LogOp, "input_buffer->shard_spec().page_shape[1]: {}", input_buffer->shard_spec().page_shape[1]);
+        log_trace(tt::LogOp, "input_buffer->page_size: {}", input_buffer->page_size());
         log_trace(tt::LogOp, "input_buffer->shard_spec().tensor2d_shape[0]: {}", input_buffer->shard_spec().tensor2d_shape[0]);
         log_trace(tt::LogOp, "input_buffer->shard_spec().tensor2d_shape[1]: {}", input_buffer->shard_spec().tensor2d_shape[1]);
-        log_trace(tt::LogOp, "input_tensor.element_size(): {}", input_tensor.element_size());
     }
     const uint32_t max_buffer_per_chunk = is_sharded ?
         round_down(all_gather_config.get_eth_buffer_size(), shard_size_in_bytes):
@@ -158,12 +157,6 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
     DataFormat df = tt_metal::datatype_to_dataformat_converter(input_tensor.get_dtype());
 
     uint32_t global_num_workers = all_gather_config.get_num_buffers_per_link() * num_links;
-    uint32_t shard_width = 0;
-    uint32_t shard_height = 0;
-    if (is_sharded) {
-        shard_width =  input_tensor.buffer()->shard_spec().page_shape.back();
-        shard_height = input_tensor.buffer()->shard_spec().page_shape.front();
-    }
 
     std::map<string, string> worker_defines;
     if (rm) {
@@ -238,9 +231,6 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
     }
 
 
-    uint32_t output_page_size = output_buffer->page_size();
-
-    uint32_t total_output_pages = output_buffer->size() / output_page_size;
 
     uint32_t input_start_page_idx = 0;
     uint32_t output_addr_offset = 0;

@@ -326,6 +326,7 @@ FORCE_INLINE void write_and_send_chunk_sharded(
         cb_wait_front(cb_id, num_pages);
         uint32_t l1_read_addr = get_read_ptr(cb_id);
         uint32_t num_pages_remaining = num_pages;
+        DPRINT << "SW: tile[0]=" << (uint32_t)(((volatile uint32_t*)l1_read_addr)[0]) << "\n";
         noc_async_write(l1_read_addr, remote_eth_l1_write_addr, num_pages * addr_gen.get_shard_size_in_bytes());
         // TODO: insert eth semaphore inc here
         while (num_pages_remaining > 0) {
@@ -414,14 +415,14 @@ FORCE_INLINE void write_chunk_sharded(const uint32_t& cb_id, ShardAddrGen<T>& ad
         uint32_t l1_read_addr = get_read_ptr(cb_id);
         uint32_t num_pages_remaining = num_pages;
         while (num_pages_remaining > 0) {
+            DPRINT << "RW: CURR SHARD INDEX " << addr_gen.curr_core_chunk_index << "\n";
             uint64_t dest_worker_noc_addr = addr_gen.get_next_noc_addr();
             uint32_t num_contiguous_shards = addr_gen.contiguous_chunks_before_stride;
             uint32_t num_to_send = std::min(num_pages_remaining, num_contiguous_shards);
             DPRINT << "\tRW: Transfer write_chunk_sharded " << num_to_send << " shards\n";
-            // DPRINT << "\tRW: first tile 1 elem: " << *(uint32_t*)l1_read_addr << " from " << l1_read_addr << "\n";
-            // DPRINT << "\tRW: second tile l1 elem: " << ((uint32_t*)l1_read_addr)[512] << "\n";
-            // DPRINT << "\tRW: dest_worker_noc_addr: " << dest_worker_noc_addr << "\n";
-            // DPRINT << "\tRW: write size in bytes: " << num_pages *addr_gen.get_shard_size_in_bytes() << "\n";
+            DPRINT << "\tRW: first tile 1 elem: " << *(uint32_t*)l1_read_addr << " from " << l1_read_addr << "\n";
+            DPRINT << "\tRW: dest_worker_noc_addr: " << dest_worker_noc_addr << "\n";
+            DPRINT << "\tRW: write size in bytes: " << num_pages * addr_gen.get_shard_size_in_bytes() << "\n";
             noc_async_write(l1_read_addr, dest_worker_noc_addr, num_to_send * addr_gen.get_shard_size_in_bytes());
             for (uint32_t i = 0; i < num_to_send; i++) {
                 addr_gen.advance();
@@ -502,7 +503,13 @@ FORCE_INLINE void read_shard_from_input_tensor_sharded(
         cb_reserve_back(cb_id, num_shards);
         uint32_t local_l1_read_dest_addr = get_write_ptr(cb_id);
         for (uint32_t s = 0; s < num_shards; s++) {
+            DPRINT << "SR: CURR SHARD INDEX " << addr_gen.curr_core_chunk_index << "\n";
+            DPRINT << "SR: SHARD_SIZE " << addr_gen.get_shard_size_in_bytes() << "\n";
             uint64_t src_noc_addr = addr_gen.get_next_noc_addr_and_advance();
+            DPRINT << "SR: Reading shard from (upper): "  << (uint32_t)(src_noc_addr >> 32) << "\n";
+            DPRINT << "SR: Reading shard from (lower): "  << (uint32_t)(src_noc_addr & 0xffffffff) << "\n";
+            DPRINT << "SR: Reading shard to: " << (uint32_t)(local_l1_read_dest_addr) << "\n";
+
             noc_async_read(src_noc_addr, local_l1_read_dest_addr, addr_gen.get_shard_size_in_bytes());
             local_l1_read_dest_addr += addr_gen.get_shard_size_in_bytes();
         }
