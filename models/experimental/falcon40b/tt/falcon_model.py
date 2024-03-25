@@ -134,6 +134,13 @@ class TtFalconModelShared:
 
         self.layernorm_eps = config.layer_norm_epsilon
 
+    def set_model_config(self, model_config):
+        self.model_config = model_config
+        for layer_num in range(60):
+            self.layers[layer_num].model_config = model_config
+            self.layers[layer_num].self_attn.model_config = model_config
+            self.layers[layer_num].mlp.model_config = model_config
+
     def model_preprocessing(self, llm_mode, input_ids, kv_cache_len, num_input_tokens):
         assert input_ids.dim() == 2
         batch_size, sequence_size = input_ids.shape

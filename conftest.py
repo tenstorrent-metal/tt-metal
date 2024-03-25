@@ -16,6 +16,14 @@ import json
 from loguru import logger
 
 from tests.scripts.common import run_process_and_get_result
+from models.lock import WaitLock
+
+
+@pytest.fixture(scope="session", autouse=True)
+def lock_devices():
+    w = WaitLock()
+    yield
+    w.release()
 
 
 @pytest.fixture(scope="function")
