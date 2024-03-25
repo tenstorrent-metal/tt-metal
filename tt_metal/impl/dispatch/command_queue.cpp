@@ -228,6 +228,8 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
         for (int i = 0; i < sizeof(CQDispatchCmd) / sizeof(uint32_t); i++) {
             this->commands.push_back(*write_paged_cmd_ptr++);
         }
+
+        // no need to add padding
     }
 }
 
@@ -262,9 +264,9 @@ void EnqueueWriteBufferCommand::process() {
     TT_ASSERT((fetch_size_bytes >> PREFETCH_Q_LOG_MINSIZE) < 0xFFFF, "FetchQ command too large to represent");
 
     this->manager.fetch_queue_reserve_back(this->command_queue_id);
+
     uint32_t write_ptr = this->manager.get_issue_queue_write_ptr(this->command_queue_id);
     this->manager.cq_write(this->commands.data(), sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), write_ptr);
-    this->manager.issue_queue_push_back(fetch_size_bytes, this->command_queue_id);
 
     uint32_t data_write_ptr = write_ptr + (sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd));
 
@@ -284,6 +286,8 @@ void EnqueueWriteBufferCommand::process() {
     } else {
         this->manager.cq_write((char*)this->src + unpadded_src_offset, data_size_in_bytes, data_write_ptr);
     }
+
+    this->manager.issue_queue_push_back(fetch_size_bytes, this->command_queue_id);
 
     uint16_t fetch_size_16B = fetch_size_bytes >> PREFETCH_Q_LOG_MINSIZE;
     this->manager.fetch_queue_push_back(fetch_size_16B, this->command_queue_id);
@@ -633,10 +637,9 @@ void HWCommandQueue::enqueue_write_buffer(const Buffer& buffer, const void* src,
     const uint32_t command_issue_limit = this->manager.get_issue_queue_limit(this->id);
     uint32_t dst_page_index = 0;
     while (total_pages_to_write > 0) {
+        uint32_t space_available_bytes = std::min(command_issue_limit - this->manager.get_issue_queue_write_ptr(this->id), MAX_PREFETCH_COMMAND_SIZE);
         int32_t num_pages_available =
-            (int32_t(command_issue_limit - this->manager.get_issue_queue_write_ptr(this->id)) -
-             int32_t(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd))) /
-            int32_t(padded_page_size);
+            (int32_t(space_available_bytes) - int32_t(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd))) / int32_t(padded_page_size);
 
         uint32_t pages_to_write = std::min(total_pages_to_write, (uint32_t)num_pages_available);
 
@@ -644,16 +647,17 @@ void HWCommandQueue::enqueue_write_buffer(const Buffer& buffer, const void* src,
 
         auto command = EnqueueWriteInterleavedBufferCommand(
             this->id, this->device, buffer, src, this->manager, dst_page_index, pages_to_write);
-        this->enqueue_command(command, false);
+        this->enqueue_command(command, false); // don't block until the entire src data is enqueued in the issue queue
 
         total_pages_to_write -= pages_to_write;
         dst_page_index += pages_to_write;
     }
 
-    // TODO: ADD enqueue_record_event
-
     if (blocking) {
         this->finish();
+    } else {
+        std::shared_ptr<Event> event = std::make_shared<Event>();
+        this->enqueue_record_event(event);
     }
 }
 
@@ -759,15 +763,21 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
             break;
         }
 
-        uint32_t completion_q_write_ptr = this->manager.get_completion_queue_write_ptr(this->id);
-        uint32_t completion_q_write_toggle = this->manager.get_completion_queue_write_toggle(this->id); // toggle checks needed??
+        uint32_t completion_queue_write_ptr_and_toggle = get_cq_completion_wr_ptr<true>(
+            this->device->id(), this->id, this->manager.get_command_queue_size(this->id));
+        uint32_t completion_q_write_ptr = (completion_queue_write_ptr_and_toggle & 0x7fffffff) << 4;
+        uint32_t completion_q_write_toggle = completion_queue_write_ptr_and_toggle >> (31);
         uint32_t completion_q_read_ptr = this->manager.get_completion_queue_read_ptr(this->id);
-        uint32_t completion_q_read_toggle = this->manager.get_completion_queue_read_toggle(this->id); // toggle checks needed??
+        uint32_t completion_q_read_toggle = this->manager.get_completion_queue_read_toggle(this->id);
 
-        // Completion queue write pointer on device wrapped but read pointer is lagging behind.
-        //  In this case read up until the end of the completion queue first
-        uint32_t bytes_avail_in_completion_queue = (completion_q_write_ptr > completion_q_read_ptr) ?
-            (completion_q_write_ptr - completion_q_read_ptr) : (this->manager.get_completion_queue_limit(this->id) - completion_q_read_ptr);
+        uint32_t bytes_avail_in_completion_queue;
+        if (completion_q_write_ptr > completion_q_read_ptr and completion_q_write_toggle == completion_q_read_toggle) {
+            bytes_avail_in_completion_queue = completion_q_write_ptr - completion_q_read_ptr;
+        } else {
+            // Completion queue write pointer on device wrapped but read pointer is lagging behind.
+            //  In this case read up until the end of the completion queue first
+            bytes_avail_in_completion_queue = this->manager.get_completion_queue_limit(this->id) - completion_q_read_ptr;
+        }
 
         // completion queue write ptr on device could have wrapped but our read ptr is lagging behind
         uint32_t bytes_xfered = std::min(padded_num_bytes, bytes_avail_in_completion_queue);
@@ -777,8 +787,11 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
         completion_q_data.resize(bytes_xfered / sizeof(uint32_t));
 
         std::cout << "remaining bytes to read: " << remaining_bytes_to_read
+                  << " completion q wr & toggle: " << completion_queue_write_ptr_and_toggle
                   << " completion q write ptr: " << completion_q_write_ptr
                   << " completion q read ptr: " << completion_q_read_ptr
+                  << " completion q write toggle: " << completion_q_write_toggle
+                  << " completion q read toggle: " << completion_q_read_toggle
                   << " bytes avail in completion q: " << bytes_avail_in_completion_queue
                   << " bytes_xfered " << bytes_xfered
                   << " num_pages_xfered: " << num_pages_xfered << std::endl;
@@ -792,13 +805,14 @@ void HWCommandQueue::copy_into_user_space(const detail::ReadBufferDescriptor &re
         tt::Cluster::instance().read_sysmem(
             tester.data(), bytes_avail_in_completion_queue, completion_q_read_ptr, mmio_device_id, channel);
 
-        if (num_pages_xfered == 1) {
-            for (int i = 0; i < tester.size(); i++) {
-                std::cout  << i << " : " << tester.at(i) << std::endl;
-            }
-        }
+        // if (num_pages_xfered == 1) {
+        //     for (int i = 0; i < tester.size(); i++) {
+        //         std::cout  << i << " : " << tester.at(i) << std::endl;
+        //     }
+        // }
 
         this->manager.completion_queue_pop_front(num_pages_xfered, this->id);
+
         // read_data_ptr += bytes_xfered;
         remaining_bytes_to_read -= bytes_xfered;
 
@@ -892,7 +906,10 @@ void HWCommandQueue::read_completion_queue() {
                     return;
                 }
 
-                uint32_t completion_q_write_ptr = this->manager.get_completion_queue_write_ptr(this->id);
+
+                uint32_t completion_queue_write_ptr_and_toggle = get_cq_completion_wr_ptr<true>(
+                    this->device->id(), this->id, this->manager.get_command_queue_size(this->id));
+                uint32_t completion_q_write_ptr = (completion_queue_write_ptr_and_toggle & 0x7fffffff) << 4;
 
                 uint32_t read_ptr = this->manager.get_completion_queue_read_ptr(this->id);
 

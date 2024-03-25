@@ -319,16 +319,8 @@ class SystemMemoryManager {
         return this->cq_interfaces[cq_id].completion_fifo_rd_toggle;
     }
 
-    uint32_t get_completion_queue_write_ptr(const uint8_t cq_id) const {
-        uint32_t write_ptr_and_toggle = get_cq_completion_wr_ptr<false>(this->device_id, cq_id, this->cq_size);
-        uint32_t write_ptr = write_ptr_and_toggle & 0x7fffffff;
-        return write_ptr;
-    }
-
-    uint32_t get_completion_queue_write_toggle(const uint8_t cq_id) const {
-        uint32_t write_ptr_and_toggle = get_cq_completion_wr_ptr<false>(this->device_id, cq_id, this->cq_size);
-        uint32_t write_toggle = write_ptr_and_toggle >> 31;
-        return write_toggle;
+    uint32_t get_command_queue_size(const uint8_t cq_id) const {
+        return this->cq_size;
     }
 
     void issue_queue_reserve_back(uint32_t cmd_size_B, const uint8_t cq_id) {
