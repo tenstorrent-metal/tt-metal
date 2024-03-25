@@ -95,13 +95,17 @@ inline void addr_gen_advance_width_sharded(
 ) {
     if (is_clockwise) {
         bool do_stride = contiguous_chunk_count == contiguous_chunks_before_stride;
-        bool stride_induced_chunk_wraparound = (do_stride && curr_core_chunk_index < intra_core_stride_in_shards);
-        bool do_chunk_wrap = curr_core_chunk_index == 0 || stride_induced_chunk_wraparound;
+        bool stride_induced_chunk_wraparound = (do_stride && curr_core_chunk_index < (intra_core_stride_in_shards + contiguous_chunks_before_stride));
+        bool do_chunk_wrap = curr_core_chunk_index >= total_chunks_per_core || stride_induced_chunk_wraparound;
 
         // current_core_chunks_visited++;
         if (do_chunk_wrap) {
             bool do_core_wrap = curr_worker_index == 0;
-            curr_core_chunk_index = (total_chunks_per_core - curr_core_chunk_index) - ((intra_core_stride_in_shards - 1)  + contiguous_chunks_before_stride);
+            uint32_t past_end_index = (total_chunks_per_core + curr_core_chunk_index + 1 - contiguous_chunks_before_stride);
+            uint32_t backward_step_amount = (intra_core_stride_in_shards + contiguous_chunks_before_stride - 1);
+            // ASSERT(past_end_index >= backward_step_amount);
+            curr_core_chunk_index = past_end_index - backward_step_amount;
+            // curr_core_chunk_index = (total_chunks_per_core + curr_core_chunk_index - contiguous_chunks_before_stride) - (intra_core_stride_in_shards + contiguous_chunks_before_stride);
             contiguous_chunk_count = 1;
             if (do_core_wrap) {
                 curr_worker_index = num_dest_cores - 1;
@@ -113,11 +117,10 @@ inline void addr_gen_advance_width_sharded(
 
             if (do_stride) {
                 contiguous_chunk_count = 1;
-                // TT_ASSERT(curr_core_chunk_index >= intra_core_stride_in_shards);
-                curr_core_chunk_index -= (intra_core_stride_in_shards - 1);
+                curr_core_chunk_index -= (intra_core_stride_in_shards + contiguous_chunks_before_stride - 1);
             } else {
                 contiguous_chunk_count++;
-                curr_core_chunk_index--;
+                curr_core_chunk_index++;
             }
         }
 

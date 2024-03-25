@@ -399,7 +399,7 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                                 b + i * all_gather_config.get_num_buffers(),
                                 0,
                                 0,
-                                all_gather_config.is_buffer_in_clockwise_ring(b)
+                                false//all_gather_config.is_buffer_in_clockwise_ring(b)
                             );
                 uint32_t max_shards_per_eth_buffer = std::min<uint32_t>(all_gather_config.get_eth_buffer_size() / input_tensor_shard_arg_generator.args_struct.shard_size_in_bytes, input_tensor_shard_arg_generator.args_struct.num_dest_cores);
                 TT_ASSERT(max_shards_per_eth_buffer > 0, "Codepath needs further generalization to support computing multiple sends per shard");
@@ -634,7 +634,8 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                             global_worker_index,
                             0,
                             0,
-                            is_clockwise);
+                            false//is_clockwise
+                            );
                     auto const& [starting_dest_worker_index, starting_chunk_into_shard] = OutputTensorShardAddrGenArgGenerator::get_first_output_shard_starting_location(
                         all_gather_config, input_tensor, output_tensor,
                         is_clockwise ?
@@ -785,7 +786,7 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                             global_worker_index,
                             0,
                             0,
-                            all_gather_config.is_buffer_in_clockwise_ring(b)
+                            false//all_gather_config.is_buffer_in_clockwise_ring(b)
                         );
                     auto output_tensor_shard_arg_generator =
                         OutputTensorShardAddrGenArgGenerator(
@@ -913,7 +914,7 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                         output_tensor,
                         is_clockwise ?
                             (ring_index == 0 ? ring_size - 1 : ring_index - 1) :
-                            (ring_index == ring_size - 1 ? 0 : ring_index + 1), // ring_index
+                            (ring_index == ring_size - 1 ? 0 : ring_index + 1),
                         global_worker_index);
                     CoreCoord const& worker_eth_receiver_core = is_clockwise_direction ? eth_receiver_cores.at(i) : eth_sender_cores.at(i);
                     auto input_tensor_shard_arg_generator = InputTensorShardAddrGenArgGenerator(
@@ -925,7 +926,7 @@ operation::ProgramWithCallbacks all_gather_multi_core_with_workers(const Tensor&
                             global_worker_index,
                             0,
                             0,
-                            all_gather_config.is_buffer_in_clockwise_ring(b)
+                            false//all_gather_config.is_buffer_in_clockwise_ring(b)
                         );
                     auto const& output_tensor_shard_addr_gen_args = input_tensor_shard_arg_generator.generate();
                     std::vector<uint32_t> worker_reader_receiver_rt_args;

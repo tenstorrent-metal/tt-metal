@@ -80,9 +80,6 @@ class AllGatherConfig {
     uint32_t get_semaphore_size() const { return this->semaphore_size; }
 
     uint32_t get_num_buffers_in_clockwise_direction() const {
-        if (this->is_sharded) {
-            return 0;
-        }
         return this->enable_bidirectional ?
             this->num_buffers / 2 :
             this->num_buffers;
