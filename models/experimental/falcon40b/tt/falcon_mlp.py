@@ -98,13 +98,15 @@ class TtFalconMLP:
         hidden_states = []
         for i in range(len(x)):
             hidden_states.append(
-                tt_lib.operations.primary.matmul_1d(
+                # tt_lib.operations.primary.matmul_1d(
+                tt_lib.operations.primary.matmul(
                     x[i],
                     self.dense_h_to_4h_weights[i],
                     program_config=self.model_config["DENSE_H_TO_4H_MM_PROGCFG"],
                     output_mem_config=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_MEMCFG"],
                     output_dtype=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
-                    compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+                    # compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+                    compute_kernel_config=self.model_config["COMPUTE_KERNEL_FP16_ACC_CONFIG"],
                 )
             )
             x[i].deallocate(True)
@@ -125,13 +127,15 @@ class TtFalconMLP:
                     hidden_states[i], sharded_mem_config=self.model_config["MLP_ALL_GATHER_OUTPUT_MEMCFG"]
                 )
         for i in range(len(hidden_states)):
-            hidden_states[i] = tt_lib.operations.primary.matmul_1d(
+            # hidden_states[i] = tt_lib.operations.primary.matmul_1d(
+            hidden_states[i] = tt_lib.operations.primary.matmul(
                 hidden_states[i],
                 self.dense_4h_to_h_weights[i],
                 program_config=self.model_config["DENSE_4H_TO_H_MM_PROGCFG"],
                 output_mem_config=self.model_config["DENSE_4H_TO_H_MM_OUTPUT_MEMCFG"],
                 output_dtype=self.model_config["DENSE_4H_TO_H_MM_OUTPUT_DTYPE"],
-                compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+                # compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+                compute_kernel_config=self.model_config["COMPUTE_KERNEL_FP16_ACC_CONFIG"],
             )
 
         # return TT Tensor

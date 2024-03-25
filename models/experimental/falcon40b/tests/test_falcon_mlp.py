@@ -81,7 +81,7 @@ def run_test_FalconMLP_inference(
     tt_mlp_input_host = torch2tt_tensor(mlp_input, None, tt_dtype=model_config["LN_MLP_OUTPUT_DTYPE"])
     tt_mlp_input = []
     for device in devices:
-        tt_mlp_input.append(tt_mlp_input_host.to(device, model_config["LN_MLP_OUTPUT_MEMCFG"]))
+        tt_mlp_input.append(tt_mlp_input_host.to(device, model_config["DEFAULT_MEMCFG"]))
 
     tt_out = tt_FalconMLP_model(tt_mlp_input)
     tt_out = torch.concat([tt2torch_tensor(tt_o) for tt_o in tt_out], -1)
@@ -106,8 +106,9 @@ def run_test_FalconMLP_inference(
         ("prefill", 1, 32),
         ("prefill", 1, 128),
         ("prefill", 1, 256),
+        ("prefill", 1, 2048),
     ),
-    ids=("decode_batch32", "prefill_seq32", "prefill_seq128", "prefill_seq256"),
+    ids=("decode_batch32", "prefill_seq32", "prefill_seq128", "prefill_seq256", "prefill_seq2048"),
 )
 @pytest.mark.parametrize(
     "model_version",
@@ -116,8 +117,14 @@ def run_test_FalconMLP_inference(
 )
 @pytest.mark.parametrize(
     "model_config_str, pcc",
-    [("BFLOAT8_B-SHARDED", 0.9986), ("BFLOAT16-SHARDED", 0.9986), ("BFLOAT16-DRAM", 0.9986), ("BFLOAT16-L1", 0.9986)],
-    ids=("BFLOAT8_B-SHARDED", "BFLOAT16-SHARDED", "BFLOAT16-DRAM", "BFLOAT16-L1"),
+    [
+        ("BFLOAT8_B-SHARDED", 0.9986),
+        ("BFLOAT16-SHARDED", 0.9986),
+        ("BFLOAT16-DRAM", 0.9986),
+        ("BFLOAT16-L1", 0.9986),
+        ("BFLOAT8_B-DRAM", 0.9984),
+    ],
+    ids=("BFLOAT8_B-SHARDED", "BFLOAT16-SHARDED", "BFLOAT16-DRAM", "BFLOAT16-L1", "BFLOAT8_B-DRAM"),
 )
 def test_FalconMLP_inference(
     num_devices,
