@@ -367,7 +367,7 @@ class resnetBlock2D:
         else:
             nonlinearity = ttnn.silu
         out_channels = in_channels if out_channels is None else out_channels
-        input_tensor = ttnn.to_memory_config(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
+        input_tensor = ttnn.to_memory_config(input_tensor, ttnn.L1_MEMORY_CONFIG)
         input_tensor = ttnn.to_layout(input_tensor, ttnn.ROW_MAJOR_LAYOUT)
         input_tensor = ttnn.permute(input_tensor, (0, 2, 3, 1))  # permute from NCHW to NHWC
         input_tensor = ttnn.reshape(
@@ -378,7 +378,7 @@ class resnetBlock2D:
         input_tensor = ttnn.to_layout(input_tensor, ttnn.TILE_LAYOUT)
         if ttnn.get_memory_config(hidden_states) != self.first_gn_expected_input_sharded_memory_config:
             if ttnn.is_sharded(hidden_states):
-                hidden_states = ttnn.to_memory_config(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
+                hidden_states = ttnn.to_memory_config(input_tensor, ttnn.L1_MEMORY_CONFIG)
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states = ttnn.reshape(
                 hidden_states, (self.conv2.batch_size, 1, self.conv2.input_height * self.conv2.input_width, in_channels)
@@ -413,7 +413,7 @@ class resnetBlock2D:
                 memory_config=ttnn.get_memory_config(hidden_states),
                 core_grid=self.first_group_norm_core_grid,
             )
-            hidden_states = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
+            hidden_states = ttnn.to_memory_config(hidden_states, ttnn.L1_MEMORY_CONFIG)
             hidden_states = ttnn.reshape(
                 hidden_states,
                 (1, 1, self.conv2.batch_size * self.conv2.input_height * self.conv2.input_width, in_channels),
@@ -518,9 +518,9 @@ class resnetBlock2D:
             hidden_states = ttnn.group_norm(
                 hidden_states,
                 num_groups=groups,
+                input_mask=self.norm2_input_mask,
                 weight=self.parameters.norm2.weight,
                 bias=self.parameters.norm2.bias,
-                input_mask=self.norm2_input_mask,
                 epsilon=eps,
                 memory_config=self.second_gn_expected_input_sharded_memory_config,
                 core_grid=self.second_group_norm_core_grid,
