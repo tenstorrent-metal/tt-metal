@@ -142,7 +142,6 @@ def test_unet_2d_condition_model_512x512(device, batch_size, in_channels, input_
     encoder_hidden_states = torch.randn(encoder_hidden_states_shape)
 
     torch_output = model(input, timestep=timestep, encoder_hidden_states=encoder_hidden_states.squeeze(0)).sample
-
     input = ttnn.from_torch(input, ttnn.bfloat16)
     input = ttnn.to_device(input, device, memory_config=ttnn.L1_MEMORY_CONFIG)
     input = ttnn.to_layout(input, ttnn.TILE_LAYOUT, ttnn.bfloat8_b)
