@@ -962,7 +962,7 @@ def get_prefill_model_config(model_config_str, input_shape, num_devices):
         in0_block_w=8,  # how much inner dim you take each time
         out_subblock_h=1,  # Must be divisible by per_core_M
         out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
-        per_core_M=row_height // 32 // 4,  # M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
+        per_core_M=row_height // 32 // 4,  # S2048: 16 M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
         per_core_N=16,  # N / TILE_WIDTH / Grid_Size
         transpose_mcast=False,
         fused_activation=[ttl.tensor.FusibleActivation.GELU, True],
@@ -987,7 +987,7 @@ def get_prefill_model_config(model_config_str, input_shape, num_devices):
         in0_block_w=8,  # how much inner dim you take each time
         out_subblock_h=1,  # Must be divisible by per_core_M
         out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
-        per_core_M=row_height // 32 // 4,  # M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
+        per_core_M=row_height // 32 // 4,  # S2048: 16 # M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
         per_core_N=4,  # N / TILE_WIDTH / Grid_Size
         transpose_mcast=False,
         fused_activation=None,

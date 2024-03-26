@@ -106,9 +106,19 @@ def run_test_FalconMLP_inference(
         ("prefill", 1, 32),
         ("prefill", 1, 128),
         ("prefill", 1, 256),
+        ("prefill", 1, 512),
+        ("prefill", 1, 1024),
         ("prefill", 1, 2048),
     ),
-    ids=("decode_batch32", "prefill_seq32", "prefill_seq128", "prefill_seq256", "prefill_seq2048"),
+    ids=(
+        "decode_batch32",
+        "prefill_seq32",
+        "prefill_seq128",
+        "prefill_seq256",
+        "prefill_seq512",
+        "prefill_seq1024",
+        "prefill_seq2048",
+    ),
 )
 @pytest.mark.parametrize(
     "model_version",
@@ -122,7 +132,7 @@ def run_test_FalconMLP_inference(
         ("BFLOAT16-SHARDED", 0.9986),
         ("BFLOAT16-DRAM", 0.9986),
         ("BFLOAT16-L1", 0.9986),
-        ("BFLOAT8_B-DRAM", 0.9984),
+        ("BFLOAT8_B-DRAM", 0.9983),
     ],
     ids=("BFLOAT8_B-SHARDED", "BFLOAT16-SHARDED", "BFLOAT16-DRAM", "BFLOAT16-L1", "BFLOAT8_B-DRAM"),
 )

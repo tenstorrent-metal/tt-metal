@@ -62,12 +62,17 @@ def matmul_1d_config_from_tensor_shapes(
     in0_shape, in1_shape, grid=ttnn.CoreGrid(x=8, y=8), act=None, is_fp32_accumulate=False
 ):
     m, k, n = in0_shape[0] * in0_shape[1] * in0_shape[2], in0_shape[3], in1_shape[3]
-    return matmul_1d_config(m, k, n, grid, act)
+    return matmul_1d_config(m, k, n, grid, act, is_fp32_accumulate)
 
 
 def matmul_1d_config(m, k, n, grid=ttnn.CoreGrid(x=8, y=8), act=None, is_fp32_accumulate=False):
     tile_width = 32
     tile_height = 32
+
+    if n // tile_width // grid.num_cores < 1:  # use less number of cores in case we have more N num tiles than cores
+        assert (n // tile_width) % grid.x == 0
+        grid_y = n // tile_width // grid.x
+        grid = ttnn.CoreGrid(x=grid.x, y=grid_y)
 
     per_core_m = m // tile_height
     per_core_k = k // tile_width // grid.num_cores
@@ -88,12 +93,12 @@ def matmul_1d_config(m, k, n, grid=ttnn.CoreGrid(x=8, y=8), act=None, is_fp32_ac
         [i for i in range(1, max_subblock_w_h + 1) if per_core_m % i == 0 and i * out_subblock_w <= max_subblock_w_h]
     )
 
-    print(
-        f"per_core_m: {per_core_m}, per_core_k: {per_core_k}, per_core_n: {per_core_n}, out_subblock_h: {out_subblock_h}, out_subblock_w: {out_subblock_w}"
-    )
+    # print(
+    #     f"per_core_m: {per_core_m}, per_core_k: {per_core_k}, per_core_n: {per_core_n}, out_subblock_h: {out_subblock_h}, out_subblock_w: {out_subblock_w}"
+    # )
 
-    return ttnn.ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
-        compute_with_storage_grid_size=ttl.tensor.CoreCoord(grid.x, grid.y),
+    return ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+        compute_with_storage_grid_size=(grid.x, grid.y),
         in0_block_w=per_core_k,
         out_subblock_h=out_subblock_h,
         out_subblock_w=out_subblock_w,
@@ -103,3 +108,98 @@ def matmul_1d_config(m, k, n, grid=ttnn.CoreGrid(x=8, y=8), act=None, is_fp32_ac
         fused_activation=act,
         mcast_in0=True,
     )
+
+
+def matmul_2d_config_from_tensor_shapes(
+    in0_shape, in1_shape, grid=ttnn.CoreGrid(x=8, y=8), act=None, is_fp32_accumulate=False
+):
+    m, k, n = in0_shape[0] * in0_shape[1] * in0_shape[2], in0_shape[3], in1_shape[3]
+    return matmul_2d_config(m, k, n, grid, act, is_fp32_accumulate)
+
+
+def matmul_2d_config(m, k, n, grid=ttnn.CoreGrid(x=8, y=8), act=None, is_fp32_accumulate=False):
+    tile_width = 32
+    tile_height = 32
+
+    per_core_m = m // tile_height // grid.y
+    per_core_k = k // tile_width // grid.x
+    per_core_n = n // tile_width // grid.x
+
+    if is_fp32_accumulate:
+        max_subblock_w_h = 4
+    else:
+        max_subblock_w_h = 8
+
+    # find the largest value between 1 and 8 that is a factor of per_core_n
+    # e.g. if per_core_n is 14, then out_subblock_w = 7
+    out_subblock_w = max([i for i in range(1, max_subblock_w_h + 1) if per_core_n % i == 0])
+
+    # find the largest value that is a factor of per_core_m such that
+    # out_subblock_w * out_subblock_h <= 8
+    out_subblock_h = max(
+        [i for i in range(1, max_subblock_w_h + 1) if per_core_m % i == 0 and i * out_subblock_w <= max_subblock_w_h]
+    )
+
+    if per_core_m * per_core_n >= 512:
+        max_per_core_k = 1
+    elif per_core_m * per_core_n >= 256:
+        max_per_core_k = 8
+    else:
+        max_per_core_k = 16
+    per_core_k = min(per_core_k, max_per_core_k)
+
+    # print(
+    #     f"per_core_m: {per_core_m}, per_core_k: {per_core_k}, per_core_n: {per_core_n}, out_subblock_h: {out_subblock_h}, out_subblock_w: {out_subblock_w}"
+    # )
+
+    return ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
+        compute_with_storage_grid_size=(grid.x, grid.y),
+        in0_block_w=per_core_k,  # how much inner dim you take each time
+        out_subblock_h=out_subblock_h,  # Must be divisible by per_core_M
+        out_subblock_w=out_subblock_w,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4 for is_fp32_accumulate otherwise <= 8
+        per_core_M=per_core_m,
+        per_core_N=per_core_n,
+        transpose_mcast=False,
+        fused_activation=act,
+    )
+
+
+def falcon_prefill_matmul(
+    in0,
+    in1,
+    compute_kernel_config,
+    output_mem_config=ttl.tensor.MemoryConfig(ttl.tensor.TensorMemoryLayout.INTERLEAVED, ttl.tensor.BufferType.DRAM),
+    output_dtype=ttl.tensor.DataType.BFLOAT8_B,
+    grid=ttnn.CoreGrid(x=8, y=8),
+    act=None,
+):
+    in0_shape = in0.shape
+    in1_shape = in1.shape
+    m, k, n = in0_shape[0] * in0_shape[1] * in0_shape[2], in0_shape[3], in1_shape[3]
+
+    use_2d_mm = m >= 256  # select 2d matmul for S >= 256, otherwise fall back to matmul 1d
+
+    is_fp32_accumulate = compute_kernel_config.fp32_dest_acc_en
+
+    if use_2d_mm:
+        print("Selecting MM 2d")
+        matmul_pgmcfg = matmul_2d_config(m, k, n, grid, act, is_fp32_accumulate)
+        return ttl.operations.primary.matmul(
+            in0,
+            in1,
+            program_config=matmul_pgmcfg,
+            output_mem_config=output_mem_config,
+            output_dtype=output_dtype,
+            compute_kernel_config=compute_kernel_config,
+        )
+    else:
+        print("Selecting MM 1d")
+        matmul_pgmcfg = matmul_1d_config(m, k, n, grid, act, is_fp32_accumulate)
+        return ttl.operations.primary.matmul_1d(
+            in0,
+            in1,
+            program_config=matmul_pgmcfg,
+            output_mem_config=output_mem_config,
+            output_dtype=output_dtype,
+            compute_kernel_config=compute_kernel_config,
+        )
