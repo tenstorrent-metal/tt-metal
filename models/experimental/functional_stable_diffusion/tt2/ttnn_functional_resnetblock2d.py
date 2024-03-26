@@ -373,6 +373,7 @@ class resnetBlock2D:
         # input_tensor = ttnn.to_memory_config(input_tensor, ttnn.L1_MEMORY_CONFIG)
         hidden_states = ttnn.to_layout(input_tensor, ttnn.ROW_MAJOR_LAYOUT)
         # convert input tensor to tile layout for eltwise add in the end
+
         input_tensor_in_dram = ttnn.get_memory_config(input_tensor) == ttnn.DRAM_MEMORY_CONFIG
         if not input_tensor_in_dram:
             input_tensor_dram = ttnn.to_memory_config(input_tensor, memory_config=ttnn.DRAM_MEMORY_CONFIG)
@@ -380,17 +381,20 @@ class resnetBlock2D:
         else:
             input_tensor_dram = input_tensor
 
-        ttnn.dump_device_memory_state(self.device, prefix="GN_resnet_3_")
+        # if not input_tensor_in_dram:
+        #     input_tensor = ttnn.to_memory_config(input_tensor, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+
+        # ttnn.dump_device_memory_state(self.device, prefix="GN_resnet_3_")
 
         if ttnn.get_memory_config(hidden_states) != self.first_gn_expected_input_sharded_memory_config:
             # if ttnn.is_sharded(hidden_states):
-            # hidden_states = ttnn.to_memory_config(hidden_states, ttnn.L1_MEMORY_CONFIG)
+            hidden_states = ttnn.to_memory_config(hidden_states, ttnn.L1_MEMORY_CONFIG)
             hidden_states = ttnn.reshape(
                 hidden_states, (self.conv2.batch_size, 1, self.conv2.input_height * self.conv2.input_width, in_channels)
             )
             hidden_states = ttnn.to_memory_config(hidden_states, self.first_gn_expected_input_sharded_memory_config)
 
-            ttnn.dump_device_memory_state(self.device, prefix="GN_resnet_4_")
+            # ttnn.dump_device_memory_state(self.device, prefix="GN_resnet_4_")
 
         if self.fallback_on_groupnorm:
             hidden_states = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
@@ -544,10 +548,15 @@ class resnetBlock2D:
         hidden_states = ttnn.to_memory_config(hidden_states, self.conv2.conv.input_sharded_memory_config)
         hidden_states = self.conv2(hidden_states)
         use_in_shortcut = in_channels != out_channels if use_in_shortcut is None else use_in_shortcut
+
         if not input_tensor_in_dram:
             input_tensor = ttnn.to_memory_config(input_tensor_dram, memory_config=ttnn.L1_MEMORY_CONFIG)
         else:
             input_tensor = input_tensor_dram
+
+        # if not input_tensor_in_dram:
+        #     input_tensor = ttnn.to_memory_config(input_tensor, memory_config=ttnn.L1_MEMORY_CONFIG)
+
         if use_in_shortcut:
             if ttnn.get_memory_config(input_tensor) != self.conv_shortcut.conv.input_sharded_memory_config:
                 if ttnn.is_sharded(input_tensor):
