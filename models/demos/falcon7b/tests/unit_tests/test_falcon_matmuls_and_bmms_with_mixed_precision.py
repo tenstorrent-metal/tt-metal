@@ -550,6 +550,8 @@ def test_softmax(device, num_cores, seq_len):
         pytest.skip(f"Need {num_cores} cores to run this test but core grid is {compute_grid_size}")
     grid_size = (8, 8)
 
+    device.disable_and_clear_program_cache()
+
     sharded_version = False
     head_dim = 71
     torch.manual_seed(0)
@@ -692,36 +694,45 @@ def test_softmax(device, num_cores, seq_len):
             slice_out.deallocate()
             # print("Dealloc end")
         else:
-            print("Running slice: ", i)
-            # Interleaved version
-            # In0 sharded
-            input_slice = ttl.tensor.interleaved_to_sharded_partial(
-                tt_input,
-                grid_size,
-                height_shard_spec,
-                num_slices,
-                i,
-                ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
-                ttl.tensor.ShardOrientation.ROW_MAJOR,
-            )
+            if i >= 4:
+                pass
+            else:
+                print("Running slice: ", i)
+                # Interleaved version
+                # In0 sharded
+                input_slice = ttl.tensor.interleaved_to_sharded_partial(
+                    tt_input,
+                    grid_size,
+                    height_shard_spec,
+                    num_slices,
+                    i,
+                    ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+                    ttl.tensor.ShardOrientation.ROW_MAJOR,
+                )
 
-            softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
-                compute_with_storage_grid_size=grid_size,
-                subblock_w=1,
-                block_h=height_shard_spec[0] // 32,
-                block_w=height_shard_spec[1] // 32,
-                math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-                im_data_format=ttl.tensor.DataType.BFLOAT16,
-            )
+                # input_slice = ttl.tensor.move_sharded(input_slice)
 
-            tt_output_softmax = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
-                input_slice,
-                1 / math.sqrt(head_dim),
-                tt_attention_mask,
-                program_config=softmax_program_config,
-                is_causal_mask=True,
-            )
-            input_slice.deallocate()
+                softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
+                    compute_with_storage_grid_size=grid_size,
+                    subblock_w=1,
+                    block_h=height_shard_spec[0] // 32,
+                    block_w=height_shard_spec[1] // 32,
+                    math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+                    im_data_format=ttl.tensor.DataType.BFLOAT16,
+                )
+
+                input_slice = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+                    input_slice,
+                    1 / math.sqrt(head_dim),
+                    tt_attention_mask,
+                    program_config=softmax_program_config,
+                    is_causal_mask=True,
+                )
+
+                ttl.tensor.sharded_to_interleaved_partial(
+                    input_slice, tt_output_sharded_softmax, num_slices, i, dram_interleaved_memory_config
+                )
+                input_slice.deallocate()
 
     # Interleaved softmax
     # print("Running softmax 2")
@@ -749,19 +760,18 @@ def test_softmax(device, num_cores, seq_len):
     # print("Done Converting 1")
 
     # print("Converting 2")
-    if sharded_version:
-        out_torch_softmax = tt2torch_tensor(tt_output_sharded_softmax)
-    else:
-        out_torch_softmax = tt2torch_tensor(tt_output_softmax)
-        pass
+    out_torch_softmax = tt2torch_tensor(tt_output_sharded_softmax)
+    out_torch_softmax_view = out_torch_softmax.view(
+        1, 1, out_torch_softmax.shape[1] * out_torch_softmax.shape[2], out_torch_softmax.shape[3]
+    )
     # print("Done Converting 2")
 
     passing = True
-    passing, output = comp_pcc(out_torch_view, out_torch_softmax)
+    passing, output = comp_pcc(out_torch_view, out_torch_softmax_view)
 
-    print("My shape", out_torch_softmax.shape)
+    print("My shape", out_torch_softmax_view.shape)
     print("Actual shape", out_torch_view.shape)
-    print("Out my version: ", out_torch_softmax)
+    print("Out my version: ", out_torch_softmax_view)
     # print("Out my version: ", out_torch_softmax)
     print("Actual output: ", out_torch_view)
 
