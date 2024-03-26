@@ -16,7 +16,7 @@ from models.utility_functions import comp_pcc, tt2torch_tensor, torch2tt_tensor,
 @pytest.mark.parametrize("num_slices", [16])
 @pytest.mark.parametrize("num_cores", [64])
 @pytest.mark.parametrize("num_heads", [16])
-@pytest.mark.parametrize("data_format", [ttl.tensor.DataType.BFLOAT8_B])
+@pytest.mark.parametrize("data_format", [ttl.tensor.DataType.BFLOAT16])
 def test_time_sharded_attnention(
     device,
     seq_len,
@@ -30,6 +30,10 @@ def test_time_sharded_attnention(
     if num_cores > (compute_grid_size.x * compute_grid_size.y):
         pytest.skip(f"Need {num_cores} cores to run this test but core grid is {compute_grid_size}")
     grid_size = (8, 8)
+
+    M = seq_len
+    K = 64
+    N = seq_len
 
     query_layer_shape = [1, num_heads, seq_len, 64]
     key_layer_transposed_shape = [1, num_heads, 64, seq_len]
@@ -46,8 +50,12 @@ def test_time_sharded_attnention(
         buffer_type=ttl.tensor.BufferType.DRAM,
     )
 
-    height_sharded_memory_config = ttl.tensor.MemoryConfig(
+    height_sharded_mem_config = ttl.tensor.MemoryConfig(
         memory_layout=ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED, buffer_type=ttl.tensor.BufferType.L1
+    )
+    block_sharded_mem_config = ttl.tensor.MemoryConfig(
+        memory_layout=ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
+        buffer_type=ttl.tensor.BufferType.L1,
     )
 
     # compare output to regular case
@@ -70,6 +78,10 @@ def test_time_sharded_attnention(
         tt_dtype=data_format,
     )
 
+    attn_weights_qkt = torch_query_layer @ torch_key_layer_transposed
+    attn_weights_torch_sm = torch.nn.functional.softmax(attn_weights_qkt, dim=-1)
+    attn_weights_torch = attn_weights_torch_sm @ torch_value_layer
+
     compute_kernel_config = ttl.tensor.WormholeComputeKernelConfig(
         math_fidelity=ttl.tensor.MathFidelity.LoFi,
         math_approx_mode=True,
@@ -86,49 +98,74 @@ def test_time_sharded_attnention(
         tt_memory_config=dram_interleaved_memory_config,
         tt_dtype=data_format,
     )
+
     tiles_per_shard = math.ceil((((num_heads * seq_len) / num_cores) / num_slices) / 32)
-    mm_activations_height_shard_spec = [tiles_per_shard * 32, 2 * 32]
+    mm_output_block_shard_spec = [seq_len // 8, seq_len // 8]
+    tiles_per_shard = math.ceil((((num_heads * seq_len) / num_cores) / num_slices) / 32)
     mm_output_height_shard_spec = [tiles_per_shard * 32, seq_len]
 
     heads_per_slice = num_heads // num_slices
     for i in range(num_slices):
-        slice = ttl.tensor.interleaved_to_sharded_partial(
+        q_slice = ttl.tensor.interleaved_to_sharded_partial(
             reference_query_layer,
-            grid_size,
-            mm_activations_height_shard_spec,
+            ttl.tensor.CoreCoord(1, grid_size[0]),
+            [M // grid_size[0], K],
             num_slices,
             i,
             ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
             ttl.tensor.ShardOrientation.ROW_MAJOR,
         )
-        program_config = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
-            compute_with_storage_grid_size=grid_size,
-            in0_block_w=2,
-            per_core_M=tiles_per_shard,
-            per_core_N=seq_len // 32,
-            out_subblock_h=1,
-            out_subblock_w=1,
-            fuse_batch=True,
-            fused_activation=None,
-            mcast_in0=False,
+        k_slice = ttl.tensor.interleaved_to_sharded_partial(
+            reference_key_layer_transposed,
+            ttl.tensor.CoreCoord(grid_size[1], 1),
+            [K, N // grid_size[1]],
+            num_slices,
+            i,
+            ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+            ttl.tensor.ShardOrientation.ROW_MAJOR,
         )
 
-        k_slice = ttl.tensor.unpad(
-            reference_key_layer_transposed,
-            (0, (i * heads_per_slice), 0, 0),
-            (0, (i * heads_per_slice) + (heads_per_slice - 1), 63, seq_len - 1),
-            output_mem_config=dram_interleaved_memory_config,
+        program_config = ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
+            compute_with_storage_grid_size=grid_size,
+            in0_block_w=K // 32,
+            out_subblock_h=1,
+            out_subblock_w=1,
+            per_core_M=M // (32 * grid_size[0]),
+            per_core_N=N // (32 * grid_size[1]),
+            transpose_mcast=False,
+            fused_activation=None,
         )
+
         mm_slice = ttl.operations.primary.matmul(
-            slice,
+            q_slice,
             k_slice,
             program_config=program_config,
-            output_mem_config=height_sharded_memory_config,
+            output_mem_config=block_sharded_mem_config,
             output_dtype=data_format,
             compute_kernel_config=compute_kernel_config,
         )
+        # mmt = tt2torch_tensor(mm_slice)
+        # passed, message = comp_pcc(mmt, attn_weights_qkt[:, i * heads_per_slice : (i + 1) * heads_per_slice, :, :])
+        # print(message)
+        # assert passed
         k_slice.deallocate()
-        slice.deallocate()
+        q_slice.deallocate()
+
+        height_per_core = seq_len // 64
+        output_shard_grid = ttl.tensor.CoreRangeSet(
+            {ttl.tensor.CoreRange(ttl.tensor.CoreCoord(0, 0), ttl.tensor.CoreCoord(7, 7))}
+        )
+        output_shard_spec = ttl.tensor.ShardSpec(
+            output_shard_grid, [height_per_core, seq_len], ttl.tensor.ShardOrientation.ROW_MAJOR, False
+        )
+        output_mem_config = ttl.tensor.MemoryConfig(
+            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED, ttl.tensor.BufferType.L1, output_shard_spec
+        )
+        mm_slice = ttl.tensor.reshard(
+            mm_slice,
+            output_mem_config,
+        )
+        mm_slice = ttl.tensor.move_sharded(mm_slice)
 
         softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
             compute_with_storage_grid_size=grid_size,
@@ -138,8 +175,13 @@ def test_time_sharded_attnention(
             math_fidelity=ttl.tensor.MathFidelity.LoFi,
             im_data_format=ttl.tensor.DataType.BFLOAT16,
         )
+        # print(program_config)
 
         mm_slice = ttl.operations.primary.softmax_in_place(mm_slice, program_config=softmax_program_config)
+        # mmt = tt2torch_tensor(mm_slice)
+        # passed, message = comp_pcc(mmt, attn_weights_torch_sm[:, i * heads_per_slice : (i + 1) * heads_per_slice, :, :])
+        # print(message)
+        # assert passed
 
         program_config = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
             compute_with_storage_grid_size=grid_size,
@@ -158,11 +200,12 @@ def test_time_sharded_attnention(
             (0, (i * heads_per_slice) + (heads_per_slice - 1), seq_len - 1, 63),
             output_mem_config=dram_interleaved_memory_config,
         )
+
         mm_slice = ttl.operations.primary.matmul(
             mm_slice,
             v_slice,
             program_config=program_config,
-            output_mem_config=height_sharded_memory_config,
+            output_mem_config=height_sharded_mem_config,
             output_dtype=data_format,
             compute_kernel_config=compute_kernel_config,
         )
@@ -180,13 +223,6 @@ def test_time_sharded_attnention(
 
     mm_out_torch = tt2torch_tensor(mm_out)
 
-    attn_weights = ttl.tensor.bmm(
-        reference_query_layer, reference_key_layer_transposed, output_mem_config=dram_interleaved_memory_config
-    )
-    attn_weights = ttl.operations.primary.softmax_in_place(attn_weights)
-    attn_weights = ttl.tensor.bmm(attn_weights, reference_value_layer, output_mem_config=dram_interleaved_memory_config)
-
-    attn_weights_torch = tt2torch_tensor(attn_weights)
     passing, output = comp_pcc(mm_out_torch, attn_weights_torch)
 
     print(output)
