@@ -622,14 +622,15 @@ operation::ProgramWithCallbacks reshard_multi_core(const Tensor& input, Tensor& 
     for (auto core : cores) {
         auto page_range_vector = output_core_to_page_range_pair.at(core);
         uint32_t num_ranges = page_range_vector.size();
-        std::vector<uint32_t> runtime_args = {input.buffer()->address(), 0, num_ranges};
+        std::vector<uint32_t> runtime_args = {input.buffer()->address(), 0, num_ranges, page_size};
         uint32_t num_output_pages = 0;
         for (const auto& [core, range] : page_range_vector) {
             auto physical_input_core = device->worker_core_from_logical_core(core);
             runtime_args.push_back(physical_input_core.x);
             runtime_args.push_back(physical_input_core.y);
-            runtime_args.push_back(range.start * page_size);                // start addr_offset
-            runtime_args.push_back((range.end - range.start) * page_size);  // size
+            runtime_args.push_back(range.start * page_size);                // start
+            runtime_args.push_back(range.end * page_size);                // start
+            runtime_args.push_back(page_size);  // stride
             num_output_pages += range.end - range.start;
         }
         runtime_args[1] = num_output_pages;
@@ -656,14 +657,15 @@ operation::ProgramWithCallbacks reshard_multi_core(const Tensor& input, Tensor& 
         for (const auto& core : cores) {
             auto page_range_vector = output_core_to_page_range_pair.at(core);
             uint32_t num_ranges = page_range_vector.size();
-            std::vector<uint32_t> runtime_args = {src_buffer->address(), 0, num_ranges};
+            std::vector<uint32_t> runtime_args = {src_buffer->address(), 0, num_ranges, page_size};
             uint32_t num_output_pages = 0;
             for (const auto& [core, range] : page_range_vector) {
                 auto physical_input_core = device->worker_core_from_logical_core(core);
                 runtime_args.push_back(physical_input_core.x);
                 runtime_args.push_back(physical_input_core.y);
                 runtime_args.push_back(range.start * page_size);
-                runtime_args.push_back((range.end - range.start) * page_size);
+                runtime_args.push_back(range.end * page_size);
+                runtime_args.push_back(page_size);
                 num_output_pages += range.end - range.start;
             }
             runtime_args[1] = num_output_pages;
