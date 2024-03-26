@@ -626,12 +626,13 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
         // x = 1, y = 2
         // ...
 
-        log_info("Setting up core: x = {}, y = {}", core.x, core.y);
+        // log_info("Setting up core: x = {}, y = {}", core.x, core.y);
         std::vector<uint32_t> reader_args;
         reader_args.push_back(0x3f803f80);
         reader_args.push_back(s.u);
         reader_args.push_back(mask_addr);
         reader_args.push_back(mask_start_tile_id);
+        reader_args.push_back(num_tiles_in_attn_mask);
         tt_metal::SetRuntimeArgs(program, reader_kernels_id, core, reader_args);
 
         // RM shard orient

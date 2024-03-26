@@ -737,7 +737,7 @@ def test_softmax(device, num_cores, seq_len):
 
     # print("Converting 1")
     out_torch = tt2torch_tensor(out)
-    out_torch_view = out_torch.view(1, 1, 10240, 64)
+    out_torch_view = out_torch.view(1, 1, out_torch.shape[1] * out_torch.shape[2], out_torch.shape[3])
     # print("Done Converting 1")
 
     # print("Converting 2")
