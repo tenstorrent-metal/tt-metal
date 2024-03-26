@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tt_dnn/op_library/bmm/bmm_op.hpp"
+#include "common/assert.hpp"
+#include "common/logger.hpp"
+#include "impl/buffers/buffer.hpp"
 #include "tt_dnn/op_library/work_split.hpp"
 #include "tt_metal/tools/profiler/op_profiler.hpp"
 
@@ -948,28 +951,42 @@ void Matmul::validate(
                 std::is_same_v<ProgramConfigType, MatmulMultiCoreReuseMultiCastProgramConfig>
             ) {
                 if (input_tensor_a.memory_config().is_sharded()) {
-                    TT_FATAL(input_tensor_a.memory_config().memory_layout == TensorMemoryLayout::BLOCK_SHARDED);
-                    if (program_config.transpose_mcast) {
-                        TT_FATAL(input_tensor_a.shard_spec().value().orientation == ShardOrientation::COL_MAJOR);
-                    } else {
-                        TT_FATAL(input_tensor_a.shard_spec().value().orientation == ShardOrientation::ROW_MAJOR);
-                    }
-                    if (this->output_mem_config.is_sharded()) {
-                        TT_FATAL(input_tensor_a.memory_config().buffer_type == this->output_mem_config.buffer_type);
-                        TT_FATAL(input_tensor_a.memory_config().memory_layout == this->output_mem_config.memory_layout);
-                    }
-
+                    auto tensor_a_memory_layout = input_tensor_a.memory_config().memory_layout;
                     uint32_t M = input_tensor_a.volume() / input_tensor_a.get_legacy_shape()[-1] / TILE_HEIGHT;
                     uint32_t K = input_tensor_a.get_legacy_shape()[-1] / TILE_WIDTH;
                     uint32_t N = input_tensor_b.get_legacy_shape()[-1] / TILE_WIDTH;
                     uint32_t per_core_M = program_config.per_core_M;
                     auto shard_shape = input_tensor_a.shard_spec().value().shape;
 
-                    TT_FATAL(per_core_M == (shard_shape[0] / TILE_HEIGHT));
+
+                    TT_FATAL(
+                        tensor_a_memory_layout == TensorMemoryLayout::BLOCK_SHARDED ||
+                        tensor_a_memory_layout == TensorMemoryLayout::HEIGHT_SHARDED);
+
+                    if (tensor_a_memory_layout == TensorMemoryLayout::BLOCK_SHARDED) {
+                        if (program_config.transpose_mcast) {
+                            TT_FATAL(input_tensor_a.shard_spec().value().orientation == ShardOrientation::COL_MAJOR);
+                        } else {
+                            TT_FATAL(input_tensor_a.shard_spec().value().orientation == ShardOrientation::ROW_MAJOR);
+                        }
+                        if (this->output_mem_config.is_sharded()) {
+                            TT_FATAL(input_tensor_a.memory_config().buffer_type == this->output_mem_config.buffer_type);
+                            TT_FATAL(input_tensor_a.memory_config().memory_layout == this->output_mem_config.memory_layout);
+                        }
+
+                        TT_FATAL(per_core_M == (shard_shape[0] / TILE_HEIGHT));
+                        TT_FATAL(K / (shard_shape[1] / TILE_WIDTH) == div_up(N, program_config.per_core_N))
+                    }
 
                     TT_FATAL((shard_shape[1] / TILE_WIDTH) % program_config.in0_block_w == 0);
-                    TT_FATAL(K / (shard_shape[1] / TILE_WIDTH) == div_up(N, program_config.per_core_N));
                 }
+
+                if (input_tensor_b.memory_config().is_sharded()) {
+                    auto tensor_b_memory_layout = input_tensor_b.memory_config().memory_layout;
+                    TT_FATAL(tensor_b_memory_layout == TensorMemoryLayout::WIDTH_SHARDED);
+                    TT_FATAL(input_tensor_a.memory_config().memory_layout == TensorMemoryLayout::HEIGHT_SHARDED);
+                }
+
                 if (this->output_mem_config.is_sharded()) {
                     TT_FATAL(this->output_mem_config.memory_layout == TensorMemoryLayout::BLOCK_SHARDED);
                     uint32_t M = input_tensor_a.volume() / input_tensor_a.get_legacy_shape()[-1] / TILE_HEIGHT;
@@ -979,7 +996,7 @@ void Matmul::validate(
 
                     TT_FATAL(program_config.out_subblock_w == per_core_N || program_config.out_subblock_h == 1);
                 }
-                TT_FATAL(input_tensor_b.memory_config().memory_layout == TensorMemoryLayout::INTERLEAVED);
+                //TT_FATAL(input_tensor_b.memory_config().memory_layout == TensorMemoryLayout::INTERLEAVED);
             } else if constexpr (
                 std::is_same_v<ProgramConfigType, MatmulMultiCoreReuseProgramConfig>
             ) {

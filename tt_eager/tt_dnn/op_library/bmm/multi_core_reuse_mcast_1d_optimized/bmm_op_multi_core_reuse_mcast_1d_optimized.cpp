@@ -834,6 +834,7 @@ operation::ProgramWithCallbacks create_program_mcast_in1(
     }
     if (in0_is_sharded) {
         mm_kernel_in0_sender_defines["IN0_SHARDED"] = "1";
+        mm_kernel_in0_sender_defines["SKIP_MCAST"] = "1";
     }
     if (output_is_sharded) {
         mm_kernel_in1_sender_writer_defines["OUT_SHARDED"] = "1";

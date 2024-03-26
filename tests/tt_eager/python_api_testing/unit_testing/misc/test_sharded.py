@@ -7,6 +7,7 @@ import torch
 import math
 
 import tt_lib as ttl
+from ttnn.types import CoreGrid
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
     comp_equal,
     comp_pcc,
@@ -980,6 +981,83 @@ def test_sharded_matmul_2d(
     if out_sharded:
         output_t = ttl.tensor.sharded_to_interleaved(output_t, interleaved_mem_config)
     pt_out = in0 @ in1 + bias
+
+    tt_out = tt2torch_tensor(output_t)
+
+    passing, output = comp_pcc(pt_out, tt_out)
+    logger.info(output)
+    assert passing
+
+
+def test_sharded_matmul_2d_in0_height_sharded_in1_width_sharded(device, function_level_defaults):
+    M = 128 * 32
+    N = 128 * 32
+    K = 2 * 32
+
+    in0_shape = [1, 1, M, K]
+    in1_shape = [1, 1, K, N]
+
+    grid_size = (8, 8)
+    compute_grid_size = device.compute_with_storage_grid_size()
+
+    if grid_size[0] > compute_grid_size.x or grid_size[1] > compute_grid_size.y:
+        pytest.skip(f"Need {grid_size} grid size to run this test but core grid is {compute_grid_size}")
+
+    num_cores = grid_size[0] * grid_size[1]
+
+    dtype = ttl.tensor.DataType.BFLOAT16
+    interleaved_mem_config = ttl.tensor.MemoryConfig(
+        memory_layout=ttl.tensor.TensorMemoryLayout.INTERLEAVED,
+        buffer_type=ttl.tensor.BufferType.DRAM,
+    )
+    sharded_block_mem_config = ttl.tensor.MemoryConfig(
+        memory_layout=ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
+        buffer_type=ttl.tensor.BufferType.L1,
+    )
+
+    in0 = torch.randn(in0_shape).bfloat16().float()
+    in1 = torch.randn(in1_shape).bfloat16().float()
+
+    # Generate the tensor
+    in0_t = torch2tt_tensor(in0, device, tt_memory_config=interleaved_mem_config, tt_dtype=dtype)
+    in1_t = torch2tt_tensor(in1, device, tt_memory_config=interleaved_mem_config, tt_dtype=dtype)
+
+    in0_t = ttl.tensor.interleaved_to_sharded(
+        in0_t,
+        ttl.tensor.CoreCoord(1, grid_size[0]),
+        [M // grid_size[0], K],
+        ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+        ttl.tensor.ShardOrientation.ROW_MAJOR,
+    )
+
+    in1_t = ttl.tensor.interleaved_to_sharded(
+        in1_t,
+        ttl.tensor.CoreCoord(grid_size[1], 1),
+        [K, N // grid_size[1]],
+        ttl.tensor.TensorMemoryLayout.WIDTH_SHARDED,
+        ttl.tensor.ShardOrientation.ROW_MAJOR,
+    )
+
+    program_config = ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
+        compute_with_storage_grid_size=grid_size,
+        in0_block_w=K // 32,
+        out_subblock_h=1,
+        out_subblock_w=1,
+        per_core_M=M // (32 * grid_size[0]),
+        per_core_N=N // (32 * grid_size[1]),
+        transpose_mcast=False,
+        fused_activation=None,
+    )
+    output_t = ttl.operations.primary.matmul(
+        in0_t,
+        in1_t,
+        program_config=program_config,
+        output_mem_config=sharded_block_mem_config,
+        output_dtype=dtype,
+    )
+
+    output_t = ttl.tensor.sharded_to_interleaved(output_t, interleaved_mem_config)
+    pt_out = in0 @ in1
 
     tt_out = tt2torch_tensor(output_t)
 
