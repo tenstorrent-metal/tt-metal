@@ -103,5 +103,8 @@ src/firmware/riscv/targets/erisc/src/eth_routing_v2.cpp
 
 .envrc
 
+# Exclude binary files generated for transformer models
+*.bin
+
 # tt_lib and _ttnn stubs
 *.pyi
