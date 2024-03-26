@@ -565,7 +565,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
         sharded_mask = mask.value().is_sharded();
     }
 
-    if (sharded_mask) {
+    if (sharded_mask || !mask.has_value()) {
         // Sharded mask, sharded in0
         for(int core_idx_y = 0; core_idx_y < num_cores_r; core_idx_y++) {
 

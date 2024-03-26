@@ -539,7 +539,9 @@ def test_falcon7b_attnention_sliced(
 
 
 @pytest.mark.parametrize(
-    "seq_len", (2048, 128, 32, 64), ids=["seq_len_2048", "seq_len_128", "seq_len_32", "seq_len_64"]
+    "seq_len",
+    (2048, 128, 32, 64, 1024),
+    ids=["seq_len_2048", "seq_len_128", "seq_len_32", "seq_len_64", "seq_len_1024"],
 )
 @pytest.mark.parametrize("num_cores", [64])
 def test_softmax(device, num_cores, seq_len):
@@ -553,12 +555,13 @@ def test_softmax(device, num_cores, seq_len):
     torch.manual_seed(0)
 
     if sharded_version == False:
-        if seq_len == 128:
-            input_shape = [1, 80, seq_len, seq_len]
-        elif seq_len == 32:
-            input_shape = [1, 320, seq_len, seq_len]
-        elif seq_len == 64:
-            input_shape = [1, 160, seq_len, seq_len]
+        #     if seq_len == 128:
+        #         input_shape = [1, 80, seq_len, seq_len]
+        #     elif seq_len == 32:
+        #         input_shape = [1, 320, seq_len, seq_len]
+        #     elif seq_len == 64:
+        #         input_shape = [1, 160, seq_len, seq_len]
+        input_shape = [1, head_dim, seq_len, seq_len]
     else:
         # Sharded version
         input_shape = [1, head_dim, seq_len, seq_len]
@@ -622,11 +625,14 @@ def test_softmax(device, num_cores, seq_len):
     num_slices = 1
     if seq_len == 2048:
         num_slices = 16
+    elif seq_len == 1024:
+        num_slices = 4
 
     # Sharded softmax
-    tiles_per_shard = math.ceil((((71 * seq_len) / num_cores) / num_slices) / 32)
-    # height_shard_spec = [tiles_per_shard * 32, seq_len]
-    height_shard_spec = [5 * 32, seq_len]
+    tiles_per_shard = math.ceil((((head_dim * seq_len) / num_cores) / num_slices) / 32)
+    height_shard_spec = [tiles_per_shard * 32, seq_len]
+    print("Tiles per shard is: ", tiles_per_shard)
+    # height_shard_spec = [5 * 32, seq_len] version where we pad up everything to 64 cores
 
     for i in range(num_slices):
         if sharded_version:
@@ -686,6 +692,7 @@ def test_softmax(device, num_cores, seq_len):
             slice_out.deallocate()
             # print("Dealloc end")
         else:
+            print("Running slice: ", i)
             # Interleaved version
             # In0 sharded
             input_slice = ttl.tensor.interleaved_to_sharded_partial(
@@ -714,6 +721,7 @@ def test_softmax(device, num_cores, seq_len):
                 program_config=softmax_program_config,
                 is_causal_mask=True,
             )
+            input_slice.deallocate()
 
     # Interleaved softmax
     # print("Running softmax 2")
@@ -758,5 +766,4 @@ def test_softmax(device, num_cores, seq_len):
     print("Actual output: ", out_torch_view)
 
     print(output)
-    passing = True
     assert passing
