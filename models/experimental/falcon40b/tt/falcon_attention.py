@@ -452,7 +452,9 @@ class TtFalconAttention:
         ######################
         if llm_mode == "prefill":
             for i in range(len(layer_past[0])):
-                tt_lib.tensor.fill_cache(layer_past[0][i], key_layer[i], user_id)
+                tt_lib.tensor.fill_cache(
+                    layer_past[0][i], tt_lib.tensor.typecast(key_layer[i], self.model_config["KV_CACHE_DTYPE"]), user_id
+                )
         elif llm_mode == "decode":
             kv_cache_memcfg = self.model_config["KV_CACHE_SLICE_OUTPUT_MEMCFG"]
             if kv_cache_memcfg.is_sharded():
@@ -461,7 +463,11 @@ class TtFalconAttention:
                 kv_cache_memcfg.shard_spec.shape = kv_cache_shard_shape
             # Update kv_cache in place
             for i in range(len(key_layer)):
-                tt_lib.tensor.update_cache(layer_past[0][i], key_layer[i], layer_past_len)
+                tt_lib.tensor.update_cache(
+                    layer_past[0][i],
+                    tt_lib.tensor.typecast(key_layer[i], self.model_config["KV_CACHE_DTYPE"]),
+                    layer_past_len,
+                )
                 key_layer[i].deallocate(True)
             # key and value layers will have kv_seq_len padded to nearest 32
             for i in range(len(layer_past[0])):
@@ -558,20 +564,12 @@ class TtFalconAttention:
                 )
         else:
             for i in range(len(attn_weights)):
-                input_shape = attn_weights[i].get_legacy_shape()
-                attn_weights[i] = tt_lib.tensor.reshape(
-                    attn_weights[i], input_shape[0], 1, input_shape[1] * input_shape[2], input_shape[3]
-                )
                 attn_weights[i] = tt_lib.operations.primary.transformers.scale_mask_softmax_in_place(
                     attn_weights[i],
                     self.scalar,
                     attention_mask[i],
                     program_config=tt_lib.operations.primary.transformers.SoftmaxDefaultProgramConfig(),
-                    # program_config=self.model_config["SOFTMAX_PROGCFG"],
                     is_causal_mask=True,
-                )
-                attn_weights[i] = tt_lib.tensor.reshape(
-                    attn_weights[i], input_shape[0], input_shape[1], input_shape[2], input_shape[3]
                 )
 
         ######################
@@ -579,12 +577,20 @@ class TtFalconAttention:
         ######################
         if llm_mode == "prefill":
             for i in range(len(layer_past[1])):
-                tt_lib.tensor.fill_cache(layer_past[1][i], value_layer[i], user_id)
+                tt_lib.tensor.fill_cache(
+                    layer_past[1][i],
+                    tt_lib.tensor.typecast(value_layer[i], self.model_config["KV_CACHE_DTYPE"]),
+                    user_id,
+                )
 
         elif llm_mode == "decode":
             # Update kv_cache in place
             for i in range(len(value_layer)):
-                tt_lib.tensor.update_cache(layer_past[1][i], value_layer[i], layer_past_len)
+                tt_lib.tensor.update_cache(
+                    layer_past[1][i],
+                    tt_lib.tensor.typecast(value_layer[i], self.model_config["KV_CACHE_DTYPE"]),
+                    layer_past_len,
+                )
                 value_layer[i].deallocate(True)
             for i in range(len(layer_past[1])):
                 value_layer[i] = tt_lib.tensor.unpad(
