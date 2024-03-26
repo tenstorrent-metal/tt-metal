@@ -552,39 +552,24 @@ def test_softmax(device, num_cores, seq_len):
 
     device.disable_and_clear_program_cache()
 
-    sharded_version = False
     head_dim = 71
     torch.manual_seed(0)
 
-    if sharded_version == False:
-        #     if seq_len == 128:
-        #         input_shape = [1, 80, seq_len, seq_len]
-        #     elif seq_len == 32:
-        #         input_shape = [1, 320, seq_len, seq_len]
-        #     elif seq_len == 64:
-        #         input_shape = [1, 160, seq_len, seq_len]
-        input_shape = [1, head_dim, seq_len, seq_len]
-    else:
-        # Sharded version
-        input_shape = [1, head_dim, seq_len, seq_len]
-    attention_mask_1_head_dim_shape = [1, 1, seq_len, seq_len]
-    if sharded_version:
-        attention_mask_shape = [1, head_dim, seq_len, seq_len]
-    else:
-        attention_mask_shape = [1, 1, seq_len, seq_len]
-    # attention_mask_shape = [1, head_dim, seq_len, seq_len]
-    scalar_shape = [1, 1, 32, 32]
+    input_shape = [1, head_dim, seq_len, seq_len]
+    attention_mask_shape = [1, 1, seq_len, seq_len]
 
     torch_input = torch.randn(input_shape).bfloat16().float()
-    torch_attention_mask_1_head_dim = torch.randn(attention_mask_1_head_dim_shape).bfloat16().float()
+    torch_attention_mask = torch.randn(attention_mask_shape).bfloat16().float()
 
-    if sharded_version:
-        torch_attention_mask = torch_attention_mask_1_head_dim.repeat(1, attention_mask_shape[1], 1, 1)
-    else:
-        torch_attention_mask = torch_attention_mask_1_head_dim
-    # torch_attention_mask = torch.randn(attention_mask_shape).bfloat16().float()
-    print("Shape is", torch_attention_mask.shape)
-    torch_scalar = (torch.ones(scalar_shape) * (1 / math.sqrt(head_dim))).bfloat16().float()
+    num_slices = 1
+    if seq_len == 2048:
+        num_slices = 16
+    elif seq_len == 1024:
+        num_slices = 4
+
+    slice_length = (head_dim * seq_len) // num_slices
+
+    print("Attention mask shape is", torch_attention_mask.shape)
     torch_outputs = torch.zeros(input_shape).bfloat16().float()
 
     dram_interleaved_memory_config = ttl.tensor.MemoryConfig(
@@ -599,13 +584,6 @@ def test_softmax(device, num_cores, seq_len):
         tt_dtype=ttl.tensor.DataType.BFLOAT16,
     )
 
-    tt_attention_mask_1_head_dim = torch2tt_tensor(
-        torch_attention_mask_1_head_dim,
-        device,
-        tt_memory_config=dram_interleaved_memory_config,
-        tt_dtype=ttl.tensor.DataType.BFLOAT16,
-    )
-
     tt_attention_mask = torch2tt_tensor(
         torch_attention_mask,
         device,
@@ -613,166 +591,110 @@ def test_softmax(device, num_cores, seq_len):
         tt_dtype=ttl.tensor.DataType.BFLOAT16,
     )
 
-    tt_scalar = torch2tt_tensor(
-        torch_scalar,
-        device,
-        tt_memory_config=dram_interleaved_memory_config,
-        tt_dtype=ttl.tensor.DataType.BFLOAT16,
-    )
+    tt_attention_masks_per_slice = []
+    attention_mask_starting_index_per_slice = 0
+    number_of_attention_mask_elements_used_per_slice = slice_length - seq_len * (slice_length // seq_len)
+    # print("Slice length is: ", slice_length)
+    # print("Number of attention mask elements per slice = ", number_of_attention_mask_elements_used_per_slice)
+    for slice_index in range(num_slices):
+        # print("Slice attention mask starting index: ", attention_mask_starting_index_per_slice)
+        torch_attention_mask_per_slice = torch.cat(
+            [
+                torch_attention_mask[:, :, attention_mask_starting_index_per_slice:, :],
+                torch_attention_mask[:, :, :attention_mask_starting_index_per_slice, :],
+            ],
+            dim=2,
+        )
+        tt_attention_slice = torch2tt_tensor(
+            torch_attention_mask_per_slice,
+            device,
+            tt_memory_config=dram_interleaved_memory_config,
+            tt_dtype=ttl.tensor.DataType.BFLOAT16,
+        )
+        tt_attention_masks_per_slice.append(tt_attention_slice)
+        attention_mask_starting_index_per_slice = (
+            attention_mask_starting_index_per_slice + number_of_attention_mask_elements_used_per_slice
+        ) % seq_len  # mod attention_mask.height
 
     tt_output_sharded_softmax = torch2tt_tensor(
         torch_outputs, device, tt_memory_config=dram_interleaved_memory_config, tt_dtype=ttl.tensor.DataType.BFLOAT16
     )
 
-    num_slices = 1
-    if seq_len == 2048:
-        num_slices = 16
-    elif seq_len == 1024:
-        num_slices = 4
-
     # Sharded softmax
     tiles_per_shard = math.ceil((((head_dim * seq_len) / num_cores) / num_slices) / 32)
     height_shard_spec = [tiles_per_shard * 32, seq_len]
-    print("Tiles per shard is: ", tiles_per_shard)
-    # height_shard_spec = [5 * 32, seq_len] version where we pad up everything to 64 cores
 
     for i in range(num_slices):
-        if sharded_version:
-            input_slice = ttl.tensor.interleaved_to_sharded_partial(
-                tt_input,
-                grid_size,
-                height_shard_spec,
-                num_slices,
-                i,
-                ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
-                ttl.tensor.ShardOrientation.ROW_MAJOR,
-            )
-
-            tt_attn_mask_slice = ttl.tensor.interleaved_to_sharded_partial(
-                tt_attention_mask,
-                grid_size,
-                height_shard_spec,
-                num_slices,
-                i,
-                ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
-                ttl.tensor.ShardOrientation.ROW_MAJOR,
-            )
-
-            softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
-                compute_with_storage_grid_size=grid_size,
-                subblock_w=1,
-                block_h=height_shard_spec[0] // 32,
-                block_w=height_shard_spec[1] // 32,
-                math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-                im_data_format=ttl.tensor.DataType.BFLOAT16,
-            )
-
-            # print("Running softmax in place")
-            # when in_1 (attention_mask) is sharded, we need it to be this shape: [1, 71, seq_len, seq_len]
-            # when in_1 (attention_mask) is interleaved, we need it to be this shape [1, 1, seq_len, seq_len] and it hangs!
-            # make it unhang
-            slice_out = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
-                input_slice,
-                1 / math.sqrt(head_dim),
-                tt_attn_mask_slice,
-                program_config=softmax_program_config,
-                is_causal_mask=True,
-            )
-            # print("Done softmax in place")
-
-            # print("Running S->I partial")
-            ttl.tensor.sharded_to_interleaved_partial(
-                slice_out,
-                tt_output_sharded_softmax,
-                num_slices,
-                i,
-                dram_interleaved_memory_config,
-            )
-            # print("Done S->I partial")
-
-            # print("Dealloc begin")
-            slice_out.deallocate()
-            # print("Dealloc end")
-        else:
-            if i >= 4:
-                pass
-            else:
-                print("Running slice: ", i)
-                # Interleaved version
-                # In0 sharded
-                input_slice = ttl.tensor.interleaved_to_sharded_partial(
-                    tt_input,
-                    grid_size,
-                    height_shard_spec,
-                    num_slices,
-                    i,
-                    ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
-                    ttl.tensor.ShardOrientation.ROW_MAJOR,
-                )
-
-                # input_slice = ttl.tensor.move_sharded(input_slice)
-
-                softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
-                    compute_with_storage_grid_size=grid_size,
-                    subblock_w=1,
-                    block_h=height_shard_spec[0] // 32,
-                    block_w=height_shard_spec[1] // 32,
-                    math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-                    im_data_format=ttl.tensor.DataType.BFLOAT16,
-                )
-
-                input_slice = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
-                    input_slice,
-                    1 / math.sqrt(head_dim),
-                    tt_attention_mask,
-                    program_config=softmax_program_config,
-                    is_causal_mask=True,
-                )
-
-                ttl.tensor.sharded_to_interleaved_partial(
-                    input_slice, tt_output_sharded_softmax, num_slices, i, dram_interleaved_memory_config
-                )
-                input_slice.deallocate()
-
-    # Interleaved softmax
-    # print("Running softmax 2")
-    if sharded_version:
-        out = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+        print("Running slice: ", i)
+        input_slice = ttl.tensor.interleaved_to_sharded_partial(
             tt_input,
+            grid_size,
+            height_shard_spec,
+            num_slices,
+            i,
+            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
+            ttl.tensor.ShardOrientation.ROW_MAJOR,
+        )
+
+        softmax_program_config = ttl.operations.primary.transformers.SoftmaxShardedMultiCoreProgramConfig(
+            compute_with_storage_grid_size=grid_size,
+            subblock_w=1,
+            block_h=height_shard_spec[0] // 32,
+            block_w=height_shard_spec[1] // 32,
+            math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+            im_data_format=ttl.tensor.DataType.BFLOAT16,
+        )
+
+        input_slice = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+            input_slice,
             1 / math.sqrt(head_dim),
-            tt_attention_mask_1_head_dim,
-            program_config=ttl.operations.primary.transformers.SoftmaxDefaultProgramConfig(),
+            # tt_attention_mask,
+            tt_attention_masks_per_slice[i],
+            program_config=softmax_program_config,
             is_causal_mask=True,
         )
-    else:
-        out = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
-            tt_input,
-            1 / math.sqrt(head_dim),
-            tt_attention_mask,
-            program_config=ttl.operations.primary.transformers.SoftmaxDefaultProgramConfig(),
-            is_causal_mask=True,
-        )
-    # print("Done Running softmax 2")
 
-    # print("Converting 1")
+        ttl.tensor.sharded_to_interleaved_partial(
+            input_slice, tt_output_sharded_softmax, num_slices, i, dram_interleaved_memory_config
+        )
+        input_slice.deallocate()
+
+    out = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+        tt_input,
+        1 / math.sqrt(head_dim),
+        tt_attention_mask,
+        program_config=ttl.operations.primary.transformers.SoftmaxDefaultProgramConfig(),
+        is_causal_mask=True,
+    )
+
     out_torch = tt2torch_tensor(out)
     out_torch_view = out_torch.view(1, 1, out_torch.shape[1] * out_torch.shape[2], out_torch.shape[3])
-    # print("Done Converting 1")
 
-    # print("Converting 2")
     out_torch_softmax = tt2torch_tensor(tt_output_sharded_softmax)
     out_torch_softmax_view = out_torch_softmax.view(
         1, 1, out_torch_softmax.shape[1] * out_torch_softmax.shape[2], out_torch_softmax.shape[3]
     )
-    # print("Done Converting 2")
 
+    # Compare slice pcc
     passing = True
-    passing, output = comp_pcc(out_torch_view, out_torch_softmax_view)
+    print("Slice shape is ", 1, " ", 1, slice_length, seq_len)
+    for slice_index in range(num_slices):
+        print("Comparing slice ", slice_index, "...")
+        slice_passing = False
+        slice_passing, output = comp_pcc(
+            out_torch_view[:, :, (slice_length) * slice_index : (slice_length) * (slice_index + 1), :],
+            out_torch_softmax_view[:, :, (slice_length) * slice_index : (slice_length) * (slice_index + 1), :],
+        )
+        passing = passing and slice_passing
+        print("Slice PCC is: ", output)
+
+    # Compare entire tensors as well
+    entire_tensor_passing, output = comp_pcc(out_torch_view, out_torch_softmax_view)
+    passing = entire_tensor_passing and passing
 
     print("My shape", out_torch_softmax_view.shape)
     print("Actual shape", out_torch_view.shape)
     print("Out my version: ", out_torch_softmax_view)
-    # print("Out my version: ", out_torch_softmax)
     print("Actual output: ", out_torch_view)
 
     print(output)
