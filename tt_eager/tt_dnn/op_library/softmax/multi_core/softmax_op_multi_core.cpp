@@ -713,6 +713,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
         auto &mask_tensor = optional_input_tensors.at(0);
         auto out_buffer = output_tensors.size() == 1 ? output_tensors.at(0).buffer() : in0_buffer;
 
+        log_info("Callback called");
         UpdateDynamicCircularBufferAddress(program, cb_in0_id, *in0_buffer);
         UpdateDynamicCircularBufferAddress(program, cb_out0_id, *out_buffer);
 
