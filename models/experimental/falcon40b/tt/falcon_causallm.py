@@ -93,13 +93,15 @@ class TtFalconCausalLM(TtFalconModelShared):
         lm_logits = []
         for i in range(len(hidden_states)):
             lm_logits.append(
-                tt_lib.operations.primary.matmul_1d(
+                # tt_lib.operations.primary.matmul_1d(
+                tt_lib.operations.primary.matmul(
                     hidden_states[i],
                     self.lm_head_weights[i],
                     program_config=self.model_config["LM_HEAD_MM_PROGCFG"],
                     output_mem_config=self.model_config["LM_HEAD_MM_OUTPUT_MEMCFG"],
                     output_dtype=self.model_config["LM_HEAD_MM_OUTPUT_DTYPE"],
-                    compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+                    # compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+                    compute_kernel_config=self.model_config["COMPUTE_KERNEL_FP16_ACC_CONFIG"],
                 )
             )
             hidden_states[i].deallocate(True)

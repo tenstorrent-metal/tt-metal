@@ -181,6 +181,8 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
             fp32_dest_acc_en=False,
             packer_l1_acc=True,
         ),
+        "DRAM_MEMCFG": DRAM_MEMCFG,
+        "L1_MEMCFG": L1_MEMCFG,
     }
     model_config.update({f"{key}_MEMCFG": mem_config for key in OP_KEYS if key not in NO_MEMCFG})
     model_config.update({f"{key}_DTYPE": dtype for key in OP_KEYS if key not in NO_DTYPE})
@@ -197,6 +199,10 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
 
     model_config["KV_CACHE_MEMCFG"] = DRAM_MEMCFG
     model_config["KV_CACHE_DTYPE"] = BFP8_DTYPE
+
+    # # TODO: use BFLOAT16 for the attention mask!
+    # # model_config["KV_CACHE_MEMCFG"] = DRAM_MEMCFG
+    # model_config["ATTN_MASK_DTYPE"] = BFLOAT16_DTYPE
 
     head_dim = 64
     hidden_size = model_config_entries["hidden_size"]
@@ -215,15 +221,16 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
         # Layernorm is an exception that are sharded also here, because the interleaved OP does not fit in L1 for 40b hidden size
         layernorm_num_cores_x = 8
         layernorm_max_num_cores_y = 7
+        partial_seqlen = 128
         for i in range(layernorm_max_num_cores_y, 0, -1):
-            if (row_height // 32) % i == 0:
+            if (partial_seqlen // 32) % i == 0:
                 layernorm_num_cores_y = i
                 break
 
-        num_tiles_per_core_h = row_height // 32 // layernorm_num_cores_y
+        num_tiles_per_core_h = partial_seqlen // 32 // layernorm_num_cores_y
         num_tiles_per_core_w = hidden_size // 32 // layernorm_num_cores_x
 
-        layernorm_shard_height_hidden_dim = row_height // layernorm_num_cores_y
+        layernorm_shard_height_hidden_dim = partial_seqlen // layernorm_num_cores_y
         layernorm_shard_width_hidden_dim = hidden_size // layernorm_num_cores_x
 
         core_range_block_sharded_layernorm = ttl.tensor.CoreRangeSet(
@@ -270,19 +277,35 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
             inplace=True,
         )
 
-        # Decoder layer layernorm
-        model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
-        model_config["LN_ATTN_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
-        model_config["LN_MLP_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+        # partial block sharded layernorm
+        model_config["PARTIAL_LN_MEMCFG"] = layernorm_block_sharded_mem_config
+        model_config["PARTIAL_LN_PROGCFG"] = layernorm_block_sharded_prg_config
+        model_config["PARTIAL_LN_INPLACE_PROGCFG"] = layernorm_block_sharded_prg_config_inplace
 
-        # Model final layernorm
-        model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
-        model_config["LN_F_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+        model_config["layernorm_params"] = {
+            "slice_size": partial_seqlen,
+            "layernorm_num_cores_x": layernorm_num_cores_x,
+            "layernorm_num_cores_y": layernorm_num_cores_y,
+            "layernorm_max_num_cores_y": layernorm_max_num_cores_y,
+            "layernorm_shard_height_hidden_dim": layernorm_shard_height_hidden_dim,
+            "layernorm_shard_width_hidden_dim": layernorm_shard_width_hidden_dim,
+            "num_tiles_per_core_h": num_tiles_per_core_h,
+            "num_tiles_per_core_w": num_tiles_per_core_w,
+        }
 
-        # Layernorm prigram config
-        model_config["LN_ATTN_PROGCFG"] = layernorm_block_sharded_prg_config
-        model_config["LN_MLP_PROGCFG"] = layernorm_block_sharded_prg_config_inplace
-        model_config["LN_F_PROGCFG"] = layernorm_block_sharded_prg_config_inplace
+        # # Decoder layer layernorm
+        # model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+        # model_config["LN_ATTN_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+        # model_config["LN_MLP_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+
+        # # Model final layernorm
+        # model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+        # model_config["LN_F_OUTPUT_MEMCFG"] = layernorm_block_sharded_mem_config
+
+        # # Layernorm prigram config
+        # model_config["LN_ATTN_PROGCFG"] = layernorm_block_sharded_prg_config
+        # model_config["LN_MLP_PROGCFG"] = layernorm_block_sharded_prg_config_inplace
+        # model_config["LN_F_PROGCFG"] = layernorm_block_sharded_prg_config_inplace
 
         # Specify program configs
         # QKV Projection
@@ -475,16 +498,27 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
                 mcast_in0=True,
             )
         elif num_devices == 8:
-            model_config["LM_HEAD_MM_PROGCFG"] = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+            # model_config["LM_HEAD_MM_PROGCFG"] = ttl.operations.primary.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+            #     compute_with_storage_grid_size=(8, 4),
+            #     in0_block_w=8,
+            #     out_subblock_h=1,
+            #     out_subblock_w=4,
+            #     per_core_M=row_height // 32,
+            #     per_core_N=8,
+            #     fuse_batch=True,
+            #     fused_activation=None,
+            #     mcast_in0=True,
+            # )
+            # input: [S, 8k], weight: [8k, 8k]
+            model_config["LM_HEAD_MM_PROGCFG"] = ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
                 compute_with_storage_grid_size=(8, 4),
-                in0_block_w=8,
-                out_subblock_h=1,
-                out_subblock_w=4,
-                per_core_M=row_height // 32,
-                per_core_N=8,
-                fuse_batch=True,
+                in0_block_w=1,  # how much inner dim you take each time
+                out_subblock_h=1,  # Must be divisible by per_core_M
+                out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
+                per_core_M=row_height // 32 // 4,  # S2048: 8 M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
+                per_core_N=8192 // 32 // 8,  # 64,  # N / TILE_WIDTH / Grid_Size
+                transpose_mcast=False,
                 fused_activation=None,
-                mcast_in0=True,
             )
 
     if model_config_str in ("BFLOAT16-L1",):

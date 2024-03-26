@@ -11,7 +11,7 @@ import tt_lib
 
 from models.experimental.falcon40b.tt.falcon_attention import TtFalconAttention
 from models.experimental.falcon40b.tt.falcon_mlp import TtFalconMLP
-from models.utility_functions import pad_by_zero
+from models.utility_functions import torch2tt_tensor, pad_by_zero
 
 from models.experimental.falcon40b.tt.model_utils import (
     convert_to_layout,
@@ -39,6 +39,7 @@ class TtFalconDecoderLayer:
         self.layer_num = layer_num
         self.max_position_embeddings = max_position_embeddings
         self.model_config = model_config
+        self.num_devices = len(devices)
 
         assert config.parallel_attn, "Path for config.parallel_attn=False is not implemented in TtFalconDecoderLayer!"
 
@@ -198,35 +199,41 @@ class TtFalconDecoderLayer:
             self.model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"],
         )
 
-        attn_ln_output = []
-        for i in range(len(replicated_hidden_states)):
-            attn_ln_output.append(
-                tt_lib.operations.primary.layernorm(
-                    replicated_hidden_states[i],
-                    self.layernorm_eps,
-                    self.ln_attn_gamma[i],
-                    self.ln_attn_beta[i],
-                    self.model_config["LN_ATTN_OUTPUT_MEMCFG"],
-                    self.model_config["LN_ATTN_PROGCFG"],
-                )
-            )
+        attn_ln_output = self.partial_layernorm(
+            replicated_hidden_states, self.ln_attn_gamma, self.ln_attn_beta, is_inplace=False
+        )
+        # attn_ln_output = []
+        # for i in range(len(replicated_hidden_states)):
+        #     attn_ln_output.append(
+        #         tt_lib.operations.primary.layernorm(
+        #             replicated_hidden_states[i],
+        #             self.layernorm_eps,
+        #             self.ln_attn_gamma[i],
+        #             self.ln_attn_beta[i],
+        #             self.model_config["LN_ATTN_OUTPUT_MEMCFG"],
+        #             self.model_config["LN_ATTN_PROGCFG"],
+        #         )
+        #     )
         attn_ln_output = convert_to_layout(
             attn_ln_output, self.model_config["LN_ATTN_OUTPUT_MEMCFG"], self.model_config["ATTN_INPUT_MEMCFG"]
         )
 
         # mlp_ln is in place, no need to deallocate original
-        mlp_ln_output = []
-        for i in range(len(replicated_hidden_states)):
-            mlp_ln_output.append(
-                tt_lib.operations.primary.layernorm(
-                    replicated_hidden_states[i],
-                    self.layernorm_eps,
-                    self.ln_mlp_gamma[i],
-                    self.ln_mlp_beta[i],
-                    self.model_config["LN_MLP_OUTPUT_MEMCFG"],
-                    self.model_config["LN_MLP_PROGCFG"],
-                )
-            )
+        mlp_ln_output = self.partial_layernorm(
+            replicated_hidden_states, self.ln_mlp_gamma, self.ln_mlp_beta, is_inplace=True
+        )
+        # mlp_ln_output = []
+        # for i in range(len(replicated_hidden_states)):
+        #     mlp_ln_output.append(
+        #         tt_lib.operations.primary.layernorm(
+        #             replicated_hidden_states[i],
+        #             self.layernorm_eps,
+        #             self.ln_mlp_gamma[i],
+        #             self.ln_mlp_beta[i],
+        #             self.model_config["LN_MLP_OUTPUT_MEMCFG"],
+        #             self.model_config["LN_MLP_PROGCFG"],
+        #         )
+        #     )
         mlp_ln_output = convert_to_layout(
             mlp_ln_output, self.model_config["LN_MLP_OUTPUT_MEMCFG"], self.model_config["DEFAULT_MEMCFG"]
         )
@@ -287,3 +294,71 @@ class TtFalconDecoderLayer:
             )  # Outputs should be empty if we ignore layer_past as well
 
         return outputs
+
+    def partial_layernorm(self, xs, ln_gamma, ln_beta, is_inplace=True):
+        # Do partial layernorm by partial sequence length of 128
+        # Input xs[0] is [1, 1, seq_len, 8192]
+        seq_len = xs[0].shape[2]
+
+        xs_output_cat = []  # this is the output we write to. Initiate as empty tensors
+        for i in range(len(xs)):
+            xs_output_cat.append(
+                torch2tt_tensor(
+                    torch.zeros([1, 1, seq_len, self.hidden_size]),
+                    self.devices[i],
+                    tt_memory_config=self.model_config["DRAM_MEMCFG"],
+                    tt_dtype=tt_lib.tensor.DataType.BFLOAT16,
+                )
+            )
+
+        slice_size = self.model_config["layernorm_params"]["slice_size"]
+
+        layernorm_num_cores_x, layernorm_num_cores_y = (
+            self.model_config["layernorm_params"]["layernorm_num_cores_x"],
+            self.model_config["layernorm_params"]["layernorm_num_cores_y"],
+        )
+        layernorm_shard_height_hidden_dim, layernorm_shard_width_hidden_dim = (
+            self.model_config["layernorm_params"]["layernorm_shard_height_hidden_dim"],
+            self.model_config["layernorm_params"]["layernorm_shard_width_hidden_dim"],
+        )
+
+        num_slices = seq_len // slice_size  # we do 128 per iteration (slice), then we concat the result.
+
+        for slice_i in range(num_slices):
+            xs_slice = []
+            for i in range(self.num_devices):
+                xs_slice.append(
+                    tt_lib.tensor.interleaved_to_sharded_partial(
+                        xs[i],
+                        (layernorm_num_cores_x, layernorm_num_cores_y),
+                        [layernorm_shard_height_hidden_dim, layernorm_shard_width_hidden_dim],
+                        num_slices,  # num_slices
+                        slice_i,  # slice_index
+                        tt_lib.tensor.TensorMemoryLayout.BLOCK_SHARDED,
+                        tt_lib.tensor.ShardOrientation.ROW_MAJOR,
+                    )
+                )
+
+            for i in range(self.num_devices):
+                xs_slice[i] = tt_lib.operations.primary.layernorm(
+                    xs_slice[i],
+                    self.layernorm_eps,
+                    ln_gamma[i],
+                    ln_beta[i],
+                    self.model_config["PARTIAL_LN_MEMCFG"],
+                    self.model_config["PARTIAL_LN_INPLACE_PROGCFG"]
+                    if is_inplace
+                    else self.model_config["PARTIAL_LN_PROGCFG"],
+                )
+
+                tt_lib.tensor.sharded_to_interleaved_partial(
+                    xs_slice[i],
+                    xs_output_cat[i],
+                    num_slices,
+                    slice_i,
+                    self.model_config["DRAM_MEMCFG"],
+                )
+                xs_slice[i].deallocate(True)
+        for i in range(self.num_devices):
+            xs_output_cat[i] = tt_lib.tensor.typecast(xs_output_cat[i], self.model_config["LN_MLP_OUTPUT_DTYPE"])
+        return xs_output_cat
