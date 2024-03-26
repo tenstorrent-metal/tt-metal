@@ -83,7 +83,7 @@ void MAIN {
         cb_wait_front(cb_scale_mask, block_w);
 
         #ifndef SHARDED_CAUSAL_MASK
-            if (i == 4) DPRINT << "Wait fused attn " << ENDL();
+            if (i == 4) DPRINT << "Wait fused attn , block_w = " << block_w << ENDL();
             cb_wait_front(cb_fused_attn, block_w);
             if (i == 4) DPRINT << "Wait fused attn done" << ENDL();
         #endif

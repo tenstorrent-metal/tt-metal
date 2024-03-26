@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include "common/logger.hpp"
+#include "impl/buffers/buffer.hpp"
 #include "tt_eager/tt_dnn/op_library/softmax/softmax_op.hpp"
 #include "tt_eager/tt_dnn/op_library/math.hpp"
 #include "tt_eager/tt_dnn/op_library/work_split.hpp"
@@ -468,6 +470,7 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
     }
     if (causal_mask) {
         reader_compile_time_args.push_back((std::uint32_t) block_ht / block_wt); // fused head
+        reader_compile_time_args.push_back((std::uint32_t) block_ht % block_wt); // fused head remainder
     }
 
     if (mask.has_value()) {
@@ -555,41 +558,140 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
     uint32_t mask_addr = mask.has_value() ? mask.value().buffer()->address() : 0;
     union { float f; uint32_t u; } s; s.f = scale.value_or(1.0f); // scale for fused scale-mask-softmax
     uint32_t mask_start_tile_id = 0;
-    for(int core_idx_y = 0; core_idx_y < num_cores_r; core_idx_y++) {
 
-        if (shard_orient == ShardOrientation::COL_MAJOR) {
-            mask_start_tile_id = 0;
-        }
 
-        for(int core_idx_x = 0; core_idx_x < num_cores_c; core_idx_x++) {
-            CoreCoord core = {(std::size_t) start_core_x + core_idx_x, (std::size_t) start_core_y + core_idx_y};
+    bool sharded_mask = false;
+    if (mask.has_value()) {
+        sharded_mask = mask.value().is_sharded();
+    }
 
-            // reader args
-            std::vector<uint32_t> reader_args;
-            reader_args.push_back(0x3f803f80);
-            reader_args.push_back(s.u);
-            reader_args.push_back(mask_addr);
-            reader_args.push_back(mask_start_tile_id);
-            tt_metal::SetRuntimeArgs(program, reader_kernels_id, core, reader_args);
+    if (sharded_mask) {
+        // Sharded mask, sharded in0
+        for(int core_idx_y = 0; core_idx_y < num_cores_r; core_idx_y++) {
 
             if (shard_orient == ShardOrientation::COL_MAJOR) {
-                if (mask.has_value()) {
-                    if (causal_mask) {
-                        mask_start_tile_id += mask.value().get_legacy_shape()[-1] * mask.value().get_legacy_shape()[-2] / TILE_WIDTH / TILE_HEIGHT;
-                    } else {
-                        mask_start_tile_id += use_row_major_kernel ? mask.value().get_legacy_shape()[-2] : mask.value().get_legacy_shape()[-1] / TILE_WIDTH;
+                mask_start_tile_id = 0;
+            }
+
+            for(int core_idx_x = 0; core_idx_x < num_cores_c; core_idx_x++) {
+                CoreCoord core = {(std::size_t) start_core_x + core_idx_x, (std::size_t) start_core_y + core_idx_y};
+
+                // reader args
+                std::vector<uint32_t> reader_args;
+                reader_args.push_back(0x3f803f80);
+                reader_args.push_back(s.u);
+                reader_args.push_back(mask_addr);
+                reader_args.push_back(mask_start_tile_id);
+                tt_metal::SetRuntimeArgs(program, reader_kernels_id, core, reader_args);
+
+                if (shard_orient == ShardOrientation::COL_MAJOR) {
+                    if (mask.has_value()) {
+                        if (causal_mask) {
+                            mask_start_tile_id += mask.value().get_legacy_shape()[-1] * mask.value().get_legacy_shape()[-2] / TILE_WIDTH / TILE_HEIGHT;
+                        } else {
+                            mask_start_tile_id += use_row_major_kernel ? mask.value().get_legacy_shape()[-2] : mask.value().get_legacy_shape()[-1] / TILE_WIDTH;
+                        }
                     }
-                }
-            } else if (core_idx_x == num_cores_c - 1) {
-                if (mask.has_value()) {
-                    if (causal_mask) {
-                        mask_start_tile_id += mask.value().get_legacy_shape()[-1] * mask.value().get_legacy_shape()[-2] / TILE_WIDTH / TILE_HEIGHT;
-                    } else {
-                        mask_start_tile_id += use_row_major_kernel ? mask.value().get_legacy_shape()[-2] : mask.value().get_legacy_shape()[-1] / TILE_WIDTH;
+                } else if (core_idx_x == num_cores_c - 1) {
+                    if (mask.has_value()) {
+                        if (causal_mask) {
+                            mask_start_tile_id += mask.value().get_legacy_shape()[-1] * mask.value().get_legacy_shape()[-2] / TILE_WIDTH / TILE_HEIGHT;
+                        } else {
+                            mask_start_tile_id += use_row_major_kernel ? mask.value().get_legacy_shape()[-2] : mask.value().get_legacy_shape()[-1] / TILE_WIDTH;
+                        }
                     }
                 }
             }
         }
+    } else {
+        // Interleaved mask, sharded in0
+        mask_start_tile_id = 0;
+        uint32_t num_tiles_of_mask_needed_per_core = block_ht * block_wt; // 5
+        uint32_t num_tiles_in_attn_mask = mask.value().get_legacy_shape()[-1] * mask.value().get_legacy_shape()[-2] / TILE_HW; // 2
+
+    for (uint32_t i = 0; i < grid_size.x * grid_size.y; ++i) {
+        CoreCoord core = {i % grid_size.x, i / grid_size.x};
+
+        // Cores are set up in this order:
+        // x = 0, y = 0
+        // x = 1, y = 0
+        // x = 2, y = 0
+        // ...
+        // x = 7, y = 0
+        // x = 0, y = 1
+        // x = 1, y = 1
+        // ...
+        // x = 7, y = 1
+        // x = 0, y = 2
+        // x = 1, y = 2
+        // ...
+
+        log_info("Setting up core: x = {}, y = {}", core.x, core.y);
+        std::vector<uint32_t> reader_args;
+        reader_args.push_back(0x3f803f80);
+        reader_args.push_back(s.u);
+        reader_args.push_back(mask_addr);
+        reader_args.push_back(mask_start_tile_id);
+        tt_metal::SetRuntimeArgs(program, reader_kernels_id, core, reader_args);
+
+        // RM shard orient
+        // I have this many tiles in a shard_spec
+        uint32_t mask_tile_id_end = (mask_start_tile_id + num_tiles_of_mask_needed_per_core) % num_tiles_in_attn_mask;
+
+        // For next
+        mask_start_tile_id = mask_tile_id_end;
+    }
+
+        // for (int core_id_x = 0; core_id_x < num_cores_r; core_id_x++) {
+        //     for (int core_id_y = 0; core_id_y < num_cores_c; core_id_y++) {
+        //         CoreCoord core = {(std::size_t) start_core_x + core_id_x, (std::size_t) start_core_y + core_id_y};
+
+        //         // log_info("Setting info for core: x={} y={}", core.x, core.y);
+        //         // reader args
+        //         std::vector<uint32_t> reader_args;
+        //         reader_args.push_back(0x3f803f80);
+        //         reader_args.push_back(s.u);
+        //         reader_args.push_back(mask_addr);
+        //         reader_args.push_back(mask_start_tile_id);
+        //         tt_metal::SetRuntimeArgs(program, reader_kernels_id, core, reader_args);
+
+        //         // reader_compile_time_args.push_back((std::uint32_t) block_ht / block_wt); // fused head
+        //         // reader_compile_time_args.push_back((std::uint32_t) block_ht % block_wt); // fused head remainder
+
+        //         // RM shard orient
+        //         // I have this many tiles in a shard_spec
+        //         uint32_t mask_tile_id_end = (mask_start_tile_id + num_tiles_of_mask_needed_per_core) % num_tiles_in_attn_mask;
+
+        //         // For next
+        //         mask_start_tile_id = mask_tile_id_end;
+        //     }
+        // }
+
+        // for (int core_idx_y = 0; core_idx_y < num_cores_r; core_idx_y++) {
+        //     for(int core_idx_x = 0; core_idx_x < num_cores_c; core_idx_x++) {
+        //         CoreCoord core = {(std::size_t) start_core_x + core_idx_x, (std::size_t) start_core_y + core_idx_y};
+
+        //         log_info("Setting info for core: x={} y={}", core.x, core.y);
+        //         // reader args
+        //         std::vector<uint32_t> reader_args;
+        //         reader_args.push_back(0x3f803f80);
+        //         reader_args.push_back(s.u);
+        //         reader_args.push_back(mask_addr);
+        //         reader_args.push_back(mask_start_tile_id);
+        //         tt_metal::SetRuntimeArgs(program, reader_kernels_id, core, reader_args);
+
+
+        //         reader_compile_time_args.push_back((std::uint32_t) block_ht / block_wt); // fused head
+        //         reader_compile_time_args.push_back((std::uint32_t) block_ht % block_wt); // fused head remainder
+
+        //         // RM shard orient
+        //         // I have this many tiles in a shard_spec
+        //         uint32_t mask_tile_id_end = (mask_start_tile_id + num_tiles_of_mask_needed_per_core) % num_tiles_in_attn_mask;
+
+        //         // For next
+        //         mask_start_tile_id = mask_tile_id_end;
+        //     }
+        // }
     }
 
     auto override_runtime_arguments_callback = [
