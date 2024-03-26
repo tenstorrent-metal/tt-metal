@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include <optional>
+#include "impl/buffers/buffer.hpp"
 #include "tt_dnn/op_library/bcast/bcast_op.hpp"
 #include "tt_dnn/op_library/work_split.hpp"
 #include "tensor/tensor.hpp"
@@ -19,8 +21,10 @@ namespace tt {
 
 namespace tt_metal {
 
-operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tensor &b, Tensor& output, BcastOpMath bcast_math, BcastOpDim bcast_dim) {
+operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tensor &b, const Tensor& output, BcastOpMath bcast_math, BcastOpDim bcast_dim) {
     TT_ASSERT(bcast_dim == BcastOpDim::HW);
+	// Todo.pp : fix
+	TT_ASSERT(a.memory_config().memory_layout == output.memory_config().memory_layout);
 
     const auto ashape = a.get_legacy_shape();
     const auto bshape = b.get_legacy_shape();
@@ -41,10 +45,18 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
 
     tt_metal::Device *device = a.device();
 
+	std::optional<ShardSpec> shard_spec = std::nullopt;
+	bool src0_sharded = a.memory_config().is_sharded();
+	bool output_sharded = output.memory_config().is_sharded();
+	if (src0_sharded) {
+		shard_spec = a.shard_spec().value();
+	} else if (output_sharded) {
+		shard_spec = output.shard_spec().value();
+	}
+
 	tt::DataFormat cb_data_format = tt_metal::datatype_to_dataformat_converter(a.get_dtype());
 
     uint32_t single_tile_size = tt_metal::detail::TileSize(cb_data_format);
-
 
     auto compute_with_storage_grid_size = device->compute_with_storage_grid_size();
     uint32_t num_cores_x = compute_with_storage_grid_size.x;
@@ -63,9 +75,23 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
 
 	uint32_t src0_cb_index = 0;
 	uint32_t num_input_tiles = 2;
+	uint32_t num_tiles_per_shard = 0;
+	if (shard_spec.has_value()) {
+		num_tiles_per_shard = shard_spec.value().shape[0] * shard_spec.value().shape[1] / TILE_HW;
+		num_tiles_per_core_group_1 = num_tiles_per_shard;
+		num_tiles_per_core_group_2 = 0;
+		all_cores = shard_spec.value().grid;
+		core_group_1 = all_cores;
+		core_group_2 = CoreRangeSet({});
+	}
 
-	tt_metal::CircularBufferConfig src0_cb_config = tt_metal::CircularBufferConfig(num_input_tiles * single_tile_size, {{src0_cb_index, cb_data_format}})
+	uint32_t num_input_tiles_cb0 = src0_sharded ? num_tiles_per_shard : num_input_tiles;
+
+	tt_metal::CircularBufferConfig src0_cb_config = tt_metal::CircularBufferConfig(num_input_tiles_cb0 * single_tile_size, {{src0_cb_index, cb_data_format}})
 		.set_page_size(src0_cb_index, single_tile_size);
+	if (src0_sharded) {
+		src0_cb_config = src0_cb_config.set_globally_allocated_address(*a.buffer());
+	}
 	auto cb_src0 = tt_metal::CreateCircularBuffer(program, all_device_cores, src0_cb_config);
 
 	uint32_t src1_cb_index = 1;
@@ -74,9 +100,12 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
 	auto cb_src1 = tt_metal::CreateCircularBuffer(program, all_device_cores, src1_cb_config);
 
 	uint32_t output_cb_index = 16; // output operands start at index 16
-	uint32_t num_output_tiles = 2;
+	uint32_t num_output_tiles = output_sharded ? num_tiles_per_shard : 2;
 	tt_metal::CircularBufferConfig output_cb_config = tt_metal::CircularBufferConfig(num_output_tiles * single_tile_size, {{output_cb_index, cb_data_format}})
 		.set_page_size(output_cb_index, single_tile_size);
+	if (output_sharded) {
+		output_cb_config = output_cb_config.set_globally_allocated_address(*output.buffer());
+	}
 	auto cb_output = tt_metal::CreateCircularBuffer(program, all_device_cores, output_cb_config);
 
 	bool src0_is_dram = src0_buffer->buffer_type() == tt_metal::BufferType::DRAM ? 1 : 0;
@@ -95,17 +124,24 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
 		reader_defines["BCAST_SCALAR"] = "1";
 		bcast_compute_defines["BCAST_SCALAR"] = "1";
 	}
+	if (src0_sharded) {
+		reader_defines["IN0_SHARDED"] = "1";
+	}
 	KernelHandle binary_reader_kernel_id = tt_metal::CreateKernel(
 		program,
 		reader_name,
 		all_device_cores,
 		tt_metal::ReaderDataMovementConfig(reader_compile_time_args, reader_defines));
 
+	std::map<string, string> writer_defines;
+	if (output_sharded) {
+		writer_defines["OUT_SHARDED"] = "1";
+	}
 	KernelHandle unary_writer_kernel_id = tt_metal::CreateKernel(
 		program,
 		"tt_eager/tt_dnn/kernels/dataflow/writer_unary_interleaved_start_id.cpp",
 		all_device_cores,
-		tt_metal::WriterDataMovementConfig(writer_compile_time_args));
+		tt_metal::WriterDataMovementConfig(writer_compile_time_args, writer_defines));
 
 	auto bcast_kernel_id = tt_metal::CreateKernel(
 		program,
@@ -169,11 +205,14 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
             binary_reader_kernel_id,
             unary_writer_kernel_id,
 			bcast_kernel_id,
-            compute_with_storage_grid_size
+            compute_with_storage_grid_size,
+			cb_src0,
+			single_tile_size,
+			cb_output
         ]
     (
         const void* operation,
-        const Program& program,
+        Program& program,
         const std::vector<Tensor>& input_tensors,
         const std::vector<std::optional<const Tensor>>&,
         const std::vector<Tensor>& output_tensors
@@ -181,10 +220,19 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
 		uint32_t num_cores_x = compute_with_storage_grid_size.x;
 		uint32_t num_cores_y = compute_with_storage_grid_size.y;
 
-        auto src_dram_buffer_a = input_tensors.at(0).buffer();
+        auto src_buffer_a = input_tensors.at(0).buffer();
         auto src_dram_buffer_b = input_tensors.at(1).buffer();
+		std::optional<ShardSpec> shard_spec = std::nullopt;
+		bool src0_sharded = input_tensors.at(0).memory_config().is_sharded();
+		bool out_sharded = output_tensors.at(0).memory_config().is_sharded();
 
-        auto dst_dram_buffer = output_tensors.at(0).buffer();
+		if (src0_sharded) {
+			shard_spec = input_tensors.at(0).shard_spec().value();
+		} else if (out_sharded) {
+			shard_spec = output_tensors.at(0).shard_spec().value();
+		}
+
+        auto dst_buffer= output_tensors.at(0).buffer();
 
 		const auto ashape = input_tensors.at(0).get_legacy_shape();
 		const auto bshape = input_tensors.at(1).get_legacy_shape();
@@ -202,6 +250,16 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
 		uint32_t bnc1 = (bN*bC == 1);
 
    	 	auto [num_cores, all_cores, core_group_1, core_group_2, num_tiles_per_core_group_1, num_tiles_per_core_group_2] = split_work_to_cores(compute_with_storage_grid_size, num_tensor_tiles);
+
+		if (shard_spec.has_value()) {
+			uint32_t num_tiles_per_shard = 0;
+			num_tiles_per_shard = shard_spec.value().shape[0] * shard_spec.value().shape[1] / TILE_HW;
+			num_tiles_per_core_group_1 = num_tiles_per_shard;
+			num_tiles_per_core_group_2 = 0;
+			all_cores = shard_spec.value().grid;
+			core_group_1 = all_cores;
+			core_group_2 = CoreRangeSet({});
+		}
 
         for (uint32_t i = 0, num_tiles_read = 0; i < num_cores_y * num_cores_x; i++){
 			CoreCoord core = {i / num_cores_y, i % num_cores_y};
@@ -222,7 +280,7 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
 				binary_reader_kernel_id,
 				core,
 				{
-					src_dram_buffer_a->address(), // 0
+					src_buffer_a->address(), // 0
 					src_dram_buffer_b->address(),
 					num_tensor_tiles_per_core,
 					HtWt,
@@ -246,12 +304,22 @@ operation::ProgramWithCallbacks bcast_multi_core_hw(const Tensor &a, const Tenso
 			tt_metal::SetRuntimeArgs(
 				program, unary_writer_kernel_id, core,
 				{
-					dst_dram_buffer->address(),
+					dst_buffer->address(),
 					num_tensor_tiles_per_core,
 					num_tiles_read,
 				}
 			);
 			num_tiles_read += num_tensor_tiles_per_core;
+		}
+
+		if (src0_sharded) {
+			UpdateDynamicCircularBufferAddress(program, cb_src0, *src_buffer_a);
+            UpdateCircularBufferTotalSize(program, cb_src0, num_tiles_per_core_group_1 * single_tile_size);
+		}
+
+		if (out_sharded) {
+			UpdateDynamicCircularBufferAddress(program, cb_output, *dst_buffer);
+			UpdateCircularBufferTotalSize(program, cb_output, num_tiles_per_core_group_1 * single_tile_size);
 		}
     };
 
