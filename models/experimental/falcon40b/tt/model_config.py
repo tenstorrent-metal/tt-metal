@@ -511,11 +511,11 @@ def get_model_config(model_config_str, llm_mode, input_shape, num_devices):
             # )
             # input: [S, 8k], weight: [8k, 8k]
             model_config["LM_HEAD_MM_PROGCFG"] = ttl.operations.primary.MatmulMultiCoreReuseMultiCastProgramConfig(
-                compute_with_storage_grid_size=(8, 4),
+                compute_with_storage_grid_size=(8, 8),
                 in0_block_w=1,  # how much inner dim you take each time
                 out_subblock_h=1,  # Must be divisible by per_core_M
                 out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
-                per_core_M=row_height // 32 // 4,  # S2048: 8 M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
+                per_core_M=row_height // 32 // 8,  # S2048: 8 M / TILE_HEIGHT / Grid_Size (dynamic based on seqlen)
                 per_core_N=8192 // 32 // 8,  # 64,  # N / TILE_WIDTH / Grid_Size
                 transpose_mcast=False,
                 fused_activation=None,
