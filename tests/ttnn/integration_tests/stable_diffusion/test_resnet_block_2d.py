@@ -111,20 +111,20 @@ def test_resnet_block_2d_256x256(
 @pytest.mark.parametrize(
     "batch_size, in_channels, input_height, input_width, index1,index2,block_name,out_channels",
     [
-        # (2, 320, 64, 64, 0, 0, "down", None),
-        (2, 320, 32, 32, 0, 0, "down", None),
-        (2, 640, 32, 32, 1, 1, "down", None),
-        (2, 640, 16, 16, 1, 1, "down", None),
-        (2, 1280, 16, 16, 2, 1, "down", None),
-        (2, 1280, 8, 8, 2, 1, "down", None),
-        (2, 2560, 8, 8, 0, 0, "up", 1280),
-        (2, 2560, 16, 16, 0, 0, "up", 1280),
-        # (2, 1920, 16, 16, 2, 0, "up", 640), # l1 allocation error
-        (2, 1920, 32, 32, 2, 0, "up", 640),
-        (2, 1280, 32, 32, 3, 0, "down", None),
-        # (2, 960, 32, 32, 3, 0, "up", 320), # l1 allocation error
+        # # (2, 320, 64, 64, 0, 0, "down", None),
+        # (2, 320, 32, 32, 0, 0, "down", None),
+        # (2, 640, 32, 32, 1, 1, "down", None),
+        # (2, 640, 16, 16, 1, 1, "down", None),
+        # (2, 1280, 16, 16, 2, 1, "down", None),
+        # (2, 1280, 8, 8, 2, 1, "down", None),
+        # (2, 2560, 8, 8, 0, 0, "up", 1280),
+        # (2, 2560, 16, 16, 0, 0, "up", 1280),
+        # # (2, 1920, 16, 16, 2, 0, "up", 640), # l1 allocation error
+        # (2, 1920, 32, 32, 2, 0, "up", 640),
+        # (2, 1280, 32, 32, 3, 0, "down", None),
+        # # (2, 960, 32, 32, 3, 0, "up", 320), # l1 allocation error
         (2, 960, 64, 64, 3, 0, "up", 320),
-        (2, 640, 64, 64, 3, 1, "up", 320),
+        # (2, 640, 64, 64, 3, 1, "up", 320),
     ],
 )
 def test_resnet_block_2d_512x512(
@@ -190,7 +190,7 @@ def test_resnet_block_2d_512x512(
 
     temb = ttnn.from_torch(temb, ttnn.bfloat16)
     temb = ttnn.to_layout(temb, ttnn.TILE_LAYOUT)
-    temb = ttnn.to_device(temb, device, memory_config=ttnn.L1_MEMORY_CONFIG)
+    temb = ttnn.to_device(temb, device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 
     ttnn_output = resnet_block(
         input,

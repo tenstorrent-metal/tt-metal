@@ -315,19 +315,6 @@ class resnetBlock2D:
             self.parameters.norm2.bias = ttnn.create_group_norm_weight_bias_rm(
                 ttnn.to_torch(self.parameters.norm2.bias), out_channels, num_cores_across_channel
             )
-
-            norm2_input_mask_torch_tensor = ttnn.create_groupnorm_input_mask(
-                out_channels, self.groups, num_cores_across_channel
-            )
-
-            self.norm2_input_mask = ttnn.from_torch(
-                norm2_input_mask_torch_tensor,
-                dtype=ttnn.DataType.BFLOAT8_B,
-                layout=ttnn.TILE_LAYOUT,
-                device=device,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
-            )
-
             self.parameters.norm2.weight = ttnn.from_torch(
                 self.parameters.norm2.weight,
                 dtype=ttnn.DataType.BFLOAT16,
@@ -339,6 +326,17 @@ class resnetBlock2D:
                 self.parameters.norm2.bias,
                 dtype=ttnn.DataType.BFLOAT16,
                 layout=ttnn.ROW_MAJOR_LAYOUT,
+                device=device,
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            )
+
+            self.norm2_input_mask_torch_tensor = ttnn.create_groupnorm_input_mask(
+                out_channels, self.groups, num_cores_across_channel
+            )
+            self.norm2_input_mask = ttnn.from_torch(
+                self.norm2_input_mask_torch_tensor,
+                dtype=ttnn.DataType.BFLOAT8_B,
+                layout=ttnn.TILE_LAYOUT,
                 device=device,
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
             )
@@ -368,13 +366,15 @@ class resnetBlock2D:
         else:
             nonlinearity = ttnn.silu
         out_channels = in_channels if out_channels is None else out_channels
-        input_tensor = ttnn.to_memory_config(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
-        hidden_states = input_tensor
+        input_tensor_dram = ttnn.to_memory_config(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
+        hidden_states = ttnn.to_memory_config(input_tensor, ttnn.L1_MEMORY_CONFIG)
+        # ttnn.deallocate(input_tensor)
+        # hidden_states = input_tensor
         # convert input tensor to tile layout for eltwise add in the end
-        input_tensor = ttnn.to_layout(input_tensor, ttnn.TILE_LAYOUT)
+        input_tensor = ttnn.to_layout(input_tensor_dram, ttnn.TILE_LAYOUT)
         if ttnn.get_memory_config(hidden_states) != self.first_gn_expected_input_sharded_memory_config:
             if ttnn.is_sharded(hidden_states):
-                hidden_states = ttnn.to_memory_config(input_tensor, ttnn.L1_MEMORY_CONFIG)
+                hidden_states = ttnn.to_memory_config(hidden_states, ttnn.L1_MEMORY_CONFIG)
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states = ttnn.reshape(
                 hidden_states, (self.conv2.batch_size, 1, self.conv2.input_height * self.conv2.input_width, in_channels)

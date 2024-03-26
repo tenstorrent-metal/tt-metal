@@ -271,13 +271,26 @@ class UNet2DConditionModel:
         self.parameters.conv_norm_out.bias = ttnn.create_group_norm_weight_bias_rm(
             ttnn.to_torch(self.parameters.conv_norm_out.bias), self.conv_out.in_channels, num_cores_across_channel
         )
-
-        norm_input_mask_torch_tensor = ttnn.create_groupnorm_input_mask(
-            self.conv_out.in_channels, self.norm_num_groups, num_cores_across_channel
+        self.parameters.conv_norm_out.weight = ttnn.from_torch(
+            self.parameters.conv_norm_out.weight,
+            dtype=ttnn.DataType.BFLOAT16,
+            layout=ttnn.ROW_MAJOR_LAYOUT,
+            device=device,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        )
+        self.parameters.conv_norm_out.bias = ttnn.from_torch(
+            self.parameters.conv_norm_out.bias,
+            dtype=ttnn.DataType.BFLOAT16,
+            layout=ttnn.ROW_MAJOR_LAYOUT,
+            device=device,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
 
+        self.norm_input_mask_torch_tensor = ttnn.create_groupnorm_input_mask(
+            self.conv_out.in_channels, self.norm_num_groups, num_cores_across_channel
+        )
         self.norm_input_mask = ttnn.from_torch(
-            norm_input_mask_torch_tensor,
+            self.norm_input_mask_torch_tensor,
             dtype=ttnn.DataType.BFLOAT8_B,
             layout=ttnn.TILE_LAYOUT,
             device=device,
