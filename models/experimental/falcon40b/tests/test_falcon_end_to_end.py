@@ -462,7 +462,7 @@ def test_FalconCausalLM_end_to_end_with_program_cache(
         elif model_config_str == "BFLOAT8_B-DRAM":
             if num_layers == 60:
                 out_pcc = 0.92
-                cache_pcc = 0.94
+                cache_pcc = 0.94  # TODO: why do we have 0.85 for v cache here for S=128 now? related to bf16 compute kernel? or softmax? or matmul2d instead of 1d??
 
     input_shape = [batch, seq_len]
     model_config = get_model_config(model_config_str, llm_mode, input_shape, num_devices)

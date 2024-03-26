@@ -385,8 +385,8 @@ class TtFalconAttention:
         fused_query_key_value = []
         for i in range(len(hidden_states)):
             fused_query_key_value.append(
-                tt_lib.operations.primary.matmul_1d(
-                    # tt_lib.operations.primary.matmul( # TODO: change to 2d matmul; based on S?
+                # tt_lib.operations.primary.matmul_1d(# TODO: change to 1d/2d 2d matmul; based on S?
+                tt_lib.operations.primary.matmul(
                     hidden_states[i],
                     self.query_key_value_weights[i],
                     program_config=self.model_config["QKV_MM_PROGCFG"],
@@ -667,7 +667,8 @@ class TtFalconAttention:
             attn_output, self.model_config["DEFAULT_MEMCFG"], self.model_config["ATTN_ALL_GATHER_OUTPUT_MEMCFG"]
         )
         for i in range(len(attn_output)):
-            attn_output[i] = tt_lib.operations.primary.matmul_1d(
+            # attn_output[i] = tt_lib.operations.primary.matmul_1d(
+            attn_output[i] = tt_lib.operations.primary.matmul(
                 attn_output[i],
                 self.dense_weights[i],
                 program_config=self.model_config["SELFOUT_MM_PROGCFG"],
