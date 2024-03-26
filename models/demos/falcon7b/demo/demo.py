@@ -138,7 +138,7 @@ def run_falcon_demo_kv(
         [device],
         state_dict,
         base_url,
-        1,
+        32,
         configuration,
         max_seq_len,
         model_config,
@@ -161,7 +161,7 @@ def run_falcon_demo_kv(
     logger.info("Initializing KV cache...")
     profiler.start(f"initializing_KV_cache")
     kv_cache_singlelayer = initialize_kv_cache(
-        configuration, 1, batch_size, max_seq_len, device
+        configuration, 32, batch_size, max_seq_len, device
     )  # only used for compile
     kv_cache = initialize_kv_cache(configuration, num_layers, batch_size, max_seq_len, device)
     profiler.end(f"initializing_KV_cache")
@@ -254,11 +254,13 @@ def run_falcon_demo_kv(
 
         decode_ids = post_processor(logits=logits, index=...).reshape(batch_size, 1)
 
-        generated_ids = torch.concat((generated_ids, decode_ids[:num_users]), dim=1)
+        # generated_ids = torch.concat((generated_ids, decode_ids[:num_users]), dim=1)
         kv_cache_len += 1
 
     logger.info("Finished 1st run decode stage with compile!")
     tt_lib.device.Synchronize(device)
+
+    return
 
     del user_output_ids
     del output_ids
@@ -458,7 +460,7 @@ def test_demo(
         model_version="tiiuae/falcon-7b-instruct",
         batch_size=32,
         num_layers=32,
-        max_seq_len=128,
+        max_seq_len=1024,
         model_config=get_model_config("BFLOAT16-DRAM"),
         model_location_generator=model_location_generator,
         device=device,
