@@ -21,6 +21,7 @@ def decorator(f, name):
 
 
 def callable_decorator(parentObj):
+    return
     # This function is called on the c++ side which does not dump exceptions
     # Try catch is added to dump the exception to stdout
     try:

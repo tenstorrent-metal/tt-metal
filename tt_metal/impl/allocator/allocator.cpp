@@ -15,7 +15,7 @@ namespace tt {
 namespace tt_metal {
 
 namespace allocator {
-#if defined(TRACY_ENABLE)
+#if defined(_TRACY_ENABLE)
 static char const *get_memory_pool_name(BufferType buffer_type) {
     switch (buffer_type) {
         case BufferType::DRAM: return "DRAM";
@@ -87,6 +87,7 @@ void BankManager::validate_bank_id(uint32_t bank_id) const {
 }
 
 uint64_t BankManager::allocate_buffer(uint32_t size, uint32_t page_size, bool bottom_up, CoreCoord compute_grid_size, std::optional<uint32_t> num_shards) {
+    ZoneScoped;
     uint32_t num_banks = this->num_banks();
     bool is_sharded = false;
     if(num_shards.has_value()){
@@ -111,13 +112,14 @@ uint64_t BankManager::allocate_buffer(uint32_t size, uint32_t page_size, bool bo
 }
 
 void BankManager::deallocate_buffer(uint64_t address) {
+    ZoneScoped;
     this->allocator_->deallocate(address);
 }
 
 void BankManager::deallocate_all(){
     for (uint64_t addr : this->allocated_buffers_)
     {
-        this->allocator_->deallocate(addr);
+        //deallocate_buffer(addr);
     }
 }
 
