@@ -86,12 +86,11 @@ EnqueueReadBufferCommand::EnqueueReadBufferCommand(
             this->commands.push_back(*dev_to_host_cmd_ptr++);
         }
 
-        uint32_t padding;
-        if ((padding = (sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd)) % HUGEPAGE_ALIGNMENT) != 0) {
-            for (int i = 0; i < padding / sizeof(uint32_t); i++) {
-                this->commands.push_back(0);
-            }
+        uint32_t padding = align(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), HUGEPAGE_ALIGNMENT) - (sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd));
+        for (int i = 0; i < padding / sizeof(uint32_t); i++) {
+            this->commands.push_back(0);
         }
+
 
         CQPrefetchCmd relay_buffer;
         relay_buffer.base.cmd_id = CQ_PREFETCH_CMD_RELAY_PAGED;
@@ -107,11 +106,11 @@ EnqueueReadBufferCommand::EnqueueReadBufferCommand(
             this->commands.push_back(*relay_buffer_ptr++);
         }
 
-        if ((padding = sizeof(CQPrefetchCmd) % HUGEPAGE_ALIGNMENT) != 0) {
-            for (int i = 0; i < padding / sizeof(uint32_t); i++) {
-                this->commands.push_back(0);
-            }
+        padding = align(sizeof(CQPrefetchCmd), HUGEPAGE_ALIGNMENT) - sizeof(CQPrefetchCmd);
+        for (int i = 0; i < padding / sizeof(uint32_t); i++) {
+            this->commands.push_back(0);
         }
+
     }
 }
 
@@ -364,11 +363,9 @@ EnqueueRecordEventCommand::EnqueueRecordEventCommand(
             this->commands.push_back(0);
         }
 
-        uint32_t padding;
-        if ((padding = (sizeof(CQPrefetchCmd) + dispatch_event_payload) % HUGEPAGE_ALIGNMENT) != 0) {
-            for (int i = 0; i < padding / sizeof(uint32_t); i++) {
-                this->commands.push_back(0);
-            }
+        uint32_t padding = align(sizeof(CQPrefetchCmd) + dispatch_event_payload, HUGEPAGE_ALIGNMENT) - (sizeof(CQPrefetchCmd) + dispatch_event_payload);
+        for (int i = 0; i < padding / sizeof(uint32_t); i++) {
+            this->commands.push_back(0);
         }
 
         // Command to write event to completion queue
@@ -395,10 +392,8 @@ EnqueueRecordEventCommand::EnqueueRecordEventCommand(
             this->commands.push_back(0);
         }
 
-        if ((padding = (sizeof(CQPrefetchCmd) + dispatch_event_payload) % HUGEPAGE_ALIGNMENT) != 0) {
-            for (int i = 0; i < padding / sizeof(uint32_t); i++) {
-                this->commands.push_back(0);
-            }
+        for (int i = 0; i < padding / sizeof(uint32_t); i++) {
+            this->commands.push_back(0);
         }
     }
 }
