@@ -102,6 +102,18 @@ run_frequent_api_pipeline_tests() {
 
     source build/python_env/bin/activate
     export PYTHONPATH=$TT_METAL_HOME
+
+    if [[ $dispatch_mode == "slow" ]]; then
+        TT_METAL_SLOW_DISPATCH_MODE=1 ./build/test/tt_metal/unit_tests_frequent
+        echo "Running Python API unit tests in SD for frequent..."
+        ./tests/scripts/run_python_api_unit_tests.sh
+    else
+        if [[ $tt_arch == "wormhole_b0" ]]; then
+            pytest  tests/tt_eager/python_api_testing/unit_testing/misc/test_all_gather.py -k nightly
+        else
+            echo "API tests are not available for fast dispatch because they're already covered in post-commit"
+        fi
+    fi
 }
 
 # Run frequent multi device pipeline tests - these are the t3000 + 4xn300 tests
@@ -153,13 +165,7 @@ run_stress_post_commit_pipeline_tests() {
 
     # Run for 23.5h to allow next run to kick off
     RUNTIME_MAX=84600
-
-    if [[ $tt_arch == "grayskull" ]]; then
-        suite_duration=2700
-    elif [[ $tt_arch == "wormhole_b0" ]]; then
-        suite_duration=900
-    fi
-
+    suite_duration=4500
     max_duration=$((RUNTIME_MAX-suite_duration))
     iter=1
     while [ $SECONDS -lt $max_duration ]; do

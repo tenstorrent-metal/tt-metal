@@ -301,11 +301,13 @@ void Device::clear_l1_state() {
             zero_vec_above_tile_header_buffer,
             eth_l1_mem::address_map::TILE_HEADER_BUFFER_BASE);
 
+        /* TODO: removing this section of code fixes the n300 hangs, what's the proper fix?
         std::vector<uint32_t> zero_vec_below_command_q_base(
             (eth_l1_mem::address_map::COMMAND_Q_BASE - eth_l1_mem::address_map::FIRMWARE_BASE) / sizeof(uint32_t), 0);
 
         llrt::write_hex_vec_to_core(
             this->id(), physical_core, zero_vec_below_command_q_base, eth_l1_mem::address_map::FIRMWARE_BASE);
+        */
     }
     // TODO: clear idle eriscs as well
 }
@@ -323,7 +325,7 @@ void Device::compile_command_queue_programs_for_grayskull() {
 
     uint8_t num_hw_cqs = this->num_hw_cqs();
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(this->id());
-    uint32_t cq_size = tt::Cluster::instance().get_host_channel_size(this->id(), channel) / num_hw_cqs;
+    uint32_t cq_size = this->sysmem_manager().get_cq_size();
 
     for (uint8_t cq_id = 0; cq_id < num_hw_cqs; cq_id++) {
         tt_cxy_pair issue_q_reader_location = dispatch_core_manager::get(num_hw_cqs).issue_queue_reader_core(this->id(), channel, cq_id);
@@ -433,7 +435,7 @@ void Device::compile_command_queue_programs() {
             // TODO (abhullar): allow for multiple cqs on remote device, atm device initialization asserts one cq for the remote device
             uint8_t num_hw_cqs = device_id == this->id() ? this->num_hw_cqs() : 1;
             uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(device_id);
-            uint32_t cq_size = tt::Cluster::instance().get_host_channel_size(this->id(), channel) / num_hw_cqs;
+            uint32_t cq_size = this->sysmem_manager().get_cq_size();
 
             for (uint8_t cq_id = 0; cq_id < num_hw_cqs; cq_id++) {
                 tt_cxy_pair issue_q_reader_location = dispatch_core_manager::get(num_hw_cqs).issue_queue_reader_core(device_id, channel, cq_id);
@@ -672,7 +674,7 @@ void Device::compile_command_queue_programs() {
         const uint8_t cq_id = 0;
         chip_id_t mmio_device_id = tt::Cluster::instance().get_associated_mmio_device(this->id());
         uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(this->id());
-        uint32_t cq_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel) / num_hw_cqs;
+        uint32_t cq_size = this->sysmem_manager().get_cq_size();
 
         tt_cxy_pair remote_processor_location = dispatch_core_manager::get(num_hw_cqs).remote_push_and_pull_core(this->id(), channel, cq_id);
         tt_cxy_pair dispatch_location = dispatch_core_manager::get(num_hw_cqs).command_dispatcher_core(this->id(), channel, cq_id);
@@ -823,8 +825,7 @@ void Device::configure_command_queue_programs() {
     uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(this->id());
 
     std::vector<uint32_t> pointers(CQ_START / sizeof(uint32_t), 0);
-    const uint32_t hugepage_size = tt::Cluster::instance().get_host_channel_size(mmio_device_id, channel);
-    const uint32_t cq_size = hugepage_size / this->num_hw_cqs();
+    uint32_t cq_size = this->sysmem_manager().get_cq_size();
 
     TT_ASSERT(this->command_queue_programs.size() == 1);
     Program& command_queue_program = *this->command_queue_programs[0];
@@ -843,7 +844,7 @@ void Device::configure_command_queue_programs() {
         for (const chip_id_t &device_id : tt::Cluster::instance().get_devices_controlled_by_mmio_device(this->id())) {
             uint8_t curr_num_hw_cqs = device_id == this->id() ? this->num_hw_cqs() : 1;
             uint16_t curr_channel = tt::Cluster::instance().get_assigned_channel_for_device(device_id);
-            uint32_t curr_cq_size = tt::Cluster::instance().get_host_channel_size(this->id(), curr_channel) / curr_num_hw_cqs;
+            uint32_t curr_cq_size = this->sysmem_manager().get_cq_size();
 
             for (uint8_t cq_id = 0; cq_id < curr_num_hw_cqs; cq_id++) {
                 tt_cxy_pair issue_q_reader_location = dispatch_core_manager::get(curr_num_hw_cqs).issue_queue_reader_core(device_id, curr_channel, cq_id);

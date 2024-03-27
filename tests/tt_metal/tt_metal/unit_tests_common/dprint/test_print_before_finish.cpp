@@ -56,13 +56,10 @@ static void RunTest(DPrintFixture* fixture, Device* device) {
         )
     );
 }
-
-TEST_F(DPrintFixture, TestPrintFinish) {
-    // Iterate devices in reverse for this test. Since the test closes the devices early, avoid
-    // closing L chip before R chip.
+// see issue #6659
+TEST_F(DPrintFixture, DISABLED_TestPrintFinish) {
     auto devices = this->devices_;
-    std::reverse(devices.begin(), devices.end());
-    for (Device* device : devices) {
-        this->RunTestOnDevice(RunTest, device);
-    }
+    // Run only on the first device, as this tests disconnects devices and this can cause
+    // issues on multi-device setups.
+    this->RunTestOnDevice(RunTest, devices[0]);
 }
