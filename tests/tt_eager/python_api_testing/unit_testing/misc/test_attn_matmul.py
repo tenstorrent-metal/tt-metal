@@ -44,10 +44,11 @@ def test_attn_matmul(num_loops, enable_async, in0_dtype, in1_dtype, out_dtype, d
         for _ in range(num_loops):
             input_tensor_a = torch.randn(input_shape_a).bfloat16()
             input_tensor_b = torch.randn(input_shape_b).bfloat16()
-
-            tt_input_tensor_a = ttl.tensor.Tensor(input_tensor_a, in0_dtype).to(ttl.tensor.Layout.TILE).to(device)
-            tt_input_tensor_b = ttl.tensor.Tensor(input_tensor_b, in1_dtype).to(ttl.tensor.Layout.TILE).to(device)
-
+            tt_input_tensor_a = ttl.tensor.Tensor(input_tensor_a, in0_dtype).to(ttl.tensor.Layout.TILE)
+            tt_input_tensor_b = ttl.tensor.Tensor(input_tensor_b, in1_dtype).to(ttl.tensor.Layout.TILE)
+            # Test python syntax in async mode -> tensor handle for inputs should get properly updated when sending to device
+            tt_input_tensor_a = tt_input_tensor_a.to(device)
+            tt_input_tensor_b = tt_input_tensor_b.to(device)
             compute_grid_size = device.compute_with_storage_grid_size()
             tt_output_tensor_on_device = ttl.operations.primary.transformers.attn_matmul(
                 tt_input_tensor_a,
@@ -58,8 +59,10 @@ def test_attn_matmul(num_loops, enable_async, in0_dtype, in1_dtype, out_dtype, d
                 ),
                 output_dtype=out_dtype,
             )
+            tt_input_tensor_a.deallocate()
+            tt_input_tensor_b.deallocate()
             tt_output_tensor = tt_output_tensor_on_device.cpu().to(ttl.tensor.Layout.ROW_MAJOR).to_torch()
-
+            tt_output_tensor_on_device.deallocate()
             golden_output_tensor = (input_tensor_a.transpose(0, 2) @ input_tensor_b).transpose(0, 2)
 
             allclose, output = comp_pcc(tt_output_tensor, golden_output_tensor)
@@ -261,13 +264,17 @@ def test_group_attn_matmul(
             output_mem_config=output_mem_config,
             output_dtype=output_dtype,
         )
+
+        tt_input_tensor_a.deallocate()
+        tt_input_tensor_b.deallocate()
+
         if output_sharded:
             tt_output_tensor_on_device = ttl.tensor.sharded_to_interleaved(
                 tt_output_tensor_on_device, interleaved_mem_config
             )
 
         tt_output_tensor = tt_output_tensor_on_device.cpu().to(ttl.tensor.Layout.ROW_MAJOR).to_torch()
-
+        tt_output_tensor_on_device.deallocate()
         input_tensor_a = input_tensor_a.to(torch.float)
         input_tensor_b = torch.repeat_interleave(input_tensor_b.to(torch.float), q_heads // kv_heads, dim=1)
         golden_output_tensor = (input_tensor_a.transpose(0, 2) @ input_tensor_b).transpose(0, 2)

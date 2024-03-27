@@ -474,4 +474,42 @@ std::vector<Tensor> run_with_autoformat(
     return output_tensors;
 }
 
+void launch_op(
+    std::function<Tensor(const std::vector<Tensor>&, const std::vector<std::optional<const Tensor>>&)> op_func,
+    const std::vector<Tensor> input_tensors,
+    Tensor output_tensor,
+    const std::vector<std::optional<const Tensor>> optional_input_tensors
+) {
+    // Send host side op compile and run to the worker queue
+    // Async mode changes for tensor-parallel execution not mainlined. Use the first worker thread.
+    TT_FATAL(output_tensor.workers.size(), "Worker threads must be specified for outputs populated by launch_op. This API can only be used for creating output tensors on device.");
+    // Populate device storage outside of thread, so that downstream
+    // functions running in main can get storage type without blocking
+    if (output_tensor.workers.size() == 1) {
+        output_tensor.tensor_attributes->storage = DeviceStorage();
+    }
+    else {
+        output_tensor.tensor_attributes->storage = MultiDeviceStorage();
+    }
+    output_tensor.workers.at(0)->push_work([op_func, optional_input_tensors, inputs = input_tensors, output = output_tensor] () mutable {
+        auto local_tensor = op_func(inputs, optional_input_tensors);
+        // Populate output tensor
+        output.populate_buffers_and_metadata(local_tensor);
+    });
+
+    // If launch_op was called from the main thread, decrement main thread ref count, since pushing to worker queue
+    // gives an imbalanced ref count incr
+    if (output_tensor.workers.at(0)->in_main_thread()) {
+        for (auto& tensor : input_tensors) {
+            tensor.tensor_attributes->decrement_main_thread_ref_count(output_tensor.workers.at(0));
+        }
+        for (auto& tensor : optional_input_tensors) {
+            if (tensor.has_value()) {
+                tensor.value().tensor_attributes->decrement_main_thread_ref_count(output_tensor.workers.at(0));
+            }
+        }
+        output_tensor.tensor_attributes->decrement_main_thread_ref_count(output_tensor.workers.at(0));
+    }
+}
+
 }

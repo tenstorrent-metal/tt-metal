@@ -214,6 +214,10 @@ def test_run_bmm_single_core_tilize_untilize(
             untilize_out,
             has_bias,
         )
+        # Explictly deallocate input tensors
+        tta.deallocate()
+        ttb.deallocate()
+        ttbias.deallocate()
         out = out.cpu()
         out = out.to(ttl.tensor.Layout.ROW_MAJOR).unpad_from_tile(out_shape).to_torch().float()
 

@@ -97,12 +97,16 @@ def test_matmul_1d_in0_batched(
             output_mem_config=output_mem_config,
             output_dtype=activations_dtype,
         )
+
+        in0_t.deallocate()
+        in1_t.deallocate()
+        bias_t.deallocate()
         if out_sharded:
             output_t = ttl.tensor.sharded_to_interleaved(output_t, interleaved_mem_config)
         pt_out = in0 @ in1 + bias
 
         tt_out = tt2torch_tensor(output_t)
-
+        output_t.deallocate()
         passing, output = comp_pcc(pt_out, tt_out)
         logger.info(output)
         assert passing

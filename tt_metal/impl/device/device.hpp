@@ -280,6 +280,12 @@ class Device {
         this->synchronize();
         return program_cache.num_entries();
     }
+
+    inline bool in_main_thread() {
+        // Detect if an instruction is being called in the main thread or worker thread
+        return (std::hash<std::thread::id>{}(std::this_thread::get_id()) == this->worker_queue.parent_thread_id)
+                or get_worker_mode() == WorkerQueueMode::SYNCHRONOUS;
+    }
 };
 
 }  // namespace tt_metal

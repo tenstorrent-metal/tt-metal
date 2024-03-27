@@ -98,44 +98,51 @@ TEST_F(CommonFixture, TestTensorOwnershipSanity) {
 TEST_F(CommonFixture, TestAsyncEltwiseBinary) {
     Device* device = this->devices_[0];
     device->set_worker_mode(Device::WorkerQueueMode::ASYNCHRONOUS);
-    // Initialize tensors and move them to DRAM
-    int num_loops = 1000;
-    auto slow_dispatch_mode = getenv("TT_METAL_SLOW_DISPATCH_MODE");
-    if (slow_dispatch_mode) {
-        // Times out on CI with 1000 loops and SD (too slow)
-        num_loops = 10;
-    }
-    for (int i = 0; i < num_loops; i++) {
+    // Populate these in first loop and verify that deallocation worked - addresses should be identical across loops
+    std::size_t input_a_addr = 0;
+    std::size_t input_b_addr = 0;
+    std::size_t input_c_addr = 0;
+    std::size_t output_1_addr = 0;
+    std::size_t output_2_addr = 0;
+
+    for (int i = 0; i < 5; i++) {
+        // Initialize tensors and move them to DRAM
         Tensor input_tensor_a = tt::numpy::full<float>(Shape({1, 1, 1024, 1024}), static_cast<float>(i), DataType::BFLOAT16).to(device);
         Tensor input_tensor_b = tt::numpy::full<float>(Shape({1, 1, 1024, 1024}), static_cast<float>(i), DataType::BFLOAT16).to(device);
         Tensor input_tensor_c = tt::numpy::full<float>(Shape({1, 1, 1024, 1024}), static_cast<float>(i), DataType::BFLOAT16).to(device);
-
         Tensor output_tensor_device = mul(add(input_tensor_a, input_tensor_b), input_tensor_c);
         Tensor output_tensor_device_2 = sub(output_tensor_device, input_tensor_c);
 
         EXPECT_EQ(output_tensor_device.get_shape(), ttnn::Shape(Shape({1, 1, 1024, 1024})));
         EXPECT_EQ(output_tensor_device.get_dtype(), DataType::BFLOAT16);
 
-        // Simulate user deallocation here -> inserts a sync on worker queue
-        output_tensor_device.deallocate();
         Tensor output_tensor_host = output_tensor_device_2.cpu();
+        // Test tensor deallocation in async mode: deallocate tensors after using them
+        if (i == 0) {
+            input_a_addr = std::get<DeviceStorage>(input_tensor_a.get_storage()).buffer->address();
+            input_b_addr = std::get<DeviceStorage>(input_tensor_b.get_storage()).buffer->address();
+            input_c_addr = std::get<DeviceStorage>(input_tensor_c.get_storage()).buffer->address();
+            output_1_addr = std::get<DeviceStorage>(output_tensor_device.get_storage()).buffer->address();
+            output_2_addr = std::get<DeviceStorage>(output_tensor_device_2.get_storage()).buffer->address();
+        }
+        else {
+            EXPECT_EQ(std::get<DeviceStorage>(input_tensor_a.get_storage()).buffer->address(), input_a_addr);
+            EXPECT_EQ(std::get<DeviceStorage>(input_tensor_b.get_storage()).buffer->address(), input_b_addr);
+            EXPECT_EQ(std::get<DeviceStorage>(input_tensor_c.get_storage()).buffer->address(), input_c_addr);
+            EXPECT_EQ(std::get<DeviceStorage>(output_tensor_device.get_storage()).buffer->address(), output_1_addr);
+            EXPECT_EQ(std::get<DeviceStorage>(output_tensor_device_2.get_storage()).buffer->address(), output_2_addr);
+        }
+        input_tensor_a.deallocate();
+        input_tensor_b.deallocate();
+        input_tensor_c.deallocate();
+        output_tensor_device.deallocate();
+        output_tensor_device_2.deallocate();
         // Verify output data
-        std::visit([](auto&& storage) {
-            using T = std::decay_t<decltype(storage)>;
-            if constexpr (std::is_same_v<T, OwnedStorage>) {
-                std::visit(
-                    [](auto&& buf) {
-                        using buf_type = std::decay_t<decltype(buf)>;
-                        if constexpr (std::is_same_v<buf_type, owned_buffer::Buffer<float>>) {
-                            EXPECT_EQ(buf.use_count(), 1);
-                            for (int j = 0; j < 1024 * 1024; j++) {
-                                EXPECT_EQ(buf[j], 2 * j * j - j);
-                            }
-                        }
-                    },
-                storage.buffer);
-            }
-        }, output_tensor_host.get_storage());
+        auto& buf = std::get<owned_buffer::Buffer<bfloat16>>(std::get<OwnedStorage>(output_tensor_host.get_storage()).buffer);
+        EXPECT_EQ(buf.use_count(), 1);
+        for (int j = 0; j < 1024 * 1024; j++) {
+            EXPECT_EQ(bfloat16(buf[j]), bfloat16(static_cast<float>(2 * i * i - i)));
+        }
     }
     device->set_worker_mode(Device::WorkerQueueMode::SYNCHRONOUS);
 }

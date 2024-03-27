@@ -348,19 +348,13 @@ inline std::vector<Tensor> run_with_autoformat(
     return run_with_autoformat(operation, input_tensors, input_formatting, output_layouts, optional_input_tensors, optional_input_formatting);
 }
 
-inline void launch_op(
+void launch_op(
     std::function<Tensor(const std::vector<Tensor>&, const std::vector<std::optional<const Tensor>>&)> op_func,
     const std::vector<Tensor> input_tensors,
     Tensor output_tensor,
     const std::vector<std::optional<const Tensor>> optional_input_tensors = {}
-) {
-    // Send host side op compile and run to the worker queue
-    // Async mode changes for tensor-parallel execution not mainlined. Use the first worker thread.
-    output_tensor.workers.at(0)->push_work([op_func, input_tensors, optional_input_tensors, output_tensor] () mutable {
-        auto local_tensor = op_func(input_tensors, optional_input_tensors);
-        output_tensor.deepcopy(local_tensor);
-    });
-}
+);
+
 } //namespace operation
 
 } //namespace tt::tt_metal
