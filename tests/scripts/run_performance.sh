@@ -73,6 +73,8 @@ run_perf_models_cnn_javelin() {
 
     echo "There are no CNN tests for Javelin yet specified. Arch $tt_arch requested"
 
+    env pytest "tests/ttnn/integration_tests/stable_diffusion/test_performance.py" -m $pipeline_type
+
     ## Merge all the generated reports
     env python models/perf/merge_perf_results.py
 }
