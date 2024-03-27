@@ -102,7 +102,7 @@ class TtFalconMLP:
                 falcon_prefill_matmul(
                     x[i],
                     self.dense_h_to_4h_weights[i],
-                    self.model_config["COMPUTE_KERNEL_FP16_ACC_CONFIG"],
+                    self.model_config["COMPUTE_KERNEL_CONFIG"],
                     output_mem_config=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_MEMCFG"],
                     output_dtype=self.model_config["DENSE_H_TO_4H_MM_OUTPUT_DTYPE"],
                     act=[tt_lib.tensor.FusibleActivation.GELU, True],
@@ -129,7 +129,7 @@ class TtFalconMLP:
             hidden_states[i] = falcon_prefill_matmul(
                 hidden_states[i],
                 self.dense_4h_to_h_weights[i],
-                self.model_config["COMPUTE_KERNEL_FP16_ACC_CONFIG"],
+                self.model_config["COMPUTE_KERNEL_CONFIG"],
                 output_mem_config=self.model_config["DENSE_4H_TO_H_MM_OUTPUT_MEMCFG"],
                 output_dtype=self.model_config["DENSE_4H_TO_H_MM_OUTPUT_DTYPE"],
             )

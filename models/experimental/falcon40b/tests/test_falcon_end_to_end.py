@@ -403,6 +403,7 @@ def run_test_FalconCausalLM_end_to_end(
         ("prefill", 1, 128, 0),
         ("prefill", 1, 256, 0),
         ("prefill", 1, 512, 0),
+        ("prefill", 1, 1024, 0),
         ("prefill", 1, 2048, 0),
         ("decode", 32, 1, 128),
     ),
@@ -413,14 +414,15 @@ def run_test_FalconCausalLM_end_to_end(
         "prefill_seq128",
         "prefill_seq256",
         "prefill_seq512",
+        "prefill_seq1024",
         "prefill_seq2048",
         "decode_batch32",
     ],
 )
 @pytest.mark.parametrize(
     "num_layers, out_pcc, cache_pcc, token_pcc",
-    ((1, 0.99, 0.99, 0.99), (2, 0.99, 0.99, 0.99), (60, 0.92, 0.99, 0.85)),
-    ids=["layers_1", "layers_2", "layers_60"],
+    ((1, 0.99, 0.99, 0.99), (2, 0.99, 0.99, 0.99), (8, 0.99, 0.99, 0.99), (60, 0.92, 0.99, 0.85)),
+    ids=["layers_1", "layers_2", "layers_8", "layers_60"],
 )
 @pytest.mark.parametrize(
     "model_version",
@@ -461,8 +463,8 @@ def test_FalconCausalLM_end_to_end_with_program_cache(
                 cache_pcc = 0.32
         elif model_config_str == "BFLOAT8_B-DRAM":
             if num_layers == 60:
-                out_pcc = 0.92
-                cache_pcc = 0.94  # TODO: why do we have 0.85 for v cache here for S=128 now? related to bf16 compute kernel? or softmax? or matmul2d instead of 1d??
+                out_pcc = 0.91
+                cache_pcc = 0.94
 
     input_shape = [batch, seq_len]
     model_config = get_model_config(model_config_str, llm_mode, input_shape, num_devices)

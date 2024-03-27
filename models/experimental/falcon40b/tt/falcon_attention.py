@@ -8,6 +8,7 @@ from torch import nn
 from typing import Optional, Tuple
 
 import tt_lib
+import ttnn
 
 from models.utility_functions import (
     torch2tt_tensor,
@@ -18,6 +19,8 @@ from models.utility_functions import (
 from models.experimental.falcon40b.tt.model_utils import (
     convert_to_layout,
 )
+
+from models.experimental.falcon40b.tt.model_utils import falcon_prefill_matmul
 
 
 def generate_cos_sin_cache(
@@ -385,14 +388,14 @@ class TtFalconAttention:
         fused_query_key_value = []
         for i in range(len(hidden_states)):
             fused_query_key_value.append(
-                # tt_lib.operations.primary.matmul_1d(# TODO: change to 1d/2d 2d matmul; based on S?
-                tt_lib.operations.primary.matmul(
+                falcon_prefill_matmul(
                     hidden_states[i],
                     self.query_key_value_weights[i],
-                    program_config=self.model_config["QKV_MM_PROGCFG"],
+                    self.model_config["COMPUTE_KERNEL_CONFIG"],
                     output_mem_config=self.model_config["FUSED_QKV_MM_OUTPUT_MEMCFG"],
                     output_dtype=self.model_config["FUSED_QKV_MM_OUTPUT_DTYPE"],
-                    compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
+                    grid=ttnn.CoreGrid(x=8, y=1) if q_len <= 512 else ttnn.CoreGrid(x=8, y=4),
+                    transpose_mcast=True,
                 )
             )
 
@@ -673,14 +676,12 @@ class TtFalconAttention:
             attn_output, self.model_config["DEFAULT_MEMCFG"], self.model_config["ATTN_ALL_GATHER_OUTPUT_MEMCFG"]
         )
         for i in range(len(attn_output)):
-            # attn_output[i] = tt_lib.operations.primary.matmul_1d(
-            attn_output[i] = tt_lib.operations.primary.matmul(
+            attn_output[i] = falcon_prefill_matmul(
                 attn_output[i],
                 self.dense_weights[i],
-                program_config=self.model_config["SELFOUT_MM_PROGCFG"],
+                self.model_config["COMPUTE_KERNEL_CONFIG"],
                 output_mem_config=self.model_config["SELFOUT_MM_OUTPUT_MEMCFG"],
                 output_dtype=self.model_config["SELFOUT_MM_OUTPUT_DTYPE"],
-                compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
             )
 
         return attn_output, layer_present

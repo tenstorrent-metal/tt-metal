@@ -352,7 +352,6 @@ class TtFalconModelShared:
         else:
             xs = convert_to_layout(xs, self.model_config["DRAM_MEMCFG"], self.model_config["PARTIAL_LN_MEMCFG"])
             for i in range(len(xs)):
-                print(self.model_config["PARTIAL_LN_MEMCFG"])
                 xs[i] = tt_lib.operations.primary.layernorm(
                     xs[i],
                     self.layernorm_eps,
