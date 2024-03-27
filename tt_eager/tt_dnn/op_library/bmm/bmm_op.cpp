@@ -286,6 +286,9 @@ MatmulParallelizationStrategy get_parallelization_strategy(const std::vector<Ten
 tt::operations::primary::MatmulMultiCoreReuseMultiCast1DProgramConfig get_mcast_1d_config(const Tensor &input_tensor_a, const Tensor &input_tensor_b, bool fuse_batch, std::optional<UnaryWithParam> fused_activation, bool mcast_in0, bool out_sharded) {
     auto device = input_tensor_a.device();
     auto grid_size = device->compute_with_storage_grid_size();
+    // if (grid_size.y == 8) {
+    //      grid_size.y = 7;
+    // }
     uint32_t M = fuse_batch ? input_tensor_a.volume() / input_tensor_a.get_legacy_shape()[-1] : input_tensor_a.get_legacy_shape()[-2];
     uint32_t K = input_tensor_a.get_legacy_shape()[-1];
     uint32_t N = input_tensor_b.get_legacy_shape()[-1];

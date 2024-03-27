@@ -220,8 +220,16 @@ def run_falcon_demo_kv(
     kv_cache_len = num_input_tokens  # This will increment by one after each decode
     prompt_is_done = [False for _ in range(num_users)]
 
+    # decode_ids_tmp = [13, 40, 2070, 2070, 94, 193, 9677, 2070, 2070, 2070, 2070, 23, 2070, 2070, 2070, 2070, 2070, 2070, 3078, 2070, 2070, 273, 9677, 57513, 299, 13, 2070, 2070, 2070, 23, 2070, 2070]
+    # for i in range(batch_size):
+    #    decode_ids[i, 0] = decode_ids_tmp[i]
+
     time_decode_compile = 0
     for output_token_index in tqdm(range(max_seq_len - num_input_tokens)):
+        # print(decode_ids)
+        # print(decode_ids.squeeze(1).tolist())
+        # print(decode_ids.min())
+        # print(decode_ids.max())
         time_decode_compile_start = time.time()
         (
             tt_decode_embeddings,
@@ -229,6 +237,9 @@ def run_falcon_demo_kv(
         ) = tt_FalconCausalLM_singlelayer.model_preprocessing(
             "decode", decode_ids, kv_cache_len, num_input_tokens=kv_cache_len + 1
         )
+        # print(tt_decode_embeddings)
+        # print(tt2torch_tensor(tt_decode_embeddings[0]).min())
+        # print(tt2torch_tensor(tt_decode_embeddings[0]).max())
         assert tt_decode_attention_mask is not None
 
         # logger.info("starting forward pass")
@@ -254,6 +265,10 @@ def run_falcon_demo_kv(
 
         next_tokens = torch.argmax(logits, dim=-1).reshape(batch_size, 1)
         decode_ids = next_tokens
+        # decode_ids_tmp = [13, 40, 2070, 2070, 94, 193, 9677, 2070, 2070, 2070, 2070, 23, 2070, 2070, 2070, 2070, 2070, 2070, 3078, 2070, 2070, 273, 9677, 57513, 299, 13, 2070, 2070, 2070, 23, 2070, 2070]
+        # for i in range(batch_size):
+        #  decode_ids[i, 0] = decode_ids_tmp[i]
+        # time.sleep(0.001)
 
         # decode_ids = post_processor(logits=logits, index=...).reshape(batch_size, 1)
         # generated_ids = torch.concat((generated_ids, decode_ids[:num_users]), dim=1)
