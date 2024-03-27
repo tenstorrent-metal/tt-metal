@@ -450,9 +450,15 @@ def to_device(tensor, device, *, memory_config: ttnn.MemoryConfig = ttnn.DRAM_ME
     def impl(tensor, device, *, memory_config):
         return tensor.to(device, memory_config)
 
-    return ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_device")(
+    original_rank = len(tensor.shape)
+    tensor = ttnn.unsqueeze_to_4D(tensor)
+
+    tensor = ttl.tensor.decorate_external_operation(impl, function_name="ttnn.to_device")(
         tensor, device, memory_config=memory_config
     )
+    while len(tensor.shape) != original_rank:
+        tensor = squeeze(tensor, 0)
+    return tensor
 
 
 def _from_device_validate_input_tensors(operation_name, tensor, *args, **kwargs):
@@ -656,7 +662,14 @@ def to_layout(
         raise RuntimeError(f"Unsupported layout conversion from {tensor.layout} to {layout}")
 
     is_on_device = ttnn.is_tensor_storage_on_device(tensor)
-    if is_on_device and tensor.dtype not in {ttnn.bfloat16, ttnn.bfloat8_b, ttnn.bfloat4_b}:
+    if is_on_device and tensor.dtype not in {
+        ttnn.bfloat16,
+        ttnn.bfloat8_b,
+        ttnn.bfloat4_b,
+        ttnn.uint16,
+        ttnn.uint32,
+        ttnn.float32,
+    }:
         raise RuntimeError("ttnn.to_layout: Only bfloat16 and bfloat8_b are supported on device")
 
     def requires_padding_change(layout, shape):
