@@ -10,15 +10,6 @@
 #include "compute_kernel_api/eltwise_unary/sfpu_split_includes.h"
 #include "compute_kernel_api/eltwise_unary/negative.h"
 
-ALWI void ACQ() {
-    tile_regs_acquire();
-    tile_regs_wait();
-}
-ALWI void REL() {
-    tile_regs_commit();
-    tile_regs_release();
-}
-
 namespace NAMESPACE {
 void MAIN {
 
@@ -35,13 +26,15 @@ void MAIN {
         }
         cb_reserve_back(tt::CB::c_out0, 1);
         for(uint32_t tile_index = 0; tile_index < per_core_block_dim; ++tile_index) {
-            ACQ();
             cb_wait_front(tt::CB::c_in0, 1);
             if (once)
             {
                 cb_reserve_back(tt::CB::c_intermed0, 1);
+                tile_regs_acquire();
                 copy_tile_to_dst_init_short();
                 copy_tile(tt::CB::c_in0, 0, 0); // copy from c_in[0] to DST[0]
+                tile_regs_commit();
+                tile_regs_wait();
                 if constexpr (num_tiles == 1)
                     pack_tile(0, tt::CB::c_out0);
                 else
@@ -49,11 +42,13 @@ void MAIN {
                     pack_tile(0, tt::CB::c_intermed0);
                     cb_push_back(tt::CB::c_intermed0, 1);
                 }
+                tile_regs_release();
             }else {
-                REL();
-                ACQ();
+                tile_regs_acquire();
                 mul_tiles_init();
                 mul_tiles(tt::CB::c_in0, tt::CB::c_intermed0, 0, 0, 0);
+                tile_regs_commit();
+                tile_regs_wait();
                 if (last_tile)
                 {
                     pack_tile(0, tt::CB::c_out0);
@@ -65,10 +60,10 @@ void MAIN {
                     pack_tile(0, tt::CB::c_intermed0);
                     cb_push_back(tt::CB::c_intermed0, 1);
                 }
+                tile_regs_release();
             }
             once = false;
             cb_pop_front(tt::CB::c_in0, 1);
-            REL();
         }
         cb_push_back(tt::CB::c_out0, 1);
 }

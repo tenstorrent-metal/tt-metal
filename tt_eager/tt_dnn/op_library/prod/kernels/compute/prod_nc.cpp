@@ -7,15 +7,6 @@
 #include "compute_kernel_api/eltwise_binary.h"
 #include "compute_kernel_api/tile_move_copy.h"
 
-ALWI void ACQ() {
-    tile_regs_acquire();
-    tile_regs_wait();
-}
-ALWI void REL() {
-    tile_regs_commit();
-    tile_regs_release();
-}
-
 namespace NAMESPACE {
 void MAIN {
     const auto num_input_tiles = get_arg_val<uint32_t>(0);
@@ -39,14 +30,15 @@ void MAIN {
             bool last_out = (j == num_input_tiles - 1);
             uint32_t cb_add  = (enable_reload) ? (cb_intermed0) : (cb_in1);
 
-            ACQ();
             cb_wait_front(cb_in0, onetile);
             if (enable_reload) {
                 cb_wait_front(cb_intermed0, onetile);
             }
 
+            tile_regs_acquire();
             mul_tiles_init();
             mul_tiles(cb_in0, cb_add, first_tile, first_tile, dst0);
+            tile_regs_commit();
 
             cb_pop_front(cb_in0, onetile);
             if (enable_reload) {
@@ -55,9 +47,10 @@ void MAIN {
 
             uint32_t cb_out = (last_out) ? (cb_out0) : (cb_intermed0);
             cb_reserve_back(cb_out, onetile);
+            tile_regs_wait();
             pack_tile(dst0, cb_out);
+            tile_regs_release();
             cb_push_back(cb_out, onetile);
-            REL();
             enable_reload = true;
         }
     }

@@ -370,7 +370,7 @@ ALWI void lez_tile_init() {
  * | idst            | The index of the tile in DST register buffer to perform the computation on | uint32_t | Must be less than the size of the DST register buffer | True     |
  */
 ALWI void tiled_prod_tile(uint32_t idst) {
-    MATH(( llk_math_eltwise_unary_sfpu_tiled_prod<APPROX, SyncHalf>(idst) ));
+    MATH(( llk_math_eltwise_unary_sfpu_tiled_prod<APPROX>(idst) ));
 }
 
 /**

@@ -20,7 +20,7 @@ def get_tensors(input_shape, output_shape, device):
     cpu_dtype = torch.float32
     npu_layout = ttl.tensor.Layout.TILE
 
-    torch_input = torch.randint(-100, 100, input_shape, dtype=cpu_dtype, requires_grad=True)
+    torch_input = torch.randint(-100, 100, input_shape, dtype=cpu_dtype)
     torch_output = torch.randint(-100, 100, output_shape, dtype=cpu_dtype)
 
     tt_input = ttl.tensor.Tensor(torch_input, npu_dtype).pad_to_tile(float("nan")).to(npu_layout).to(device)

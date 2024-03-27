@@ -17,9 +17,9 @@ inline void llk_math_eltwise_unary_sfpu_tiled_prod_init() {
     llk_math_eltwise_unary_sfpu_init<APPROXIMATE>();
 }
 
-template <bool APPROXIMATE, DstSync Dst = DstSync::SyncFull>
+template <bool APPROXIMATE>
 inline void llk_math_eltwise_unary_sfpu_tiled_prod(uint dst_index, int vector_mode = (int)VectorMode::RC) {
-    llk_math_eltwise_unary_sfpu_0_param<APPROXIMATE, Dst>
+    llk_math_eltwise_unary_sfpu_0_param<APPROXIMATE>
                                 (ckernel::sfpu::calculate_tiled_prod<APPROXIMATE>,
                                 ckernel::sfpu::calculate_tiled_prod<APPROXIMATE>,
                                 dst_index, vector_mode);
