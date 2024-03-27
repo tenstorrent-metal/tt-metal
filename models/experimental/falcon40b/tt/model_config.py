@@ -813,60 +813,14 @@ def get_prefill_model_config(model_config_str, input_shape, num_devices):
     # Layernorm is an exception that are sharded also here, because the interleaved OP does not fit in L1 for 40b hidden size
     layernorm_num_cores_x = 8
     layernorm_max_num_cores_y = 7
-    partial_seqlen = 128
-    for i in range(layernorm_max_num_cores_y, 0, -1):
-        if (partial_seqlen // 32) % i == 0:
-            layernorm_num_cores_y = i
-            break
 
-    num_tiles_per_core_h = partial_seqlen // 32 // layernorm_num_cores_y
-    num_tiles_per_core_w = hidden_size // 32 // layernorm_num_cores_x
-
-    layernorm_shard_height_hidden_dim = partial_seqlen // layernorm_num_cores_y
-    layernorm_shard_width_hidden_dim = hidden_size // layernorm_num_cores_x
-
-    core_range_block_sharded_layernorm = ttl.tensor.CoreRangeSet(
-        {
-            ttl.tensor.CoreRange(
-                ttl.tensor.CoreCoord(0, 0),
-                ttl.tensor.CoreCoord(layernorm_num_cores_x - 1, layernorm_num_cores_y - 1),
-            ),
-        }
-    )
-
-    layernorm_block_sharded_mem_config = ttl.tensor.MemoryConfig(
-        ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
-        ttl.tensor.BufferType.L1,
-        ttl.tensor.ShardSpec(
-            core_range_block_sharded_layernorm,
-            [
-                layernorm_shard_height_hidden_dim,
-                layernorm_shard_width_hidden_dim,
-            ],
-            ttl.tensor.ShardOrientation.ROW_MAJOR,
-            False,
-        ),
-    )
-
-    layernorm_block_sharded_prg_config = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
-        compute_with_storage_grid_size=[layernorm_num_cores_x, layernorm_max_num_cores_y],
-        subblock_w=8,
-        block_h=num_tiles_per_core_h,
-        block_w=num_tiles_per_core_w,
-        math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-        im_data_format=ttl.tensor.DataType.BFLOAT16,
-        out_data_format=model_config["LN_ATTN_OUTPUT_DTYPE"],
-        inplace=False,
-    )
-    layernorm_block_sharded_prg_config_inplace = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
-        compute_with_storage_grid_size=[layernorm_num_cores_x, layernorm_max_num_cores_y],
-        subblock_w=8,
-        block_h=num_tiles_per_core_h,
-        block_w=num_tiles_per_core_w,
-        math_fidelity=ttl.tensor.MathFidelity.HiFi4,
-        im_data_format=ttl.tensor.DataType.BFLOAT16,
-        out_data_format=model_config["LN_ATTN_OUTPUT_DTYPE"],
-        inplace=True,
+    (
+        layernorm_block_sharded_mem_config,
+        layernorm_block_sharded_prg_config,
+        layernorm_block_sharded_prg_config_inplace,
+        layernorm_params,
+    ) = get_sharded_layernorm_specs_for_seqlen(
+        layernorm_num_cores_x, layernorm_max_num_cores_y, row_height if row_height <= 128 else 128, hidden_size, dtype
     )
 
     # partial block sharded layernorm
@@ -874,16 +828,7 @@ def get_prefill_model_config(model_config_str, input_shape, num_devices):
     model_config["PARTIAL_LN_PROGCFG"] = layernorm_block_sharded_prg_config
     model_config["PARTIAL_LN_INPLACE_PROGCFG"] = layernorm_block_sharded_prg_config_inplace
 
-    model_config["layernorm_params"] = {
-        "slice_size": partial_seqlen,
-        "layernorm_num_cores_x": layernorm_num_cores_x,
-        "layernorm_num_cores_y": layernorm_num_cores_y,
-        "layernorm_max_num_cores_y": layernorm_max_num_cores_y,
-        "layernorm_shard_height_hidden_dim": layernorm_shard_height_hidden_dim,
-        "layernorm_shard_width_hidden_dim": layernorm_shard_width_hidden_dim,
-        "num_tiles_per_core_h": num_tiles_per_core_h,
-        "num_tiles_per_core_w": num_tiles_per_core_w,
-    }
+    model_config["layernorm_params"] = layernorm_params
 
     # Specify program configs
     # QKV Projection
@@ -1021,3 +966,80 @@ def get_prefill_model_config(model_config_str, input_shape, num_devices):
     # logger.debug(f"Falcon model config: \n{pretty_print_model_config(model_config)}")
 
     return model_config
+
+
+def get_sharded_layernorm_specs_for_seqlen(
+    layernorm_num_cores_x, layernorm_max_num_cores_y, partial_seqlen, hidden_size, dtype
+):
+    for i in range(layernorm_max_num_cores_y, 0, -1):
+        if (partial_seqlen // 32) % i == 0:
+            layernorm_num_cores_y = i
+            break
+
+    num_tiles_per_core_h = partial_seqlen // 32 // layernorm_num_cores_y
+    num_tiles_per_core_w = hidden_size // 32 // layernorm_num_cores_x
+
+    layernorm_shard_height_hidden_dim = partial_seqlen // layernorm_num_cores_y
+    layernorm_shard_width_hidden_dim = hidden_size // layernorm_num_cores_x
+
+    core_range_block_sharded_layernorm = ttl.tensor.CoreRangeSet(
+        {
+            ttl.tensor.CoreRange(
+                ttl.tensor.CoreCoord(0, 0),
+                ttl.tensor.CoreCoord(layernorm_num_cores_x - 1, layernorm_num_cores_y - 1),
+            ),
+        }
+    )
+
+    layernorm_block_sharded_mem_config = ttl.tensor.MemoryConfig(
+        ttl.tensor.TensorMemoryLayout.BLOCK_SHARDED,
+        ttl.tensor.BufferType.L1,
+        ttl.tensor.ShardSpec(
+            core_range_block_sharded_layernorm,
+            [
+                layernorm_shard_height_hidden_dim,
+                layernorm_shard_width_hidden_dim,
+            ],
+            ttl.tensor.ShardOrientation.ROW_MAJOR,
+            False,
+        ),
+    )
+
+    layernorm_block_sharded_prg_config = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
+        compute_with_storage_grid_size=[layernorm_num_cores_x, layernorm_max_num_cores_y],
+        subblock_w=8,
+        block_h=num_tiles_per_core_h,
+        block_w=num_tiles_per_core_w,
+        math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+        im_data_format=ttl.tensor.DataType.BFLOAT16,
+        out_data_format=dtype,
+        inplace=False,
+    )
+    layernorm_block_sharded_prg_config_inplace = ttl.operations.primary.LayerNormShardedMultiCoreProgramConfig(
+        compute_with_storage_grid_size=[layernorm_num_cores_x, layernorm_max_num_cores_y],
+        subblock_w=8,
+        block_h=num_tiles_per_core_h,
+        block_w=num_tiles_per_core_w,
+        math_fidelity=ttl.tensor.MathFidelity.HiFi4,
+        im_data_format=ttl.tensor.DataType.BFLOAT16,
+        out_data_format=dtype,
+        inplace=True,
+    )
+
+    layernorm_params = {
+        "slice_size": partial_seqlen,
+        "layernorm_num_cores_x": layernorm_num_cores_x,
+        "layernorm_num_cores_y": layernorm_num_cores_y,
+        "layernorm_max_num_cores_y": layernorm_max_num_cores_y,
+        "layernorm_shard_height_hidden_dim": layernorm_shard_height_hidden_dim,
+        "layernorm_shard_width_hidden_dim": layernorm_shard_width_hidden_dim,
+        "num_tiles_per_core_h": num_tiles_per_core_h,
+        "num_tiles_per_core_w": num_tiles_per_core_w,
+    }
+
+    return (
+        layernorm_block_sharded_mem_config,
+        layernorm_block_sharded_prg_config,
+        layernorm_block_sharded_prg_config_inplace,
+        layernorm_params,
+    )
