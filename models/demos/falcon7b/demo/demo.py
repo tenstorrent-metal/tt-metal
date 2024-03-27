@@ -252,8 +252,10 @@ def run_falcon_demo_kv(
         logits = tt2torch_tensor(tt_logits[0]).squeeze(1)
         tt_logits[0].deallocate()
 
-        decode_ids = post_processor(logits=logits, index=...).reshape(batch_size, 1)
+        next_tokens = torch.argmax(logits, dim=-1).reshape(batch_size, 1)
+        decode_ids = next_tokens
 
+        # decode_ids = post_processor(logits=logits, index=...).reshape(batch_size, 1)
         # generated_ids = torch.concat((generated_ids, decode_ids[:num_users]), dim=1)
         kv_cache_len += 1
 
