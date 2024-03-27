@@ -188,12 +188,14 @@ EnqueueWriteBufferCommand::EnqueueWriteBufferCommand(
     const Buffer& buffer,
     const void* src,
     SystemMemoryManager& manager,
+    uint32_t bank_base_address,
     uint32_t dst_page_index,
     std::optional<uint32_t> pages_to_write) :
     command_queue_id(command_queue_id),
     manager(manager),
     src(src),
     buffer(buffer),
+    bank_base_address(bank_base_address),
     dst_page_index(dst_page_index),
     pages_to_write(pages_to_write.has_value() ? pages_to_write.value() : buffer.num_pages()) {
     TT_ASSERT(
@@ -246,8 +248,11 @@ const void EnqueueWriteBufferCommand::assemble_device_commands(uint32_t) {
     uint32_t write_paged_cmd_idx = relay_write_idx + (sizeof(CQPrefetchCmd) / sizeof(uint32_t));
     CQDispatchCmd *write_paged_cmd = (CQDispatchCmd*)(this->commands.data() + write_paged_cmd_idx);
     write_paged_cmd->write_paged.is_dram = uint8_t(this->buffer.buffer_type() == BufferType::DRAM);
-    write_paged_cmd->write_paged.start_page = this->dst_page_index;
-    write_paged_cmd->write_paged.base_addr = this->buffer.address();
+
+    TT_ASSERT(this->dst_page_index <= 0xFFFF, "Page offset needs to fit within range of uint16_t, bank_base_address was computed incorrectly!");
+
+    write_paged_cmd->write_paged.start_page = uint16_t(this->dst_page_index & 0xFFFF);
+    write_paged_cmd->write_paged.base_addr = this->bank_base_address;
     write_paged_cmd->write_paged.page_size = padded_page_size;
     write_paged_cmd->write_paged.pages = this->pages_to_write;
 }
@@ -270,11 +275,12 @@ void EnqueueWriteBufferCommand::process() {
 
     uint32_t data_write_ptr = write_ptr + (sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd));
 
-    uint32_t unpadded_src_offset = this->dst_page_index * this->buffer.page_size();
+    uint32_t buffer_addr_offset = this->bank_base_address - this->buffer.address();
+    uint32_t num_banks = this->device->num_banks(this->buffer.buffer_type());
+    uint32_t unpadded_src_offset = ( ((buffer_addr_offset/padded_page_size) * num_banks) + this->dst_page_index) * this->buffer.page_size();
     if (this->buffer.page_size() % 32 != 0 and this->buffer.page_size() != this->buffer.size()) {
         // If page size is not 32B-aligned, we cannot do a contiguous write
         uint32_t src_address_offset = unpadded_src_offset;
-        uint32_t padded_page_size = align(this->buffer.page_size(), 32);
         for (uint32_t sysmem_address_offset = 0; sysmem_address_offset < data_size_in_bytes;
              sysmem_address_offset += padded_page_size) {
             this->manager.cq_write(
@@ -634,8 +640,14 @@ void HWCommandQueue::enqueue_write_buffer(const Buffer& buffer, const void* src,
 
     uint32_t padded_page_size = align(buffer.page_size(), 32);
     uint32_t total_pages_to_write = buffer.num_pages();
+    const uint32_t num_banks = this->device->num_banks(buffer.buffer_type());
+
+    std::cout << "Padded page size: " << padded_page_size << " total pages to write " << total_pages_to_write << std::endl;
+
     const uint32_t command_issue_limit = this->manager.get_issue_queue_limit(this->id);
+
     uint32_t dst_page_index = 0;
+    uint32_t bank_base_address = buffer.address();
     while (total_pages_to_write > 0) {
         uint32_t space_available_bytes = std::min(command_issue_limit - this->manager.get_issue_queue_write_ptr(this->id), MAX_PREFETCH_COMMAND_SIZE);
         int32_t num_pages_available =
@@ -643,10 +655,19 @@ void HWCommandQueue::enqueue_write_buffer(const Buffer& buffer, const void* src,
 
         uint32_t pages_to_write = std::min(total_pages_to_write, (uint32_t)num_pages_available);
 
+        if (dst_page_index > 0xFFFF) {
+            // Page offset in CQ_DISPATCH_CMD_WRITE_PAGED is uint16_t
+            // To handle larger page offsets move bank base address up and update page offset to be relative to the new bank address
+            uint32_t residual = dst_page_index % num_banks;
+            uint32_t num_full_pages_written_per_bank = dst_page_index / num_banks;
+            bank_base_address += num_full_pages_written_per_bank * padded_page_size;
+            dst_page_index = residual;
+        }
+
         tt::log_debug(tt::LogDispatch, "EnqueueWriteBuffer for channel {}", this->id);
 
         auto command = EnqueueWriteInterleavedBufferCommand(
-            this->id, this->device, buffer, src, this->manager, dst_page_index, pages_to_write);
+            this->id, this->device, buffer, src, this->manager, bank_base_address, dst_page_index, pages_to_write);
         this->enqueue_command(command, false); // don't block until the entire src data is enqueued in the issue queue
 
         total_pages_to_write -= pages_to_write;

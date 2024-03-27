@@ -467,7 +467,7 @@ class SystemMemoryManager {
     void fetch_queue_push_back(uint16_t command_size_16B, const uint8_t cq_id) {
         // uint32_t command_size_16B = command_size_B << 4;
         // can't use fast_write_callable?
-        std::cout << "writing " << command_size_16B << " to " << this->prefetcher_cores[cq_id].str() << " at " << this->prefetch_q_dev_ptrs[cq_id] << std::endl;
+        // std::cout << "writing " << command_size_16B << " to " << this->prefetcher_cores[cq_id].str() << " at " << this->prefetch_q_dev_ptrs[cq_id] << std::endl;
         tt::Cluster::instance().write_core((void *)&command_size_16B, sizeof(uint16_t), this->prefetcher_cores[cq_id], this->prefetch_q_dev_ptrs[cq_id], true);
 
         // uint16_t rdback;

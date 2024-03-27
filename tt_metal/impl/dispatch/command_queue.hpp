@@ -164,6 +164,7 @@ class EnqueueWriteBufferCommand : public Command {
    protected:
     Device* device;
     const Buffer& buffer;
+    uint32_t bank_base_address;
     uint32_t dst_page_index;
     static std::vector<uint32_t> commands;
    public:
@@ -173,6 +174,7 @@ class EnqueueWriteBufferCommand : public Command {
         const Buffer& buffer,
         const void* src,
         SystemMemoryManager& manager,
+        uint32_t bank_base_address,
         uint32_t dst_page_index = 0,
         std::optional<uint32_t> pages_to_write = std::nullopt);
 
@@ -193,6 +195,7 @@ class EnqueueWriteInterleavedBufferCommand : public EnqueueWriteBufferCommand {
         const Buffer& buffer,
         const void* src,
         SystemMemoryManager& manager,
+        uint32_t bank_base_address,
         uint32_t dst_page_index = 0,
         std::optional<uint32_t> pages_to_write = std::nullopt)
         : EnqueueWriteBufferCommand(
@@ -201,6 +204,7 @@ class EnqueueWriteInterleavedBufferCommand : public EnqueueWriteBufferCommand {
             buffer,
             src,
             manager,
+            bank_base_address,
             dst_page_index,
             pages_to_write){;}
 
@@ -216,6 +220,7 @@ class EnqueueWriteShardedBufferCommand : public EnqueueWriteBufferCommand {
         const Buffer& buffer,
         const void* src,
         SystemMemoryManager& manager,
+        uint32_t bank_base_address,
         uint32_t dst_page_index = 0,
         std::optional<uint32_t> pages_to_write = std::nullopt)
         : EnqueueWriteBufferCommand(
@@ -224,6 +229,7 @@ class EnqueueWriteShardedBufferCommand : public EnqueueWriteBufferCommand {
             buffer,
             src,
             manager,
+            bank_base_address,
             dst_page_index,
             pages_to_write){;}
 
