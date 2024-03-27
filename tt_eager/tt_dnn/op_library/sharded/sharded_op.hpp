@@ -103,10 +103,22 @@ struct PageRange {
     uint32_t end;
 };
 
+struct PageStride {
+    uint32_t start;
+    uint32_t end;
+    uint32_t stride;
+};
+
 struct CorePageRange {
     CoreCoord core;
     PageRange range;
 };
+
+struct CorePageStride {
+    CoreCoord core;
+    PageStride page_stride;
+};
+
 
 // TODO: tarafdarTT unify with Sharded struct
 struct Reshard {

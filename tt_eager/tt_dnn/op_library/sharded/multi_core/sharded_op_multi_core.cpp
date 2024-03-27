@@ -517,7 +517,7 @@ operation::ProgramWithCallbacks sharded_to_interleaved_multi_core(const Tensor& 
     return {.program = std::move(program), .override_runtime_arguments_callback = override_runtime_arguments_callback};
 }
 
-std::unordered_map<CoreCoord, std::vector<CorePageRange>> get_core_page_ranges(
+std::unordered_map<CoreCoord, std::vector<CorePageStride>> get_core_page_ranges(
     Buffer* input_buffer, Buffer* output_buffer) {
     const auto& output_shard_to_host_mapping = output_buffer->get_dev_page_to_host_page_mapping();
     const auto& input_page_to_local_page_mapping = input_buffer->get_host_page_to_local_shard_page_mapping();
@@ -543,29 +543,46 @@ std::unordered_map<CoreCoord, std::vector<CorePageRange>> get_core_page_ranges(
 
     // now compress to output_core to vector<pair<input_core, input_page_range> (num_page_ranges_in_output)
     auto output_cores = corerange_to_cores(output_buffer->shard_spec().grid());
-    std::unordered_map<CoreCoord, std::vector<CorePageRange>> ret_map;
+    std::unordered_map<CoreCoord, std::vector<CorePageStride>> ret_map;
     ret_map.reserve(output_cores.size());
 
+    auto output_core_host_page_indices = output_buffer->core_host_page_indices();
+
+    CoreCoord end_core = (*output_buffer->shard_spec().grid().ranges().rbegin()).end;
+    uint32_t output_core_id;
     for (auto output_core : output_cores) {
-        ret_map.try_emplace(output_core, std::vector<CorePageRange>{});
+        ret_map.try_emplace(output_core, std::vector<CorePageStride>{});
+
+
         const auto& input_cores_with_pages = output_core_to_vector_input_core_page.at(output_core);
         auto it = input_cores_with_pages.begin();
         const auto end = input_cores_with_pages.end();
+
+
         while (it != end) {
             const auto start_core = it->first;
             const auto start_page = it->second;
             auto expected_next_page = start_page + 1;
-
-            // Find the end of the current range
-            auto next_it = std::find_if(it + 1, end, [start_core, &expected_next_page](const auto& core_page) {
-                const auto& [core, page] = core_page;
-                bool is_same_range = (core == start_core) && (page == expected_next_page);
-                expected_next_page += is_same_range;
-                return !is_same_range;
-            });
-
-            ret_map[output_core].push_back(CorePageRange{start_core, {start_page, expected_next_page}});
-            it = next_it;
+            uint32_t stride = 1;
+            if ((it + 1) == end) {
+                ret_map[output_core].push_back(CorePageStride{start_core, {start_page, start_page + 1, 1}});
+                it = end;
+            }
+            else if((it+1)->first != start_core) {
+                ret_map[output_core].push_back(CorePageStride{start_core, {start_page, start_page + 1, 1}});
+                it = it+1;
+            }
+            else {
+                stride = (it+1)->second - it->second;
+                auto stride_it = it;
+                auto last_it = it+1;
+                while(stride_it != end and (stride_it->first == start_core) and (stride_it->second - last_it->second == stride)) {
+                    last_it = stride_it;
+                    stride_it = stride_it+1;
+                }
+                ret_map[output_core].push_back(CorePageStride{start_core, {start_page, (last_it->second) + 1, stride}});
+                it = stride_it;
+            }
         }
     }
 
@@ -620,17 +637,17 @@ operation::ProgramWithCallbacks reshard_multi_core(const Tensor& input, Tensor& 
     auto cb_dst0 = tt_metal::CreateCircularBuffer(program, all_cores, cb_dst_config);
 
     for (auto core : cores) {
-        auto page_range_vector = output_core_to_page_range_pair.at(core);
-        uint32_t num_ranges = page_range_vector.size();
+        auto page_stride_vector = output_core_to_page_range_pair.at(core);
+        uint32_t num_ranges = page_stride_vector.size();
         std::vector<uint32_t> runtime_args = {input.buffer()->address(), 0, num_ranges, page_size};
         uint32_t num_output_pages = 0;
-        for (const auto& [core, range] : page_range_vector) {
+        for (const auto& [core, range] : page_stride_vector) {
             auto physical_input_core = device->worker_core_from_logical_core(core);
             runtime_args.push_back(physical_input_core.x);
             runtime_args.push_back(physical_input_core.y);
             runtime_args.push_back(range.start * page_size);                // start
             runtime_args.push_back(range.end * page_size);                // start
-            runtime_args.push_back(page_size);  // stride
+            runtime_args.push_back(range.stride * page_size);  // stride
             num_output_pages += range.end - range.start;
         }
         runtime_args[1] = num_output_pages;
