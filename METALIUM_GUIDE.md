@@ -19,6 +19,7 @@ This document desribes how we did it.
   - Dispatch Kernels
 * [Native Support for Tiled Compute and Data](#native-support-for-tiled-compute-and-data)
 * [Interleaved and Sharded Buffers](#interleaved-and-sharded-buffers)
+* [For GPU, CPU, FPGA, TPU experts](#for-gpu-cpu-fpga-tpu-experts)
 * [Eltwise Binary Kernel](#eltwise-binary-kernel)
 
 ### All you need is a Tensix core and a mesh 
