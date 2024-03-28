@@ -773,6 +773,7 @@ void py_module(py::module& m_primary) {
         py::arg("output_tensor").noconvert() = std::nullopt,
         py::arg("strategy").noconvert() = MorehSoftmaxOpParallelizationStrategy::NONE,
         py::arg("output_mem_config").noconvert() = operation::DEFAULT_OUTPUT_MEMORY_CONFIG,
+        py::arg("compute_kernel_config").noconvert() = std::nullopt,
         "Performs a softmax operation. Returns an output tensor.");
     m_primary.def(
         "moreh_softmax_backward",
