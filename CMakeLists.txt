@@ -70,7 +70,7 @@ endif()
 # Build subdirectories
 ############################################
 # Build umd_device
-include(CMakeLists-umd.txt)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/CMakeLists.txt)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tt_metal/hw)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tt_metal)
