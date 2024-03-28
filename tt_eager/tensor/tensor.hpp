@@ -31,16 +31,43 @@ struct Tensor {
         ttnn::Shape shape;
         DataType dtype;
         Layout layout;
-
+        bool metadata_populated = false;
+        uint32_t main_thread_ref_count = 0;
+        bool deallocated = false;
         TensorAttributes(const Storage storage, const ttnn::Shape shape, DataType dtype, Layout layout) : storage(storage), shape(shape), dtype(dtype), layout(layout) {}
         TensorAttributes() : shape({0xff, 0xff, 0xff, 0xff}), dtype(DataType::INVALID), layout(Layout::INVALID) {}
         ~TensorAttributes() = default;
+
+        // Use these functions to manage the main_thread_ref_count for a tensor attr instance.
+        // This variable is used for on device memory deallocation in async mode, where the main
+        // thread owns all tensors and enqueues a deallocate command for each shard, when a tensor
+        // is implcitly or explictly dellocated.
+        // Call increment when a tensor is default, copy or assignment constructed, since an additonal
+        // object will own a tensor_attr instance.
+        // Call decrement when a tensor is destroyed or after its pushed to the worker queue. This is
+        // because pushing to the worker queue will create a tensor copy, which will be destroyed in
+        // the worker, that will not decrement the main_thread_ref_count upon destruction.
+        void increment_main_thread_ref_count(Device* worker) {
+            if (worker->get_worker_mode() == Device::WorkerQueueMode::ASYNCHRONOUS) {
+                TT_FATAL(worker->in_main_thread(), "main_thread_ref_count can only be modified by the main thread.");
+                main_thread_ref_count++;
+            }
+        }
+
+        void decrement_main_thread_ref_count(Device* worker) {
+            if (worker->get_worker_mode() == Device::WorkerQueueMode::ASYNCHRONOUS) {
+                TT_FATAL(worker->in_main_thread(), "main_thread_ref_count can only be modified by the main thread.");
+                main_thread_ref_count--;
+            }
+        }
     };
 
     // Shared pointer to all attributes associated with this tensor
     // Can be safely passed between threads when the tensor is copied
     std::shared_ptr<TensorAttributes> tensor_attributes;
-
+    // Tensor gets worker queue handle through the device
+    std::vector<Device*> workers = {};
+    bool deallocate_through_destructor = false;
     // ======================================================================================
     //                                  Hi Level APIs
     // ======================================================================================
@@ -48,17 +75,47 @@ struct Tensor {
     Tensor(const Storage storage, const Shape shape, DataType dtype, Layout layout);
 
     // Default constructor to initialize empty tensor
-    Tensor() : tensor_attributes(std::make_shared<TensorAttributes>()) {}
+    Tensor(std::vector<Device*> workers = {}) : tensor_attributes(std::make_shared<TensorAttributes>()), workers(workers) {
+        if (workers.size()) {
+            if (this->workers.at(0)->in_main_thread()) {
+                this->tensor_attributes->increment_main_thread_ref_count(this->workers.at(0));
+            }
+        }
+    }
 
-    Tensor(const Tensor &other) = default;
-    Tensor &operator=(const Tensor &other) = default;
+    Tensor(const Tensor &other) {
+        this->workers = other.workers;
+        this->tensor_attributes = other.tensor_attributes;
+        if (this->workers.size()) {
+            if (this->workers.at(0)->in_main_thread()) {
+                this->tensor_attributes->increment_main_thread_ref_count(this->workers.at(0));
+            }
+        }
+    }
 
-    Tensor(Tensor &&other) = default;
+    Tensor &operator=(const Tensor &other) {
+        this->workers = other.workers;
+        this->tensor_attributes = other.tensor_attributes;
+        if (this->workers.size()) {
+            if (this->workers.at(0)->in_main_thread()) {
+                this->tensor_attributes->increment_main_thread_ref_count(this->workers.at(0));
+            }
+        }
+        return *this;
+    }
+
+    Tensor(Tensor &&other) noexcept : tensor_attributes(std::move(other.tensor_attributes)), workers(std::move(other.workers)) {};
     Tensor &operator=(Tensor &&other) = default;
 
     ~Tensor();
 
+    void deepcopy(const Tensor& other);
+
+    void populate_buffers_and_metadata(const Tensor& other);
+
     void deallocate(bool force = false);
+
+    std::vector<Device*> get_workers(bool blocking = false) const;
 
     Tensor to(
         Device *target_device,
@@ -101,13 +158,13 @@ struct Tensor {
     // ======================================================================================
     //                                      Getters
     // ======================================================================================
-    const TensorAttributes& get_attr() const { return *tensor_attributes; }
+    const TensorAttributes& get_attr() const;
     const Storage &get_storage() const;
-    const Shape &get_legacy_shape() const { return this->get_attr().shape.value(); }
-    const ttnn::Shape &get_shape() const { return this->get_attr().shape; }
-    const DataType& get_dtype() const { return this->get_attr().dtype; }
-    const Layout& get_layout() const { return this->get_attr().layout; }
-
+    const Shape &get_legacy_shape() const;
+    const ttnn::Shape &get_shape() const;
+    const DataType& get_dtype() const;
+    const Layout& get_layout() const;
+    bool metadata_populated() const;
 
     // ======================================================================================
     //                                      Setters
