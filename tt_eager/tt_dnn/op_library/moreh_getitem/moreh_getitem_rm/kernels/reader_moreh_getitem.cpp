@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "dataflow_api.h"
+#include "debug/dprint.h"
 
 void kernel_main() {
     uint32_t i = 0;
@@ -100,67 +101,92 @@ void kernel_main() {
         index3_stick_size,
     };
 
-    uint32_t end_id = start_id + num_sticks;
-    for (uint32_t i = start_id; i < end_id; ++i) {
-        // compute src noc id
+
+    // case1. offset = 0, ok
+    // expected result = [0, 1, 2, 3, 4, 5, 6, 7, ]
+    // real     result = [0, 1, 2, 3, 4, 5, 6, 7, ]
+    {
+        cb_reserve_back(cb_in4, 1);
+        uint32_t l1_write_addr = get_write_ptr(cb_in4);
         uint32_t noc_id = 0;
-        uint32_t output_stick_idx = i;
-        uint32_t index_index = 0;
-        bool is_first_index = true;
-        int32_t output_dim = 2;
-        for (int32_t dim = 2; dim >= 0; dim--) {
-
-            uint32_t input_stick_idx_stride = input_stick_idx_strides[dim];
-            auto output_size = output_size_list[output_dim];
-
-            if (index_is_defined[dim]) {
-                // read index tensor
-                tt::CB idx_cb = index_cbs[dim];
-
-                cb_reserve_back(idx_cb, 1);
-                uint32_t index_l1_addr = get_write_ptr(idx_cb);
-                uint64_t index_noc_addr;
-
-                if (is_first_index) {
-                    index_index = output_stick_idx % index_size;
-                }
-
-                if (dim == 0) {
-                    index_noc_addr = get_noc_addr(0, index0);
-                }
-                if (dim == 1) {
-                    index_noc_addr = get_noc_addr(0, index1);
-                }
-                if (dim == 2) {
-                    index_noc_addr = get_noc_addr(0, index2);
-                }
-                noc_async_read(index_noc_addr, index_l1_addr, index_stick_sizes[dim]);
-                noc_async_read_barrier();
-
-                volatile tt_l1_ptr uint32_t* index_l1_ptr =
-                    reinterpret_cast<volatile tt_l1_ptr uint32_t*>(index_l1_addr);
-                uint32_t noc_idx = index_l1_ptr[index_index];
-
-                noc_id += noc_idx * input_stick_idx_stride;
-                if (is_first_index) {
-                    output_stick_idx /= output_size;
-                }
-                is_first_index = false;
-            } else {
-                uint32_t noc_idx = output_stick_idx % output_size;
-                noc_id += noc_idx * input_stick_idx_stride;
-                output_stick_idx /= output_size;
-            }
-            if (!(index_start_dim < dim && dim <= index_end_dim)) {
-                output_dim --;
-            }
-        }
-
-        cb_reserve_back(cb_in0, 1);
-        uint32_t l1_write_addr = get_write_ptr(cb_in0);
-        uint64_t src_noc_addr = get_noc_addr(noc_id, s0);
-        noc_async_read(src_noc_addr, l1_write_addr, stick_size);
+        uint32_t noc_offset = 0 * 4;
+        uint64_t src_noc_addr = get_noc_addr(noc_id, index3, noc_offset);
+        uint32_t read_size = 8 * 4;
+        noc_async_read(src_noc_addr, l1_write_addr, read_size);
         noc_async_read_barrier();
-        cb_push_back(cb_in0, 1);
+
+        volatile tt_l1_ptr uint32_t* index_l1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(l1_write_addr);
+
+        DPRINT << "Input index_l1_ptr = [";
+        for (uint32_t x = 0 ;x < 8; x ++) {
+            DPRINT << index_l1_ptr[x] << ", ";
+        }
+        DPRINT << "]\n";
+    }
+
+    // case2. offset = 1, not ok
+    // expected result = [1, 2, 3, 4, 5, 6, 7, 8, ]
+    // real     result = [0, 1, 2, 3, 4, 5, 6, 7, ]
+    {
+        cb_reserve_back(cb_in4, 1);
+        uint32_t l1_write_addr = get_write_ptr(cb_in4);
+        uint32_t noc_id = 0;
+        uint32_t noc_offset = 1 * 4;
+        uint64_t src_noc_addr = get_noc_addr(noc_id, index3, noc_offset);
+        uint32_t read_size = 8 * 4;
+        noc_async_read(src_noc_addr, l1_write_addr, read_size);
+        noc_async_read_barrier();
+
+        volatile tt_l1_ptr uint32_t* index_l1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(l1_write_addr);
+
+        DPRINT << "Input index_l1_ptr = [";
+        for (uint32_t x = 0 ;x < 8; x ++) {
+            DPRINT << index_l1_ptr[x] << ", ";
+        }
+        DPRINT << "]\n";
+    }
+
+    // case3. offset = 4, not ok
+    // expected result = [4, 5, 6, 7, 8, 9, 10, 11]
+    // real     result = [0, 0, 0, 0, 4, 5,  6,  7]
+    {
+        cb_reserve_back(cb_in4, 1);
+        uint32_t l1_write_addr = get_write_ptr(cb_in4);
+        uint32_t noc_id = 0;
+        uint32_t noc_offset = 4 * 4;
+        uint64_t src_noc_addr = get_noc_addr(noc_id, index3, noc_offset);
+        uint32_t read_size = 8 * 4;
+        noc_async_read(src_noc_addr, l1_write_addr, read_size);
+        noc_async_read_barrier();
+
+        volatile tt_l1_ptr uint32_t* index_l1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(l1_write_addr);
+
+        DPRINT << "Input index_l1_ptr = [";
+        for (uint32_t x = 0 ;x < 8; x ++) {
+            DPRINT << index_l1_ptr[x] << ", ";
+        }
+        DPRINT << "]\n";
+    }
+
+    // case4. offset = 8, ok
+    // expected result = [8, 9, 10, 11, 12, 13, 14, 15,]
+    // real     result = [8, 9, 10, 11, 12, 13, 14, 15,]
+    {
+        cb_reserve_back(cb_in4, 1);
+        uint32_t l1_write_addr = get_write_ptr(cb_in4);
+        uint32_t noc_id = 0;
+        uint32_t noc_offset = 8 * 4;
+        uint64_t src_noc_addr = get_noc_addr(noc_id, index3, noc_offset);
+        uint32_t read_size = 8 * 4;
+        noc_async_read(src_noc_addr, l1_write_addr, read_size);
+        noc_async_read_barrier();
+
+        volatile tt_l1_ptr uint32_t* index_l1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(l1_write_addr);
+
+        DPRINT << "Input index_l1_ptr = [";
+        for (uint32_t x = 0 ;x < 8; x ++) {
+            DPRINT << index_l1_ptr[x] << ", ";
+        }
+        DPRINT << "]\n";
     }
 }

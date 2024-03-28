@@ -50,7 +50,7 @@ void MorehGetitem::validate_with_output_tensors(
 
     if (input_layout == Layout::ROW_MAJOR) {
         for (auto dim : this->index_dims) {
-            TT_FATAL(dim != 3, "getitem for ROW_MAJOR layout not support W index tensor!");
+            // TT_FATAL(dim != 3, "getitem for ROW_MAJOR layout not support W index tensor!");
         }
     }
 
