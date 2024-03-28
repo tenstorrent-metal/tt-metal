@@ -331,6 +331,7 @@ EnqueueRecordEventCommand::EnqueueRecordEventCommand(
         // uint32_t stride = align(sizeof(CQPrefetchCmd) + sizeof(CQDispatchCmd), HUGEPAGE_ALIGNMENT);
 
         uint32_t dispatch_event_payload = sizeof(CQDispatchCmd) + EVENT_PADDED_SIZE;
+        static_assert((sizeof(CQDispatchCmd) + EVENT_PADDED_SIZE) % 16 == 0);
         // Command to write event to L1
         CQPrefetchCmd relay_event_l1;
         relay_event_l1.base.cmd_id = CQ_PREFETCH_CMD_RELAY_INLINE;
@@ -345,12 +346,13 @@ EnqueueRecordEventCommand::EnqueueRecordEventCommand(
         uint8_t num_hw_cqs = this->device->num_hw_cqs();
         uint16_t channel = tt::Cluster::instance().get_assigned_channel_for_device(this->device->id());
         tt_cxy_pair dispatch_location = dispatch_core_manager::get(num_hw_cqs).dispatcher_core(this->device->id(), channel, this->command_queue_id);
-        CoreCoord dispatch_physical_core = get_physical_core_coordinate(dispatch_location, CoreType::WORKER);
+        CoreType core_type = dispatch_core_manager::get(num_hw_cqs).get_dispatch_core_type(this->device->id());
+        CoreCoord dispatch_physical_core = get_physical_core_coordinate(dispatch_location, core_type);
 
         CQDispatchCmd write_event_l1_cmd;
         write_event_l1_cmd.base.cmd_id = CQ_DISPATCH_CMD_WRITE_LINEAR;
         write_event_l1_cmd.write_linear.num_mcast_dests = 0;
-        write_event_l1_cmd.write_linear.noc_xy_addr = NOC_XY_ENCODING(dispatch_physical_core.x, dispatch_physical_core.y);
+        write_event_l1_cmd.write_linear.noc_xy_addr = get_noc_unicast_encoding(dispatch_physical_core);
         write_event_l1_cmd.write_linear.addr = CQ_COMPLETION_LAST_EVENT;
         write_event_l1_cmd.write_linear.length = EVENT_PADDED_SIZE;
 
