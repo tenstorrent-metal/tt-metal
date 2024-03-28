@@ -67,56 +67,24 @@ class TtLlamaRotary(torch.nn.Module):
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.head_dim = hidden_size // n_heads
+        self.device = device
+        self.transformation_mat = torch2tt_tensor(get_rot_transformation_mat(self.head_dim), device)
 
-    def forward(self, xq, xk, rot_mat):
-        # xq = xq.transpose(1, 2).squeeze(0)
-        # xk = xk.transpose(1, 2).squeeze(0)
-        # rot_mat = rot_mat.squeeze(0)
+    def apply_rotary(self, x, cos, sin):
+        batch, n_heads, _, _ = x.shape
 
-        # xq = torch.bmm(
-        #     xq,
-        #     rot_mat,
-        # )
-        # xk = torch.bmm(
-        #     xk,
-        #     rot_mat,
-        # )
-        # xq = xq.unsqueeze(0).transpose(1, 2)
-        # xk = xk.unsqueeze(0).transpose(1, 2)
+        cos = ttnn.repeat(cos, ttnn.Shape([batch, n_heads, 1, 1]))
+        sin = ttnn.repeat(sin, ttnn.Shape([batch, n_heads, 1, 1]))
 
-        xq = tt_lib.tensor.pad(xq, [1, 32, 128, self.head_dim], [0, 0, 0, 0], 0.0)
-        xq = tt_lib.tensor.transpose(xq, 1, 2)
+        x_transformed = ttnn.matmul(x, self.transformation_mat)
 
-        xq = tt_lib.operations.primary.matmul(
-            xq,
-            rot_mat,
-            # compute_kernel_config=self.model_config["ROT_MAT_COMPUTE_KERNEL_CONFIG"]
-        )
+        x_cos = ttnn.mul(cos, x)
+        x_sin = ttnn.mul(sin, x_transformed)
+        return ttnn.add(x_cos, x_sin)
 
-        xq = tt_lib.tensor.transpose(xq, 1, 2)
-        xq = tt_lib.tensor.unpad(
-            xq,
-            [0, 0, 0, 0],
-            [1 - 1, 8 - 1, 128 - 1, self.head_dim - 1],
-        )
-
-        xk = tt_lib.tensor.pad(xk, [1, 32, 128, self.head_dim], [0, 0, 0, 0], 0.0)
-
-        xk = tt_lib.tensor.transpose(xk, 1, 2)
-
-        xk = tt_lib.operations.primary.matmul(
-            xk,
-            rot_mat,
-            # compute_kernel_config=self.model_config["ROT_MAT_COMPUTE_KERNEL_CONFIG"],
-        )
-
-        xk = tt_lib.tensor.transpose(xk, 1, 2)
-        xk = tt_lib.tensor.unpad(
-            xk,
-            [0, 0, 0, 0],
-            [1 - 1, 1 - 1, 128 - 1, self.head_dim - 1],
-        )
-
+    def forward(self, xq, xk, cos, sin):
+        xq = self.apply_rotary(xq, cos, sin)
+        xk = self.apply_rotary(xk, cos, sin)
         return xq, xk
 
 
@@ -138,6 +106,41 @@ class PytorchLlamaRotaryModel(torch.nn.Module):
         return xq, xk
 
 
+def get_rot_transformation_mat(dhead):
+    rot_emb_matrix = torch.zeros(1, 1, dhead, dhead)
+    rot_emb_matrix[..., torch.arange(0, dhead, 2), torch.arange(1, dhead, 2)] = 1
+    rot_emb_matrix[..., torch.arange(1, dhead, 2), torch.arange(0, dhead, 2)] = -1
+    return rot_emb_matrix
+
+
+def compute_gather_cos_sin(dhead, end, position_ids):
+    cos, sin = precompute_freqs(dhead, end)
+    position_id_expanded = position_ids.unsqueeze(1).expand(-1, cos.shape[-1])
+    cos = cos.gather(0, position_id_expanded)
+    sin = sin.gather(0, position_id_expanded)
+    cos = torch.stack([cos, cos], dim=-1).flatten(-2).unsqueeze(0).unsqueeze(0)
+    sin = torch.stack([sin, sin], dim=-1).flatten(-2).unsqueeze(0).unsqueeze(0)
+    return cos, sin
+
+
+class PytorchLlamaRotaryMultiplyAddModel(torch.nn.Module):
+    def __init__(self, hf_reference_model, layer_num):
+        super().__init__()
+        self.n_heads = hf_reference_model.params.n_heads
+        self.n_kv_heads = hf_reference_model.params.n_kv_heads
+        self.head_dim = hf_reference_model.params.dim // self.n_heads
+        self.transformation_mat = get_rot_transformation_mat(self.head_dim)
+
+    def apply_rotary(self, x, cos, sin):
+        return x * cos + x @ self.transformation_mat * sin
+
+    def forward(self, xq, xk, cos, sin):
+        # xq is shape of [batch, n_head, seq_len, head_dim]
+        xq = self.apply_rotary(xq, cos, sin)
+        xk = self.apply_rotary(xk, cos, sin)
+        return xq, xk
+
+
 def run_test_LlamaReshape(
     devices,
     batch,
@@ -146,6 +149,7 @@ def run_test_LlamaReshape(
     model_config,
     n_devices,
     emulated=False,
+    implementation="tt",
 ):
     # Prepare paths and devices
     devices, ckpt_dir, tokenizer_path, cache_path = get_llama_path(devices, model_config, n_devices, emulated)
@@ -184,30 +188,39 @@ def run_test_LlamaReshape(
 
     layer_num = 0
     base_url = "layers"
-    # PyTorch output --------------------------------------------------------------------
+    # PyTorch Ground Truth output --------------------------------------------------------------------
     pytorch_model = PytorchLlamaRotaryModel(hugging_face_reference_model, layer_num)
     pytorch_out = pytorch_model(*inp)
 
-    # TT hardware execution -------------------------------------------------------------
-    tt_model = TtLlamaRotary(
-        device,
-        state_dict,
-        base_url,
-        layer_num,
-        hidden_dim,
-        n_heads,
-        n_kv_heads,
-        model_config,
-    )
+    # TT hardware / Modified PyTorch execution -------------------------------------------------------------
+    if implementation == "tt":
+        tt_model = TtLlamaRotary(
+            device,
+            state_dict,
+            base_url,
+            layer_num,
+            hidden_dim,
+            n_heads,
+            n_kv_heads,
+            model_config,
+        )
 
-    rot_mat = get_rotation_mat_prefill(
-        dhead=head_dim, end=configuration.max_seq_len * 2, start_pos=start_pos, seqlen=seq_len, batch=batch
-    )
-    inp[2] = rot_mat
-    tt_inp = [torch2tt_tensor(i, device) for i in inp]
+        cos, sin = compute_gather_cos_sin(
+            dhead=head_dim, end=configuration.max_seq_len * 2, position_ids=torch.arange(start_pos, start_pos + seq_len)
+        )
+        tt_inp = [inp[0], inp[1], cos, sin]
+        tt_inp = [torch2tt_tensor(i, device) for i in tt_inp]
 
-    tt_out = tt_model(*tt_inp)
-    tt_out = [tt2torch_tensor(tt_out_tensor) for tt_out_tensor in tt_out]
+        tt_out = tt_model(*tt_inp)
+        tt_out = [tt2torch_tensor(tt_out_tensor) for tt_out_tensor in tt_out]
+    elif implementation == "pytorch":
+        tt_model = PytorchLlamaRotaryMultiplyAddModel(hugging_face_reference_model, layer_num)
+        cos, sin = compute_gather_cos_sin(
+            dhead=head_dim, end=configuration.max_seq_len * 2, position_ids=torch.arange(start_pos, start_pos + seq_len)
+        )
+        tt_out = tt_model(inp[0], inp[1], cos, sin)
+    else:
+        raise ValueError(f"Unknown implementation: {implementation}")
 
     # check outputs ----------------------------------------------------------------------
 
@@ -240,25 +253,33 @@ def run_test_LlamaReshape(
 
 @skip_for_grayskull("Requires eth connected devices to run")
 @pytest.mark.parametrize(
-    "n_devices, emulated",
+    "n_devices, emulated, implementation",
     (
-        (8, False),
-        (8, True),
-        (32, True),
+        (8, False, "tt"),
+        (8, True, "tt"),
+        (32, True, "tt"),
+        (8, True, "pytorch"),
     ),
-    ids=(
-        "8chip-T3000",
-        "8chip-emulated",
-        "32chip-emulated",
-    ),
+    ids=("8chip-T3000", "8chip-emulated", "32chip-emulated", "pytorch"),
 )
 @pytest.mark.parametrize(
     "batch, seq_len",
     (
-        (32, 1),
+        #        (32, 1),
         (1, 128),
+        (1, 256),
+        (1, 512),
+        (1, 1024),
+        (1, 2048),
     ),
-    ids=("decode", "prefill"),
+    ids=(
+        # "decode",
+        "prefill_128",
+        "prefill_256",
+        "prefill_512",
+        "prefill_1k",
+        "prefill_2k",
+    ),
 )
 @pytest.mark.parametrize("model_config_str, pcc", (("BFLOAT16-DRAM", 0.9997),))
 def test_LlamaAttention_inference(
@@ -269,6 +290,7 @@ def test_LlamaAttention_inference(
     n_devices,
     all_devices,
     emulated,
+    implementation,
 ):
     devices = get_devices_for_t3000(all_devices, num_devices=n_devices if not emulated else 1)
     model_config = get_model_config(model_config_str, num_devices=n_devices, seq_len=seq_len)
@@ -277,7 +299,6 @@ def test_LlamaAttention_inference(
         pytest.skip(f"Requires at {n_devices} devices to run")
     if compute_grid_size.x < model_config["MAX_GRID_SIZE"][0] or compute_grid_size.y < model_config["MAX_GRID_SIZE"][1]:
         pytest.skip(f"Requires grid size of at least {model_config['MAX_GRID_SIZE']} to run")
-
     run_test_LlamaReshape(
         devices,
         batch,
@@ -286,4 +307,5 @@ def test_LlamaAttention_inference(
         model_config,
         n_devices,
         emulated,
+        implementation,
     )
