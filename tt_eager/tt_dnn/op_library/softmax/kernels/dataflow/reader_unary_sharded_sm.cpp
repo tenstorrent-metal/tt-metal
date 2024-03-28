@@ -5,7 +5,6 @@
 #include "dataflow_api.h"
 #include "tt_eager/tt_dnn/kernels/dataflow/generate_reduce_scaler.hpp"
 #include "tt_eager/tt_dnn/kernels/dataflow/generate_bcast_scalar.hpp"
-#include "debug/dprint.h"
 
 // HW-bcast scale for fused scale-attn-softmax
 FORCE_INLINE void generate_inv_sqrt_hw_bcast_tile() {
@@ -43,20 +42,15 @@ void kernel_main() {
     const uint32_t pre_scale = get_arg_val<uint32_t>(1);
     generate_bcast_unary_scalar(cb_fused_scale, pre_scale);
 
-
-    // DPRINT << "Mask start tile id = " << mask_id << ENDL();
-    // DPRINT << "Mask address: = " << mask_addr << ENDL();
     #if defined(CAUSAL_MASK) && !defined(SHARDED_CAUSAL_MASK)
         uint32_t fused_head = get_compile_time_arg_val(4);
         uint32_t fused_head_remainder = get_compile_time_arg_val(5);
-        //DPRINT << "Fused Head = " << fused_head << " Fused Head Remainder = " << fused_head_remainder << ENDL();
         uint32_t block_ht = fused_head * block_wt + fused_head_remainder;
         uint32_t mask_num_tiles = get_arg_val<uint32_t>(4);
         for (uint32_t h = 0; h < block_ht; h++) {
             cb_reserve_back(cb_attn, block_wt);
             uint32_t l1_write_addr = get_write_ptr(cb_attn);
             for (uint32_t w = 0; w < block_wt; w++) {
-                DPRINT << "Issuing read command for mask_tile_id: " << mask_id << ENDL();
                 noc_async_read_tile(mask_id, addr_mask, l1_write_addr);
                 l1_write_addr += mask_tile_bytes;
                 ++mask_id;

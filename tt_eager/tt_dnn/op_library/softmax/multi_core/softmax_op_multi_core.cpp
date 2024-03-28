@@ -418,6 +418,8 @@ operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_core(
     uint32_t in3_CB_size;
     if (causal_mask) {
         in3_CB_size = mask.value().is_sharded() ? block_wt * block_ht * mask_tile_size : block_wt * mask_tile_size * 2;
+        // Hack for my case - make it single buffered
+        in3_CB_size = block_wt * mask_tile_size;
     } else {
         in3_CB_size = block_wt * mask_tile_size;
     }

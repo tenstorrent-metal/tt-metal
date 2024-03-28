@@ -564,17 +564,18 @@ def test_falcon7b_attention_softmax_sequence(
 
     query_layer_shape = [1, 71, seq_len, 64]
     key_layer_transposed_shape = [1, 1, 64, seq_len]
-    attention_mask_shape_required = [1, 1, seq_len, seq_len]
     attention_mask_shape = [1, 71, seq_len, seq_len]
+    attention_mask_proper_dim_shape = [1, 1, seq_len, seq_len]
     scalar_shape = [1, 1, 32, 32]
     value_layer_shape = [1, 1, seq_len, 64]
     attention_output_shape = [1, 71, seq_len, 64]
 
     torch_query_layer = torch.randn(query_layer_shape).bfloat16().float()
     torch_key_layer_transposed = torch.randn(key_layer_transposed_shape).bfloat16().float()
-    torch_attention_mask_required = torch.randn(attention_mask_shape_required).bfloat16().float()
-    torch_attention_mask = torch.randn(attention_mask_shape).bfloat16().float()
-    torch_scalar = (torch.ones(scalar_shape) * (1 / math.sqrt(num_heads))).bfloat16().float()
+    torch_attention_mask_proper_dim = torch.randn(attention_mask_proper_dim_shape).bfloat16().float()
+    torch_attention_mask = torch_attention_mask_proper_dim.repeat(1, attention_mask_shape[1], 1, 1)
+    scalar_value = 1 / math.sqrt(num_heads)
+    torch_scalar = (torch.ones(scalar_shape) * scalar_value).bfloat16().float()
     torch_value_layer = torch.randn(value_layer_shape).bfloat16().float()
     torch_attention_output = torch.randn(attention_output_shape).bfloat16().float()
 
@@ -606,6 +607,40 @@ def test_falcon7b_attention_softmax_sequence(
         tt_memory_config=dram_interleaved_memory_config,
         tt_dtype=ttl.tensor.DataType.BFLOAT16,
     )
+    attention_mask_proper_dim = torch2tt_tensor(
+        torch_attention_mask_proper_dim,
+        device,
+        tt_memory_config=dram_interleaved_memory_config,
+        tt_dtype=ttl.tensor.DataType.BFLOAT16,
+    )
+
+    # We need to create attention masks per slice
+    attention_masks_per_slice = []
+    attention_mask_starting_index_per_slice = 0
+    slice_length = (71 * seq_len) // num_slices
+    number_of_attention_mask_elements_used_per_slice = slice_length - seq_len * (slice_length // seq_len)
+    # print("Slice length is: ", slice_length)
+    # print("Number of attention mask elements per slice = ", number_of_attention_mask_elements_used_per_slice)
+    for slice_index in range(num_slices):
+        print("Slice attention mask starting index: ", attention_mask_starting_index_per_slice)
+        torch_attention_mask_per_slice = torch.cat(
+            [
+                torch_attention_mask_proper_dim[:, :, attention_mask_starting_index_per_slice:, :],
+                torch_attention_mask_proper_dim[:, :, :attention_mask_starting_index_per_slice, :],
+            ],
+            dim=2,
+        )
+        tt_attention_slice = torch2tt_tensor(
+            torch_attention_mask_per_slice,
+            device,
+            tt_memory_config=dram_interleaved_memory_config,
+            tt_dtype=ttl.tensor.DataType.BFLOAT16,
+        )
+        attention_masks_per_slice.append(tt_attention_slice)
+        attention_mask_starting_index_per_slice = (
+            attention_mask_starting_index_per_slice + number_of_attention_mask_elements_used_per_slice
+        ) % seq_len  # mod attention_mask.height
+
     reference_scalar = torch2tt_tensor(
         torch_scalar, device, tt_memory_config=dram_interleaved_memory_config, tt_dtype=ttl.tensor.DataType.BFLOAT16
     )
@@ -672,39 +707,9 @@ def test_falcon7b_attention_softmax_sequence(
             compute_kernel_config=compute_kernel_config,
         )
 
-        mm_slice = ttl.operations.primary.bcast(
-            mm_slice,
-            reference_scalar,
-            ttl.tensor.BcastOpMath.MUL,
-            ttl.tensor.BcastOpDim.HW,
-            output_mem_config=height_sharded_memory_config,
-            in_place=True,
-        )
-
         # Deallocating here causes pcc to drop - issue #6638
         # So we have to move it after the entire sequence is finished
         # slice.deallocate()
-
-        attn_mask_slice = ttl.tensor.interleaved_to_sharded_partial(
-            attention_mask,
-            grid_size,
-            mm_output_height_shard_spec,
-            num_slices,
-            i,
-            ttl.tensor.TensorMemoryLayout.HEIGHT_SHARDED,
-            ttl.tensor.ShardOrientation.ROW_MAJOR,
-        )
-
-        mm_slice = ttl.operations.primary.add(
-            mm_slice,
-            attn_mask_slice,
-            fused_activations=None,
-            output_mem_config=height_sharded_memory_config,
-            output_dtype=ttl.tensor.DataType.BFLOAT16,
-            in_place=True,
-        )
-
-        attn_mask_slice.deallocate()
 
         subblock_w = 1
         if seq_len == 2048:
@@ -718,7 +723,13 @@ def test_falcon7b_attention_softmax_sequence(
             im_data_format=ttl.tensor.DataType.BFLOAT16,
         )
 
-        mm_slice = ttl.operations.primary.softmax_in_place(mm_slice, program_config=softmax_program_config)
+        mm_slice = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
+            mm_slice,
+            scalar_value,
+            attention_masks_per_slice[i],
+            program_config=softmax_program_config,
+            is_causal_mask=True,
+        )
 
         subblock_w = 2
         subblock_h = 1
@@ -761,22 +772,20 @@ def test_falcon7b_attention_softmax_sequence(
         reference_query_layer, reference_key_layer_transposed, output_mem_config=dram_interleaved_memory_config
     )
 
-    attn_weights = ttl.operations.primary.bcast(
+    attn_weights = ttl.operations.primary.transformers.scale_mask_softmax_in_place(
         attn_weights,
-        reference_scalar,
-        ttl.tensor.BcastOpMath.MUL,
-        ttl.tensor.BcastOpDim.HW,
-        output_mem_config=dram_interleaved_memory_config,
+        scalar_value,
+        attention_mask_proper_dim,
+        program_config=ttl.operations.primary.transformers.SoftmaxDefaultProgramConfig(),
+        is_causal_mask=True,
     )
-    attn_weights = ttl.tensor.add(attn_weights, attention_mask, output_mem_config=dram_interleaved_memory_config)
-    attn_weights = ttl.operations.primary.softmax_in_place(attn_weights)
+
     attn_output = ttl.tensor.matmul(attn_weights, reference_value_layer)
     attn_output_torch = tt2torch_tensor(attn_output)
     passing = True
 
     attn_output_torch_reshaped = attn_output_torch.view(1, 1, 71 * seq_len, 64)
     attention_output_concatenated_torch_reshaped = attention_output_concatenated_torch.view(1, 1, 71 * seq_len, 64)
-    slice_length = (71 * seq_len) // num_slices
     for slice_index in range(num_slices):
         print("Comparing slice ", slice_index, "...")
         slice_passing = False
@@ -857,7 +866,7 @@ def test_softmax(device, num_cores, seq_len):
     # print("Slice length is: ", slice_length)
     # print("Number of attention mask elements per slice = ", number_of_attention_mask_elements_used_per_slice)
     for slice_index in range(num_slices):
-        # print("Slice attention mask starting index: ", attention_mask_starting_index_per_slice)
+        print("Slice attention mask starting index: ", attention_mask_starting_index_per_slice)
         torch_attention_mask_per_slice = torch.cat(
             [
                 torch_attention_mask[:, :, attention_mask_starting_index_per_slice:, :],
