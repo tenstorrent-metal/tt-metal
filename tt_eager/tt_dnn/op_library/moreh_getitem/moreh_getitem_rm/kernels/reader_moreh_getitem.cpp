@@ -117,6 +117,8 @@ void kernel_main() {
 
         volatile tt_l1_ptr uint32_t* index_l1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(l1_write_addr);
 
+        DPRINT << "=================================\n";
+        DPRINT << "noc_offset = " << noc_offset << "\n";
         DPRINT << "Input index_l1_ptr = [";
         for (uint32_t x = 0 ;x < 8; x ++) {
             DPRINT << index_l1_ptr[x] << ", ";
@@ -139,6 +141,8 @@ void kernel_main() {
 
         volatile tt_l1_ptr uint32_t* index_l1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(l1_write_addr);
 
+        DPRINT << "=================================\n";
+        DPRINT << "noc_offset = " << noc_offset << "\n";
         DPRINT << "Input index_l1_ptr = [";
         for (uint32_t x = 0 ;x < 8; x ++) {
             DPRINT << index_l1_ptr[x] << ", ";
@@ -161,6 +165,8 @@ void kernel_main() {
 
         volatile tt_l1_ptr uint32_t* index_l1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(l1_write_addr);
 
+        DPRINT << "=================================\n";
+        DPRINT << "noc_offset = " << noc_offset << "\n";
         DPRINT << "Input index_l1_ptr = [";
         for (uint32_t x = 0 ;x < 8; x ++) {
             DPRINT << index_l1_ptr[x] << ", ";
@@ -183,6 +189,8 @@ void kernel_main() {
 
         volatile tt_l1_ptr uint32_t* index_l1_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(l1_write_addr);
 
+        DPRINT << "=================================\n";
+        DPRINT << "noc_offset = " << noc_offset << "\n";
         DPRINT << "Input index_l1_ptr = [";
         for (uint32_t x = 0 ;x < 8; x ++) {
             DPRINT << index_l1_ptr[x] << ", ";
