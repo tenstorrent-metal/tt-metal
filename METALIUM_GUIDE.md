@@ -23,7 +23,12 @@ This document desribes how we did it.
 * [Eltwise Binary Kernel](#eltwise-binary-kernel)
 
 ### All you need is a Tensix core and a mesh 
- - Tensix Core includes 5 small RISC-V processors (aka "Baby RISCVs"), a Matrix Engine, a Vector engine, and 1 MB scratch pad SRAM.   
+ - A Tensix Core is:
+  - 5 small RISC-V processors (aka "Baby RISCVs") that run C/C++ kernels and dispatch instructions to the engines
+  - Matrix engine that performs Matrix multiplication, elementwise, and dot product operations on small matricies (or tiles) of shape 32x32 and similar
+  - Vector and SFPU engine for vectorized programs and special functions such as GELU, Exp, and Sqrt
+  - 1 MB scratch pad SRAM
+  - Data Mover engine connected to 2 Networks on Chip (NoCs)
  - Near Memory Compute in a Mesh
 
 <img width="1167" alt="image" src="https://github.com/tenstorrent-metal/tt-metal/assets/3885633/78d64b36-bb68-4d41-b2ca-5e3ed7ccda8f">
