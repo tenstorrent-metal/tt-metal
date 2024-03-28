@@ -810,6 +810,7 @@ Tensor _addcdiv(
     const Tensor& input_b,
     const Tensor& input_c,
     float value,
+    std::optional<const Tensor> output_tensor,
     const MemoryConfig& output_mem_config) {
     Tensor t_value = mk_tiled_scalar(value);
     Tensor t_div = mul(input_b, recip(input_c, output_mem_config), std::nullopt, output_mem_config);
@@ -824,8 +825,9 @@ Tensor addcdiv(
     const Tensor& input_b,
     const Tensor& input_c,
     float value,
+    std::optional<const Tensor> output_tensor,
     const MemoryConfig& output_mem_config) {
-    return operation::decorate_as_composite(__func__, _addcdiv)(input_a, input_b, input_c, value, output_mem_config);
+    return operation::decorate_as_composite(__func__, _addcdiv)(input_a, input_b, input_c, value, output_tensor, output_mem_config);
 }
 
 // logit(input, eps)=log(input / 1 - input)

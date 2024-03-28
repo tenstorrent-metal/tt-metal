@@ -548,6 +548,7 @@ def eltwise_addcdiv(
     z,
     *args,
     scalar,
+    output_tensor,
     device,
     dtype,
     layout,
@@ -558,7 +559,8 @@ def eltwise_addcdiv(
     t0 = setup_tt_tensor(x, device, layout[0], input_mem_config[0], dtype[0])
     t1 = setup_tt_tensor(y, device, layout[1], input_mem_config[1], dtype[1])
     t2 = setup_tt_tensor(z, device, layout[2], input_mem_config[2], dtype[2])
-    t3 = ttl.tensor.addcdiv(t0, t1, t2, scalar, output_mem_config)
+    output_tensor = setup_tt_tensor(z, device, layout[2], input_mem_config[2], dtype[2])
+    t3 = ttl.tensor.addcdiv(t0, t1, t2, scalar, output_tensor, output_mem_config)
 
     return tt2torch_tensor(t3)
 
