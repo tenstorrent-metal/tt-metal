@@ -2,24 +2,15 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
 import pytest
+import torch
 from loguru import logger
-import tt_lib
-from models.demos.falcon7b.reference.hf_modeling_falcon import (
-    FalconForCausalLM,
-)
+from models.demos.falcon7b.reference.hf_modeling_falcon import FalconForCausalLM
+from models.demos.falcon7b.tests.test_utils import concat_device_out_layer_present, get_rand_falcon_inputs
 from models.demos.falcon7b.tt.falcon_model import TtFalconModel
-from models.demos.falcon7b.tt.model_config import (
-    get_model_config,
-    get_tt_cache_path,
-)
-from models.demos.falcon7b.tests.test_utils import get_rand_falcon_inputs, concat_device_out_layer_present
-from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
-    comp_allclose,
-    comp_pcc,
-)
-from models.utility_functions import tt2torch_tensor, get_devices_for_t3000
+from models.demos.falcon7b.tt.model_config import get_model_config, get_tt_cache_path
+from models.utility_functions import get_devices_for_t3000, tt2torch_tensor
+from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc
 
 
 class PytorchFalconModel(torch.nn.Module):
@@ -111,6 +102,7 @@ def run_test_FalconModel_inference(
         max_position_embeddings,
         model_config,
         tt_cache_path,
+        seq_len,
     )
     # TODO: Generate embeddings and attention_mask on device
     if llm_mode == "prefill":

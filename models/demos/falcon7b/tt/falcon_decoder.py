@@ -2,16 +2,14 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
-import pytest
-from torch import nn
 from typing import Optional, Tuple
 
+import torch
 import tt_lib
-
 from models.demos.falcon7b.tt.falcon_attention import TtFalconAttention
 from models.demos.falcon7b.tt.falcon_mlp import TtFalconMLP
 from models.demos.falcon7b.tt.model_utils import get_weights_cached
+from torch import nn
 
 
 class TtFalconDecoderLayer(nn.Module):
@@ -25,6 +23,7 @@ class TtFalconDecoderLayer(nn.Module):
         max_position_embeddings,
         model_config,
         tt_cache_path,
+        seq_len,
     ):
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -58,6 +57,7 @@ class TtFalconDecoderLayer(nn.Module):
             hidden_size=config.hidden_size,
             model_config=model_config,
             tt_cache_path=tt_cache_path,
+            seq_len=seq_len,
         )
 
         layer_name = f"{base_url}.{layer_num}"

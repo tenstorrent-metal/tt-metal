@@ -2,13 +2,10 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
-import pytest
-from torch import nn
 from typing import Optional, Tuple
 
+import torch
 import tt_lib
-
 from models.demos.falcon7b.tt.falcon_model import TtFalconModelShared
 from models.demos.falcon7b.tt.model_utils import get_weights_cached
 
@@ -24,6 +21,7 @@ class TtFalconCausalLM(TtFalconModelShared):
         max_position_embeddings,
         model_config,
         tt_cache_path,
+        seq_len,
     ):
         assert base_url == "", "base_url should be empty at the root of the model!"
 
@@ -36,6 +34,7 @@ class TtFalconCausalLM(TtFalconModelShared):
             max_position_embeddings=max_position_embeddings,
             model_config=model_config,
             tt_cache_path=tt_cache_path,
+            seq_len=seq_len,
         )
         self.num_devices = len(devices)
         self.model_config = model_config

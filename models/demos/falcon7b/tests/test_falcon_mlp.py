@@ -2,24 +2,14 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
 import pytest
+import torch
 from loguru import logger
-
-import tt_lib
-from models.demos.falcon7b.reference.hf_modeling_falcon import (
-    FalconForCausalLM,
-)
+from models.demos.falcon7b.reference.hf_modeling_falcon import FalconForCausalLM
 from models.demos.falcon7b.tt.falcon_mlp import TtFalconMLP
-from models.demos.falcon7b.tt.model_config import (
-    get_model_config,
-    get_tt_cache_path,
-)
-from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import (
-    comp_allclose,
-    comp_pcc,
-)
-from models.utility_functions import torch2tt_tensor, tt2torch_tensor, get_devices_for_t3000
+from models.demos.falcon7b.tt.model_config import get_model_config, get_tt_cache_path
+from models.utility_functions import get_devices_for_t3000, torch2tt_tensor, tt2torch_tensor
+from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_allclose, comp_pcc
 
 
 class PytorchFalconMLPModel(torch.nn.Module):

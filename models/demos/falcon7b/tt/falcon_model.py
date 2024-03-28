@@ -2,19 +2,14 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
 from abc import abstractmethod
 from typing import Optional, Tuple
 
+import torch
 import tt_lib
-
 from models.demos.falcon7b.tt.falcon_decoder import TtFalconDecoderLayer
-from models.utility_functions import (
-    torch2tt_tensor,
-    pad_by_zero,
-    nearest_32,
-)
 from models.demos.falcon7b.tt.model_utils import get_weights_cached
+from models.utility_functions import nearest_32, torch2tt_tensor
 
 
 class TtFalconModelShared(torch.nn.Module):
@@ -29,6 +24,7 @@ class TtFalconModelShared(torch.nn.Module):
         max_position_embeddings,
         model_config,
         tt_cache_path,
+        seq_len,
     ):
         super().__init__()
 
@@ -60,6 +56,7 @@ class TtFalconModelShared(torch.nn.Module):
                     max_position_embeddings=max_position_embeddings,
                     model_config=model_config,
                     tt_cache_path=tt_cache_path,
+                    seq_len=seq_len,
                 )
                 for layer_num in range(num_layers)
             ]
@@ -243,6 +240,7 @@ class TtFalconModel(TtFalconModelShared):
         max_position_embeddings,
         model_config,
         tt_cache_path,
+        seq_len,
     ):
         super().__init__(
             devices=devices,
@@ -253,6 +251,7 @@ class TtFalconModel(TtFalconModelShared):
             max_position_embeddings=max_position_embeddings,
             model_config=model_config,
             tt_cache_path=tt_cache_path,
+            seq_len=seq_len,
         )
 
     def forward(
