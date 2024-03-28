@@ -263,6 +263,9 @@ def main():
             envVars = dict(os.environ)
             if options.no_device:
                 envVars["TT_METAL_DEVICE_PROFILER"] = "1"
+            else:
+                if "TT_METAL_DEVICE_PROFILER" in envVars.keys():
+                    del envVars["TT_METAL_DEVICE_PROFILER"]
 
             if options.port:
                 envVars["TRACY_PORT"] = options.port
@@ -277,12 +280,17 @@ def main():
                 sys.exit(3)
 
             signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
 
             testProcess.communicate()
-            logger.info(f"Test fully finished. Waiting for tracy capture tool to finish ...")
-            captureProcess.communicate()
 
-            generate_report(options.output_folder, options.name_append)
+            try:
+                captureProcess.communicate(timeout=15)
+                generate_report(options.output_folder, options.name_append)
+            except subprocess.TimeoutExpired as e:
+                logger.warning(
+                    f"No profiling data could be captured. Please make sure you are on the correct build. Use scripts/build_scripts/build_with_profiler_opt.sh to build if you are not sure."
+                )
 
     else:
         parser.print_usage()
