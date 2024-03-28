@@ -327,6 +327,7 @@ from ttnn.operations.normalization import (
     rms_norm,
     group_norm,
     create_group_norm_weight_bias_rm,
+    create_group_norm_input_mask,
     determine_expected_group_norm_sharded_config_and_grid_size,
 )
 
